@@ -10,9 +10,10 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage)
+            // Read straight from the asset catalog; NSApp.applicationIconImage can serve a stale cached icon.
+            Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 72, height: 72)
+                .frame(width: 96, height: 96)
             Text("QuotaVadis").font(.title2.weight(.semibold))
             Text(version).font(.caption).foregroundStyle(.secondary)
             Text("Your AI coding limits, at a glance.")
