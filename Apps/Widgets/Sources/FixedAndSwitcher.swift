@@ -27,8 +27,10 @@ struct FixedProviderWidget {
         StaticConfiguration(kind: kind, provider: FixedProviderTimelineProvider(provider: provider)) { entry in
             ProviderWidgetView(entry: entry).containerBackground(.background, for: .widget)
         }
-        .configurationDisplayName(provider.displayName)
-        .description("\(provider.displayName) limits at a glance.")
+        // Plain strings only: an interpolated literal becomes a formatted LocalizedStringKey, which WidgetKit
+        // rejects with a fatal error ("Formatted text for `description` is not supported").
+        .configurationDisplayName(Text(verbatim: provider.displayName))
+        .description(Text(verbatim: "\(provider.displayName) limits at a glance."))
         .supportedFamilies(families)
     }
 
