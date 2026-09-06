@@ -58,6 +58,10 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
+    /// App icon (colour) or a monochrome gauge glyph that tracks the percentage.
+    var useAppIconInMenuBar: Bool {
+        didSet { defaults.set(useAppIconInMenuBar, forKey: "useAppIconInMenuBar") }
+    }
     /// Price Codex Fast mode (priority processing) at OpenAI's 2x rate. Off = list price, same as CodexBar.
     var fastModeAt2x: Bool {
         didSet { defaults.set(fastModeAt2x, forKey: "fastModeAt2x"); Task { lastCostRefresh = nil; await refreshCosts() } }
@@ -84,6 +88,7 @@ final class AppModel {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
+        useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? true
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()

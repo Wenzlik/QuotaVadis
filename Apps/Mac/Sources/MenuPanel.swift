@@ -15,6 +15,28 @@ struct MenuPanel: View {
                                        description: Text("Log in to Claude Code, Codex or Cursor on this Mac."))
                     .frame(height: 160)
             } else {
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        providerRows
+                    }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: maxListHeight)
+            }
+            Divider()
+            footer
+        }
+        .frame(width: 300)
+        .background(.regularMaterial)
+    }
+
+    /// Leave room for the menu bar and the footer on the smallest common display.
+    private var maxListHeight: CGFloat {
+        let screen = NSScreen.main?.visibleFrame.height ?? 800
+        return max(200, screen - 120)
+    }
+
+    @ViewBuilder private var providerRows: some View {
                 ForEach(model.visibleProviders) { id in
                     ProviderRow(provider: id, state: model.states[id] ?? .unavailable, cost: model.costs[id],
                                 isExpanded: model.expanded.contains(id)) {
@@ -26,12 +48,6 @@ struct MenuPanel: View {
                     .padding(.vertical, 10)
                     if id != model.visibleProviders.last { Divider().padding(.horizontal, 14) }
                 }
-            }
-            Divider()
-            footer
-        }
-        .frame(width: 300)
-        .background(.regularMaterial)
     }
 
     private var footer: some View {
