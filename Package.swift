@@ -6,12 +6,14 @@ let package = Package(
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "QuotaCore", targets: ["QuotaCore"]),
+        .library(name: "QuotaUI", targets: ["QuotaUI"]),
         .executable(name: "quotactl", targets: ["quotactl"]),
     ],
     targets: [
         .target(
             name: "QuotaCore",
             linkerSettings: [.linkedLibrary("sqlite3", .when(platforms: [.macOS])), .linkedFramework("CloudKit")]),
+        .target(name: "QuotaUI", dependencies: ["QuotaCore"]),
         .executableTarget(name: "quotactl", dependencies: ["QuotaCore"]),
         .testTarget(name: "QuotaCoreTests", dependencies: ["QuotaCore"], resources: [.copy("Fixtures")]),
     ])

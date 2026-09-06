@@ -9,7 +9,7 @@ public struct ClaudeCostScanner: Sendable {
 
     static var projectsRoot: URL {
         let root = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+            ?? FileManager.default.userHome.appendingPathComponent(".claude")
         return root.appendingPathComponent("projects")
     }
 

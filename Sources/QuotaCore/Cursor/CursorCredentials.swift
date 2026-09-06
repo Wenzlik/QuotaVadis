@@ -11,7 +11,7 @@ struct CursorCredentials: Sendable {
     let expiresAt: Date?
 
     static var stateDBPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
+        FileManager.default.userHome
             .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path
     }
 

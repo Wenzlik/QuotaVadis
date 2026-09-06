@@ -9,7 +9,7 @@ public struct CodexCostScanner: Sendable {
 
     static var sessionsRoot: URL {
         let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+            ?? FileManager.default.userHome.appendingPathComponent(".codex")
         return home.appendingPathComponent("sessions")
     }
 

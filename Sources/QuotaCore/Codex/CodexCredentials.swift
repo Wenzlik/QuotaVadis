@@ -13,7 +13,7 @@ struct CodexCredentials: Sendable {
 
     static var authFileURL: URL {
         let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+            ?? FileManager.default.userHome.appendingPathComponent(".codex")
         return home.appendingPathComponent("auth.json")
     }
 

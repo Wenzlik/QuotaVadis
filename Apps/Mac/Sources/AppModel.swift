@@ -3,6 +3,7 @@ import Observation
 import ServiceManagement
 import SwiftUI
 import UserNotifications
+import WidgetKit
 import QuotaCore
 
 /// What the menu bar number represents.
@@ -173,7 +174,6 @@ final class AppModel {
 
     /// Coalesces the usage and cost publishes that land a few seconds apart into one record write.
     private func schedulePublish() {
-        guard syncEnabled else { return }
         publishTask?.cancel()
         publishTask = Task {
             try? await Task.sleep(for: .seconds(3))
@@ -182,15 +182,24 @@ final class AppModel {
         }
     }
 
+    private var currentPayload: DevicePayload {
+        DevicePayload(deviceID: DeviceIdentity.id, deviceName: DeviceInfo.name,
+                      snapshots: ProviderID.allCases.compactMap { states[$0]?.snapshot },
+                      costs: ProviderID.allCases.compactMap { costs[$0] })
+    }
+
+    /// Widgets on this Mac read the App Group file; no iCloud round trip.
+    private func updateWidgets() {
+        SharedStore.write(currentPayload)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     func publishToCloud() async {
+        updateWidgets()
         guard syncEnabled else { return }
         syncStatus = await cloud.accountStatus()
         guard syncStatus == .available else { return }
-        let payload = DevicePayload(
-            deviceID: DeviceIdentity.id,
-            deviceName: DeviceInfo.name,
-            snapshots: ProviderID.allCases.compactMap { states[$0]?.snapshot },
-            costs: ProviderID.allCases.compactMap { costs[$0] })
+        let payload = currentPayload
         do {
             try await cloud.publish(payload)
             lastSyncPush = .now

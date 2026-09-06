@@ -78,3 +78,8 @@ extension ISO8601DateFormatter {
         return try? Date(string, strategy: .iso8601)
     }
 }
+
+extension FileManager {
+    /// `homeDirectoryForCurrentUser` is macOS-only; iOS never reaches these paths but the code must compile there.
+    var userHome: URL { URL(fileURLWithPath: NSHomeDirectory()) }
+}

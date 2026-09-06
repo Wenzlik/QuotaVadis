@@ -27,6 +27,10 @@ targets:
     dependencies:
       - package: QuotaCore
         product: QuotaCore
+      - package: QuotaCore
+        product: QuotaUI
+      - target: QuotaWidgets-Mac
+        embed: true
     info:
       path: Apps/Mac/Info.plist
       properties:
@@ -45,3 +49,93 @@ targets:
       properties:
         com.apple.developer.icloud-services: [CloudKit]
         com.apple.developer.icloud-container-identifiers: [iCloud.cz.zmrhal.QuotaVadis]
+        com.apple.security.application-groups: [group.cz.zmrhal.QuotaVadis]
+  QuotaVadis-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Apps/iOS/Sources
+      - path: Apps/iOS/Resources
+    dependencies:
+      - package: QuotaCore
+        product: QuotaCore
+      - package: QuotaCore
+        product: QuotaUI
+      - target: QuotaWidgets-iOS
+        embed: true
+    info:
+      path: Apps/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: QuotaVadis
+        UILaunchScreen: {}
+        UIBackgroundModes: [remote-notification]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Apps/iOS/QuotaVadis-iOS.entitlements
+      properties:
+        com.apple.developer.icloud-services: [CloudKit]
+        com.apple.developer.icloud-container-identifiers: [iCloud.cz.zmrhal.QuotaVadis]
+        aps-environment: development
+        com.apple.security.application-groups: [group.cz.zmrhal.QuotaVadis]
+    settings:
+      base:
+        PRODUCT_NAME: QuotaVadis
+        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: "Apple Development"
+  QuotaWidgets-Mac:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Apps/Widgets/Sources
+    dependencies:
+      - package: QuotaCore
+        product: QuotaCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Apps/Widgets/Info-Mac.plist
+      properties:
+        CFBundleDisplayName: QuotaVadis Widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Apps/Widgets/QuotaWidgets-Mac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [group.cz.zmrhal.QuotaVadis]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis.widgets
+        CODE_SIGN_IDENTITY: "Apple Development"
+        ENABLE_HARDENED_RUNTIME: true
+  QuotaWidgets-iOS:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Apps/Widgets/Sources
+    dependencies:
+      - package: QuotaCore
+        product: QuotaCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Apps/Widgets/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: QuotaVadis Widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Apps/Widgets/QuotaWidgets-iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.cz.zmrhal.QuotaVadis]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis.widgets
+        CODE_SIGN_IDENTITY: "Apple Development"
+        TARGETED_DEVICE_FAMILY: "1,2"
