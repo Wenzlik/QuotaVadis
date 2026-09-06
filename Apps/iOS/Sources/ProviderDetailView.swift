@@ -31,7 +31,7 @@ struct ProviderDetailView: View {
                     if let resets = snapshot.resetCreditsAvailable {
                         LabeledContent("Limit resets available", value: "\(resets)")
                         if !snapshot.resetCreditExpiries.isEmpty {
-                            LabeledContent("Expire", value: snapshot.resetCreditExpiries.map { $0.formatted(.relative(presentation: .numeric)) }.joined(separator: " · "))
+                            LabeledContent("Expire", value: snapshot.resetCreditExpiries.map { $0.formatted(.dateTime.day().month(.abbreviated)) }.joined(separator: ", "))
                         }
                     }
                 }

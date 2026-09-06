@@ -162,3 +162,13 @@ private func fixture(_ name: String) throws -> Data {
     engine.snooze(key: "codex/weekly")
     #expect(engine.evaluate(snapshots: [snap(99)]).isEmpty)          // snoozed
 }
+
+@Test func resetLabelShapes() {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Prague")!
+    let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 6, hour: 12, minute: 0))!
+    let today = cal.date(byAdding: .hour, value: 1, to: now)!
+    let label = today.resetLabel(now: now, calendar: cal)
+    #expect(label.contains("·"))
+    let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
+    #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
+}

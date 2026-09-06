@@ -197,7 +197,7 @@ struct BarLine: View {
             HStack {
                 Text(title).font(.caption2)
                 Spacer()
-                if let resetsAt { Text(resetsAt, style: .relative).font(.caption2).foregroundStyle(.tertiary) }
+                if let resetsAt { Text(resetsAt.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
                 Text("\(Int(percent.rounded()))%").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
             }
             GeometryReader { geo in

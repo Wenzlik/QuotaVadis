@@ -59,7 +59,7 @@ public struct ProviderRow: View {
                         DetailLine(title: "Limit resets available", value: "\(resets)")
                         if !snapshot.resetCreditExpiries.isEmpty {
                             DetailLine(title: "Expire", value: snapshot.resetCreditExpiries
-                                .map { $0.formatted(.relative(presentation: .numeric)) }.joined(separator: " · "))
+                                .map { $0.formatted(.dateTime.day().month(.abbreviated)) }.joined(separator: ", "))
                         }
                     }
                     if let org = snapshot.organization {
@@ -232,7 +232,7 @@ public struct CreditsLine: View {
                 Text(credits.title).font(.caption)
                 Spacer()
                 if let reset = credits.resetsAt, credits.limit != nil {
-                    Text(reset, format: .relative(presentation: .numeric)).font(.caption2).foregroundStyle(.tertiary)
+                    Text(reset.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
                     .font(.caption.monospacedDigit())
@@ -276,8 +276,8 @@ public struct UsageBar: View {
                 Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
                 if let reset = window.resetsAt {
-                    Text(reset, format: .relative(presentation: .numeric))
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    Text(reset.resetLabel())
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font(.caption.monospacedDigit())

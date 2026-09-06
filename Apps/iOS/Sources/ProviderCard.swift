@@ -56,7 +56,7 @@ struct WindowLine: View {
                 Text(window.title).font(compact ? .footnote : .subheadline).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
                 if let reset = window.resetsAt {
-                    Text("resets \(reset, style: .relative)").font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(reset.resetLabel()).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font((compact ? Font.footnote : .subheadline).weight(.medium).monospacedDigit())

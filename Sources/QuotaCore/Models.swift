@@ -209,3 +209,20 @@ public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
         return used / limit * 100
     }
 }
+
+public extension Date {
+    /// "in 1 hr · 14:35" — relative distance plus the exact clock time; adds the weekday when it is not today,
+    /// and the date when it is more than a week away.
+    func resetLabel(now: Date = .now, calendar: Calendar = .current) -> String {
+        let relative = formatted(.relative(presentation: .numeric))
+        let exact: String
+        if calendar.isDate(self, inSameDayAs: now) {
+            exact = formatted(date: .omitted, time: .shortened)
+        } else if let week = calendar.date(byAdding: .day, value: 7, to: now), self < week {
+            exact = formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        } else {
+            exact = formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        }
+        return "\(relative) · \(exact)"
+    }
+}
