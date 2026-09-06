@@ -36,6 +36,21 @@ private func tempFile(_ lines: [String]) throws -> URL {
     #expect(rows.allSatisfy { $0.model == "gpt-6-astra" && $0.project == "/w" })
 }
 
+@Test func longContextTierAndFastMode() throws {
+    let astra = Pricing.bundled["gpt-6-astra"]!
+    let small = TokenCounts(input: 1000, output: 100)
+    let big = TokenCounts(input: 300_000, output: 100)
+    #expect(abs(astra.cost(small) - (1000 * 10 + 100 * 50) / 1e6) < 1e-12)
+    #expect(abs(astra.cost(big) - (300_000 * 20 + 100 * 75) / 1e6) < 1e-12)
+
+    let settings = #"{"timestamp":"2026-09-05T09:58:00.000Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":"{'model': 'gpt-6-astra', 'service_tier': 'priority'}"}}"#
+    let count = #"{"timestamp":"2026-09-05T10:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1}}}}"#
+    let rows = CodexCostScanner.scan(try tempFile([settings, count]))
+    #expect(rows.count == 1)
+    #expect(rows[0].priceMultiplier == 2)
+    #expect(rows[0].model == "gpt-6-astra")
+}
+
 @Test func pricingPrefixMatch() async {
     let p = Pricing.shared
     #expect(await p.price(for: "claude-opus-5-20260101") != nil)

@@ -15,7 +15,7 @@ if CommandLine.arguments.contains("--profile") {
 }
 if CommandLine.arguments.contains("--cost") {
     let started = Date()
-    let reports = await CostService().refresh(enabled: Set(ProviderID.allCases))
+    let reports = await CostService().refresh(enabled: Set(ProviderID.allCases), fastModeAt2x: CommandLine.arguments.contains("--fast-2x"))
     for id in ProviderID.allCases {
         guard let r = reports[id] else { print("\(id.displayName): no cost data"); continue }
         let today = r.today

@@ -58,6 +58,10 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
+    /// Price Codex Fast mode (priority processing) at OpenAI's 2x rate. Off = list price, same as CodexBar.
+    var fastModeAt2x: Bool {
+        didSet { defaults.set(fastModeAt2x, forKey: "fastModeAt2x"); Task { lastCostRefresh = nil; await refreshCosts() } }
+    }
     /// Providers whose row is expanded to the full detail. Remembered across launches.
     var expanded: Set<ProviderID> {
         didSet { defaults.set(expanded.map(\.rawValue).sorted(), forKey: "expandedProviders") }
@@ -80,6 +84,7 @@ final class AppModel {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
+        fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()
         Task { await refresh() }
@@ -135,7 +140,7 @@ final class AppModel {
         guard !isRefreshingCosts else { return }
         isRefreshingCosts = true
         defer { isRefreshingCosts = false }
-        let result = await costService.refresh(enabled: enabledProviders)
+        let result = await costService.refresh(enabled: enabledProviders, fastModeAt2x: fastModeAt2x)
         costs.merge(result) { _, new in new }
         lastCostRefresh = .now
     }

@@ -75,12 +75,16 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         }
     }
 
-    /// "team_tier_1" + "default_claude_max_5x" → "Team tier 1 · Max 5x". Unknown values pass through humanized.
+    /// Team seats: `team_standard` = Standard, `team_tier_1` = Premium (the seat that includes Claude Code with
+    /// Max-level limits). Unknown values pass through humanized so a new tier is still visible.
     static func seatLabel(seatTier: String?, rateTier: String?) -> String? {
         var parts: [String] = []
         if let seatTier, !seatTier.isEmpty {
-            parts.append(seatTier.replacingOccurrences(of: "_", with: " ").capitalized
-                .replacingOccurrences(of: "Tier", with: "tier"))
+            switch seatTier.lowercased() {
+            case "team_standard": parts.append("Standard seat")
+            case "team_tier_1", "team_premium": parts.append("Premium seat")
+            default: parts.append(seatTier.replacingOccurrences(of: "_", with: " ").capitalized)
+            }
         }
         if let rateTier {
             let lower = rateTier.lowercased()

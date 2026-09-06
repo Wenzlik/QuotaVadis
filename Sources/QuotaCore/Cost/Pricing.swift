@@ -6,9 +6,26 @@ public struct ModelPrice: Codable, Sendable, Hashable {
     public var output: Double
     public var cacheRead: Double
     public var cacheWrite: Double
+    /// Higher rates once a request's context exceeds `threshold` tokens (e.g. GPT-6 Astra above 272k).
+    public var longContextThreshold: Int?
+    public var longContext: Rates?
 
+    public struct Rates: Codable, Sendable, Hashable {
+        public var input: Double, output: Double, cacheRead: Double, cacheWrite: Double
+    }
+
+    public init(input: Double, output: Double, cacheRead: Double, cacheWrite: Double, longContextThreshold: Int? = nil, longContext: Rates? = nil) {
+        self.input = input; self.output = output; self.cacheRead = cacheRead; self.cacheWrite = cacheWrite
+        self.longContextThreshold = longContextThreshold; self.longContext = longContext
+    }
+
+    /// Context = everything sent in: fresh input plus cache reads and writes.
     public func cost(_ t: TokenCounts) -> Double {
-        (Double(t.input) * input + Double(t.output) * output + Double(t.cacheRead) * cacheRead + Double(t.cacheWrite) * cacheWrite) / 1_000_000
+        let context = t.input + t.cacheRead + t.cacheWrite
+        if let threshold = longContextThreshold, let long = longContext, context > threshold {
+            return (Double(t.input) * long.input + Double(t.output) * long.output + Double(t.cacheRead) * long.cacheRead + Double(t.cacheWrite) * long.cacheWrite) / 1_000_000
+        }
+        return (Double(t.input) * input + Double(t.output) * output + Double(t.cacheRead) * cacheRead + Double(t.cacheWrite) * cacheWrite) / 1_000_000
     }
 }
 
@@ -60,9 +77,20 @@ public actor Pricing {
             for (id, value) in models {
                 guard let cost = (value as? [String: Any])?["cost"] as? [String: Any],
                       let input = cost["input"] as? Double, let output = cost["output"] as? Double else { continue }
-                out[id.lowercased()] = ModelPrice(input: input, output: output,
-                                                  cacheRead: cost["cache_read"] as? Double ?? input,
-                                                  cacheWrite: cost["cache_write"] as? Double ?? input)
+                var price = ModelPrice(input: input, output: output,
+                                       cacheRead: cost["cache_read"] as? Double ?? input,
+                                       cacheWrite: cost["cache_write"] as? Double ?? input)
+                // models.dev: `tiers: [{input, output, cache_read, cache_write, tier: {type: "context", size}}]`
+                if let tiers = cost["tiers"] as? [[String: Any]],
+                   let tier = tiers.first(where: { ($0["tier"] as? [String: Any])?["type"] as? String == "context" }),
+                   let size = (tier["tier"] as? [String: Any])?["size"] as? Int,
+                   let tInput = tier["input"] as? Double, let tOutput = tier["output"] as? Double {
+                    price.longContextThreshold = size
+                    price.longContext = .init(input: tInput, output: tOutput,
+                                              cacheRead: tier["cache_read"] as? Double ?? tInput,
+                                              cacheWrite: tier["cache_write"] as? Double ?? tInput)
+                }
+                out[id.lowercased()] = price
             }
         }
         return out.isEmpty ? nil : out
@@ -77,7 +105,8 @@ public actor Pricing {
         "claude-sonnet-5": .init(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
         "claude-sonnet-4-6": .init(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
         "claude-haiku-4-5": .init(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25),
-        "gpt-6-astra": .init(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
+        "gpt-6-astra": .init(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, longContextThreshold: 272_000,
+                             longContext: .init(input: 20, output: 75, cacheRead: 2, cacheWrite: 25)),
         "gpt-5.3-codex": .init(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75),
         "gpt-5.3-codex-spark": .init(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75),
     ]

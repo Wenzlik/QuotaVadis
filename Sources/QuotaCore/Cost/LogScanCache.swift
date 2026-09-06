@@ -70,13 +70,17 @@ struct UsageRow: Codable, Sendable, Hashable {
     var tokens: TokenCounts
     /// Provider-reported cost when the log carries one (Cursor); nil means "price it at list rates".
     var reportedCostUSD: Double?
+    /// List-price multiplier: OpenAI priority processing ("fast" mode) bills 2x.
+    var priceMultiplier: Double = 1
 }
 
 extension CostAccumulator {
-    mutating func add(_ rows: [UsageRow], pricing: Pricing, since: Date) async {
+    mutating func add(_ rows: [UsageRow], pricing: Pricing, since: Date, applyMultipliers: Bool = true) async {
         for row in rows where row.timestamp >= since {
             let cost: Double
-            if let reported = row.reportedCostUSD { cost = reported } else { cost = await pricing.cost(model: row.model, tokens: row.tokens) ?? 0 }
+            if let reported = row.reportedCostUSD { cost = reported } else {
+                cost = (await pricing.cost(model: row.model, tokens: row.tokens) ?? 0) * (applyMultipliers ? row.priceMultiplier : 1)
+            }
             add(date: row.timestamp, model: row.model, project: row.project, tokens: row.tokens, costUSD: cost)
         }
     }

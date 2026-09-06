@@ -5,10 +5,10 @@ import Foundation
 public actor CostService {
     public init() {}
 
-    public func refresh(enabled: Set<ProviderID>) async -> [ProviderID: CostReport] {
+    public func refresh(enabled: Set<ProviderID>, fastModeAt2x: Bool = false) async -> [ProviderID: CostReport] {
         await withTaskGroup(of: (ProviderID, CostReport?).self) { group in
             if enabled.contains(.claude) { group.addTask { (.claude, await ClaudeCostScanner().report()) } }
-            if enabled.contains(.codex) { group.addTask { (.codex, await CodexCostScanner().report()) } }
+            if enabled.contains(.codex) { group.addTask { (.codex, await CodexCostScanner().report(fastModeAt2x: fastModeAt2x)) } }
             if enabled.contains(.cursor) { group.addTask { (.cursor, try? await CursorCostFetcher().report()) } }
             var out: [ProviderID: CostReport] = [:]
             for await (id, report) in group { if let report { out[id] = report } }

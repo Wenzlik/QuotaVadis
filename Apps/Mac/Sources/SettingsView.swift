@@ -36,6 +36,11 @@ struct SettingsView: View {
                 }
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
             }
+            Section("Cost estimates") {
+                Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)
+                Text("Costs are estimates at API list prices from local logs (Cursor: from its dashboard). Subscriptions are not billed per token.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 340)

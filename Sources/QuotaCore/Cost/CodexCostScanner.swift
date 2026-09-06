@@ -15,7 +15,8 @@ public struct CodexCostScanner: Sendable {
 
     private static let cacheURL = Pricing.cacheURL.deletingLastPathComponent().appendingPathComponent("codex-scan.json")
 
-    public func report(now: Date = .now) async -> CostReport? {
+    /// `fastModeAt2x`: price priority-processing requests at OpenAI's 2x rate instead of list price.
+    public func report(now: Date = .now, fastModeAt2x: Bool = false) async -> CostReport? {
         let root = Self.sessionsRoot
         guard FileManager.default.fileExists(atPath: root.path) else { return nil }
         var cache = LogScanCache<[UsageRow]>.load(Self.cacheURL)
@@ -37,9 +38,11 @@ public struct CodexCostScanner: Sendable {
         await pricing.prepare()
         var acc = CostAccumulator()
         let since = Calendar.current.startOfDay(for: now).addingTimeInterval(-Double(Self.windowDays - 1) * 86_400)
-        await acc.add(rows, pricing: pricing, since: since)
+        await acc.add(rows, pricing: pricing, since: since, applyMultipliers: fastModeAt2x)
         return acc.report(provider: .codex, windowDays: Self.windowDays,
-                          source: "Estimated from local Codex session logs at API list prices; not a subscription bill.")
+                          source: fastModeAt2x
+                              ? "Estimated from local Codex session logs at API list prices, Fast mode at 2x; not a subscription bill."
+                              : "Estimated from local Codex session logs at API list prices; not a subscription bill.")
     }
 
     static func scan(_ url: URL) -> [UsageRow] {
@@ -47,8 +50,9 @@ public struct CodexCostScanner: Sendable {
         var model = "unknown"
         var project: String?
         var previous = TokenCounts()
+        var priority = false
         LogFiles.forEachLine(of: url) { line in
-            guard line.contains("turn_context") || line.contains("token_count") || line.contains("session_meta"),
+            guard line.contains("turn_context") || line.contains("token_count") || line.contains("session_meta") || line.contains("thread_settings_applied"),
                   let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let payload = obj["payload"] as? [String: Any] else { return }
@@ -58,6 +62,18 @@ public struct CodexCostScanner: Sendable {
                 if let cwd = payload["cwd"] as? String { project = cwd }
             case "session_meta":
                 if let cwd = payload["cwd"] as? String { project = cwd }
+            case "event_msg" where payload["type"] as? String == "thread_settings_applied":
+                // Fast mode = OpenAI priority processing, billed at 2x. Settings arrive as JSON or a dict.
+                if let settings = payload["thread_settings"] as? [String: Any] {
+                    priority = settings["service_tier"] as? String == "priority"
+                    if let m = settings["model"] as? String, !m.isEmpty { model = m }
+                } else if let text = payload["thread_settings"] as? String {
+                    priority = text.contains("'service_tier': 'priority'") || text.contains("\"service_tier\":\"priority\"")
+                    if let range = text.range(of: #"'model': '([^']+)'"#, options: .regularExpression) {
+                        let m = text[range].split(separator: "'").last.map(String.init) ?? ""
+                        if !m.isEmpty { model = m }
+                    }
+                }
             case "event_msg":
                 guard payload["type"] as? String == "token_count",
                       let info = payload["info"] as? [String: Any],
@@ -75,7 +91,7 @@ public struct CodexCostScanner: Sendable {
                 if delta.input < 0 || delta.output < 0 || delta.cacheRead < 0 || delta.cacheWrite < 0 { delta = current }
                 previous = current
                 guard delta.total > 0 else { return }
-                rows.append(UsageRow(timestamp: ts, model: model, project: project, tokens: delta))
+                rows.append(UsageRow(timestamp: ts, model: model, project: project, tokens: delta, priceMultiplier: priority ? 2 : 1))
             default: break
             }
         }

@@ -134,6 +134,9 @@ struct ProviderRow: View {
 /// Today / 30-day spend and tokens, a daily bar chart, top model. Same numbers `quotactl --cost` prints.
 struct CostSection: View {
     let report: CostReport
+    @AppStorage("costChartMetric") private var metric: ChartMetric = .cost
+
+    enum ChartMetric: String, CaseIterable { case cost, tokens }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -147,23 +150,69 @@ struct CostSection: View {
                     stat("30d tokens", tokens(report.totalTokens))
                 }
             }
+            HStack {
+                Text("Last 30 days").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Picker("", selection: $metric) {
+                    Text("Cost").tag(ChartMetric.cost)
+                    Text("Tokens").tag(ChartMetric.tokens)
+                }
+                .pickerStyle(.segmented).controlSize(.mini).frame(width: 110).labelsHidden()
+            }
             Chart(report.days) { day in
-                BarMark(x: .value("Day", day.id), y: .value("USD", day.costUSD))
+                BarMark(x: .value("Day", day.id), y: .value(metric == .cost ? "USD" : "Tokens", value(day)))
                     .foregroundStyle(day.id == report.days.last?.id ? Color.accentColor : Color.secondary.opacity(0.45))
                     .cornerRadius(1.5)
             }
             .chartXAxis(.hidden)
             .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { value in
-                    AxisValueLabel { if let v = value.as(Double.self) { Text(money(v, digits: 0)).font(.caption2) } }
+                AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { v in
+                    AxisValueLabel { if let d = v.as(Double.self) { Text(axisLabel(d)).font(.caption2) } }
                 }
             }
             .frame(height: 44)
-            if let top = report.topModel {
-                DetailLine(title: "Top model", value: top.id)
-            }
+
+            breakdown("By model", report.byModel)
+            if !report.byProject.isEmpty { breakdown("By project", report.byProject) }
             Text(report.source).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// Top five buckets as thin proportional bars; the rest folded into "Other".
+    private func breakdown(_ title: String, _ buckets: [CostBucket]) -> some View {
+        let shown = Array(buckets.prefix(5))
+        let rest = buckets.dropFirst(5)
+        let others = rest.isEmpty ? nil : CostBucket(id: "Other (\(rest.count))",
+                                                     tokens: rest.reduce(TokenCounts()) { var t = $0; t += $1.tokens; return t },
+                                                     costUSD: rest.reduce(0) { $0 + $1.costUSD }, requests: rest.reduce(0) { $0 + $1.requests })
+        let rows = shown + (others.map { [$0] } ?? [])
+        let maxValue = max(rows.map(value).max() ?? 1, 0.0001)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption2).foregroundStyle(.secondary).padding(.top, 2)
+            ForEach(rows) { b in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(label(b.id)).font(.caption).lineLimit(1).truncationMode(.head).help(b.id)
+                        Spacer()
+                        Text(metric == .cost ? money(b.costUSD) : tokens(b.tokens.total))
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    GeometryReader { geo in
+                        Capsule().fill(Color.accentColor.opacity(0.7))
+                            .frame(width: max(2, geo.size.width * value(b) / maxValue))
+                    }
+                    .frame(height: 3)
+                }
+            }
+        }
+    }
+
+    private func value(_ b: CostBucket) -> Double { metric == .cost ? b.costUSD : Double(b.tokens.total) }
+    private func axisLabel(_ v: Double) -> String { metric == .cost ? money(v, digits: 0) : tokens(Int(v)) }
+
+    /// Project ids are working directories; show the folder name, keep the full path in the tooltip.
+    private func label(_ id: String) -> String {
+        id.hasPrefix("/") ? (id as NSString).lastPathComponent : id
     }
 
     private func stat(_ title: String, _ value: String) -> some View {

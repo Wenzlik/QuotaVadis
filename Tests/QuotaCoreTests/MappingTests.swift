@@ -68,7 +68,8 @@ private func fixture(_ name: String) throws -> Data {
 }
 
 @Test func seatLabels() {
-    #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_tier_1", rateTier: "default_claude_max_5x") == "Team tier 1 · Max 5x")
+    #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_tier_1", rateTier: "default_claude_max_5x") == "Premium seat · Max 5x")
+    #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_standard", rateTier: nil) == "Standard seat")
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: "default_claude_max_20x") == "Max 20x")
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: nil) == nil)
     #expect(ClaudeUsageFetcher.planLabel("claude_team") == "Team")
