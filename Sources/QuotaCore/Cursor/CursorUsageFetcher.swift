@@ -46,12 +46,12 @@ public struct CursorUsageFetcher: UsageFetcher {
                 windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd))
             }
             if let used = plan.used {
-                credits.append(UsageCredits(id: "plan", title: "Included", used: Double(used) / 100,
+                credits.append(UsageCredits(id: "plan", title: "Plan allowance used", used: Double(used) / 100,
                                             limit: plan.limit.map { Double($0) / 100 }, resetsAt: cycleEnd))
             }
         }
         if let od = r.individualUsage?.onDemand, od.enabled == true, let used = od.used {
-            credits.append(UsageCredits(id: "on-demand", title: "On-demand", used: Double(used) / 100,
+            credits.append(UsageCredits(id: "on-demand", title: "On-demand spend", used: Double(used) / 100,
                                         limit: od.limit.map { Double($0) / 100 }, resetsAt: cycleEnd))
         }
         if let bot, bot.hasNonZeroIncludedLimit == true, let pct = bot.usagePercent {

@@ -98,11 +98,11 @@ struct ProviderRow: View {
                     UsageBar(window: window)
                 }
                 if isExpanded {
-                    ForEach(snapshot.windows.filter { $0.kind == .model }) { window in
-                        UsageBar(window: window, compact: true)
-                    }
                     ForEach(snapshot.credits) { credits in
                         CreditsLine(credits: credits)
+                    }
+                    ForEach(snapshot.windows.filter { $0.kind == .model }) { window in
+                        UsageBar(window: window, compact: true)
                     }
                     if let resets = snapshot.resetCreditsAvailable {
                         DetailLine(title: "Limit resets available", value: "\(resets)")
