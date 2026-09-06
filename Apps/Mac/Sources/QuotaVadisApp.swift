@@ -16,6 +16,12 @@ struct QuotaVadisApp: App {
         Settings {
             SettingsView(model: model)
         }
+
+        Window("About QuotaVadis", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
     }
 }
 

@@ -5,6 +5,7 @@ import QuotaCore
 struct MenuPanel: View {
     @Bindable var model: AppModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,6 +46,11 @@ struct MenuPanel: View {
                 .help("Refresh now")
             Button { openSettings() } label: { Image(systemName: "gearshape") }
                 .help("Settings")
+            Button {
+                openWindow(id: "about")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: { Image(systemName: "info.circle") }
+                .help("About QuotaVadis")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .help("Quit")
         }
