@@ -38,7 +38,11 @@ public actor UsageService {
                     let id = fetcher.instanceID
                     guard fetcher.isAvailable() else { return (id, .unavailable) }
                     do {
-                        return (id, .fresh(try await fetcher.fetch()))
+                        // One stuck provider (Keychain prompt, hung local server) must not block the others or the sync.
+                        let snapshot = try await withTimeout(seconds: 45) { try await fetcher.fetch() }
+                        return (id, .fresh(snapshot))
+                    } catch is TimeoutError {
+                        return (id, .failed(.network("Timed out after 45 s"), last: last[id]))
                     } catch let error as ProviderError {
                         return (id, .failed(error, last: last[id]))
                     } catch {
@@ -53,5 +57,20 @@ public actor UsageService {
             }
             return result
         }
+    }
+}
+
+public struct TimeoutError: Error {}
+
+public func withTimeout<T: Sendable>(seconds: Double, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await body() }
+        group.addTask {
+            try await Task.sleep(for: .seconds(seconds))
+            throw TimeoutError()
+        }
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
     }
 }

@@ -73,7 +73,16 @@ struct SettingsView: View {
             }
             Section("iCloud") {
                 Toggle("Sync to iCloud", isOn: $model.syncEnabled)
-                Text(syncDescription).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Sync now") { Task { await model.publishToCloud() } }
+                        .disabled(!model.syncEnabled || model.isSyncing)
+                    if model.isSyncing { ProgressView().controlSize(.small) }
+                    Spacer()
+                    if let attempt = model.lastSyncAttempt {
+                        Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
             }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $updater.automaticChecks)

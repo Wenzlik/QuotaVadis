@@ -92,6 +92,7 @@ targets:
         com.apple.developer.icloud-services: [CloudKit]
         com.apple.developer.icloud-container-identifiers: [iCloud.cz.zmrhal.QuotaVadis]
         aps-environment: development
+        com.apple.developer.icloud-container-environment: Production
         com.apple.security.application-groups: [group.cz.zmrhal.QuotaVadis]
     settings:
       base:

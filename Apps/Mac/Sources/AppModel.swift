@@ -44,7 +44,9 @@ final class AppModel {
     // iCloud sync
     var syncStatus: CloudSync.Status = .unknown
     var lastSyncPush: Date?
+    var lastSyncAttempt: Date?
     var lastSyncError: String?
+    var isSyncing = false
 
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
@@ -248,14 +250,23 @@ final class AppModel {
 
     func publishToCloud() async {
         updateWidgets()
-        guard syncEnabled else { return }
+        guard syncEnabled, !isSyncing else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+        lastSyncAttempt = .now
         syncStatus = await cloud.accountStatus()
-        guard syncStatus == .available else { return }
+        guard syncStatus == .available else {
+            lastSyncError = "iCloud not available: \(syncStatus)"
+            defaults.set(lastSyncError, forKey: "lastSyncError")
+            return
+        }
         let payload = currentPayload
         do {
-            try await cloud.publish(payload)
+            try await withTimeout(seconds: 60) { try await self.cloud.publish(payload) }
             lastSyncPush = .now
             lastSyncError = nil
+        } catch is TimeoutError {
+            lastSyncError = "CloudKit did not answer within 60 s"
         } catch {
             lastSyncError = error.localizedDescription
         }
