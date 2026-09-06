@@ -56,7 +56,10 @@ final class AppModel {
         didSet { defaults.set(refreshIntervalMinutes, forKey: "refreshIntervalMinutes"); scheduleRefresh() }
     }
     var warnAtPercent: Int {
-        didSet { defaults.set(warnAtPercent, forKey: "warnAtPercent") }
+        didSet { defaults.set(warnAtPercent, forKey: "warnAtPercent"); alerts.warnAtPercent = warnAtPercent }
+    }
+    var notifyOnReset: Bool {
+        didSet { defaults.set(notifyOnReset, forKey: "notifyOnReset"); alerts.notifyOnReset = notifyOnReset }
     }
     var launchAtLogin: Bool {
         didSet { applyLaunchAtLogin() }
@@ -111,13 +114,18 @@ final class AppModel {
     /// Cost scanning reads hundreds of MB of logs on a cold start and pages Cursor's dashboard; 15 min is plenty.
     private let costInterval: TimeInterval = 15 * 60
     private var timer: Timer?
-    private var warned: Set<String> = []
+    private var alerts: QuotaAlertEngine
+    private let notifications = NotificationCoordinator()
 
     init() {
         let stored = defaults.stringArray(forKey: "enabledProviders")?.compactMap(ProviderID.init(rawValue:))
         enabledProviders = stored.map(Set.init) ?? Set(ProviderID.allCases)
         refreshIntervalMinutes = max(1, defaults.object(forKey: "refreshIntervalMinutes") as? Int ?? 5)
         warnAtPercent = defaults.object(forKey: "warnAtPercent") as? Int ?? 80
+        notifyOnReset = defaults.object(forKey: "notifyOnReset") as? Bool ?? true
+        alerts = QuotaAlertEngine(warnAtPercent: defaults.object(forKey: "warnAtPercent") as? Int ?? 80,
+                                  notifyOnReset: defaults.object(forKey: "notifyOnReset") as? Bool ?? true,
+                                  warned: Set(defaults.stringArray(forKey: "warnedKeys") ?? []))
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
@@ -300,29 +308,16 @@ final class AppModel {
         }
     }
 
-    /// One notification per window per crossing of the threshold; resets once the window drops back under.
+    /// Threshold crossings and resets, via the shared alert engine. Snooze comes back from the notification action.
     private func notifyIfNeeded() {
-        let center = UNUserNotificationCenter.current()
-        for instance in visibleInstances {
-            guard let snapshot = states[instance.id]?.snapshot else { continue }
-            for window in snapshot.windows {
-                let key = "\(instance.id)/\(window.id)"
-                if window.usedPercent >= Double(warnAtPercent) {
-                    guard !warned.contains(key) else { continue }
-                    warned.insert(key)
-                    let content = UNMutableNotificationContent()
-                    content.title = "\(title(for: instance)) \(window.title) at \(Int(window.usedPercent))%"
-                    if let reset = window.resetsAt {
-                        content.body = "Resets \(reset.formatted(.relative(presentation: .named)))"
-                    }
-                    center.requestAuthorization(options: [.alert]) { granted, _ in
-                        guard granted else { return }
-                        center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
-                    }
-                } else {
-                    warned.remove(key)
-                }
-            }
-        }
+        var titles: [String: String] = [:]
+        for instance in visibleInstances { titles[instance.id] = title(for: instance) }
+        let snapshots = visibleInstances.compactMap { states[$0.id]?.snapshot }
+        let due = alerts.evaluate(snapshots: snapshots, titles: titles)
+        defaults.set(alerts.warned.sorted(), forKey: "warnedKeys")
+        guard !due.isEmpty, warnAtPercent <= 100 else { return }
+        notifications.onSnooze = { [weak self] key in self?.alerts.snooze(key: key) }
+        notifications.deliver(due)
     }
+
 }

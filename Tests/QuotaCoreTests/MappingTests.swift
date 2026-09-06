@@ -147,3 +147,18 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.seat == nil)
     #expect(s.account == "me@example.com")
 }
+
+@Test func alertEngineThresholdAndReset() {
+    var engine = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: true)
+    func snap(_ pct: Double) -> UsageSnapshot {
+        UsageSnapshot(provider: .codex, account: nil, plan: nil, windows: [UsageWindow(id: "weekly", kind: .weekly, title: "Weekly", usedPercent: pct, resetsAt: nil)])
+    }
+    #expect(engine.evaluate(snapshots: [snap(50)]).isEmpty)
+    let first = engine.evaluate(snapshots: [snap(95)])
+    #expect(first.count == 1 && first[0].kind == .threshold)
+    #expect(engine.evaluate(snapshots: [snap(97)]).isEmpty)          // no repeat while above
+    let reset = engine.evaluate(snapshots: [snap(2)])
+    #expect(reset.count == 1 && reset[0].kind == .reset)
+    engine.snooze(key: "codex/weekly")
+    #expect(engine.evaluate(snapshots: [snap(99)]).isEmpty)          // snoozed
+}

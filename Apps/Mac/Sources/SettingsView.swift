@@ -69,6 +69,8 @@ struct SettingsView: View {
                     Text("80%").tag(80)
                     Text("90%").tag(90)
                 }
+                Toggle("Notify when a window resets", isOn: $model.notifyOnReset)
+                    .disabled(model.warnAtPercent > 100)
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
             }
             Section("iCloud") {
