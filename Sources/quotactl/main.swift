@@ -27,6 +27,11 @@ if CommandLine.arguments.contains("--cost") {
     print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
     exit(0)
 }
+if CommandLine.arguments.contains("--codex-cli") {
+    let result = try await CodexCLI.readRateLimits()
+    print(result.map { String(decoding: $0, as: UTF8.self) } ?? "codex CLI not found")
+    exit(0)
+}
 if CommandLine.arguments.contains("--keychain") {
     for e in ClaudeCredentials.keychainEntries() {
         print("\(e.service)  created \(e.created?.formatted() ?? "?")  modified \(e.modified?.formatted() ?? "?")")

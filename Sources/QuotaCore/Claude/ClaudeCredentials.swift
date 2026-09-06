@@ -7,6 +7,7 @@ import Security
 /// Claude Code owns and rotates that item; we never write to it.
 public struct ClaudeCredentials: Sendable {
     let accessToken: String
+    var refreshToken: String? = nil
     let expiresAt: Date?
     let subscriptionType: String?
 
@@ -106,6 +107,7 @@ public struct ClaudeCredentials: Sendable {
         let expiresMs = oauth["expiresAt"] as? Double
         return ClaudeCredentials(
             accessToken: token,
+            refreshToken: oauth["refreshToken"] as? String,
             expiresAt: expiresMs.map { Date(timeIntervalSince1970: $0 / 1000) },
             subscriptionType: oauth["subscriptionType"] as? String)
     }

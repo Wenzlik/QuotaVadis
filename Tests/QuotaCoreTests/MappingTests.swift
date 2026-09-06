@@ -120,3 +120,15 @@ private func fixture(_ name: String) throws -> Data {
     #expect(dates.count == 2)
     #expect(dates.first! < dates.last!)
 }
+
+@Test func claudeRefreshTokenParsed() throws {
+    let json = #"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":1893456000000}}"#
+    let c = try ClaudeCredentials.parse(Data(json.utf8))
+    #expect(c.refreshToken == "r")
+}
+
+@Test func codexBinaryLookupHonoursPath() {
+    let url = CodexCLI.binaryURL(environment: ["PATH": "/nonexistent"])
+    // Either a standard install location resolves or nothing does; never a path from the bogus PATH entry.
+    #expect(url == nil || !url!.path.hasPrefix("/nonexistent"))
+}

@@ -8,7 +8,13 @@ public struct CodexUsageFetcher: UsageFetcher {
     public func isAvailable() -> Bool { CodexCredentials.isAvailable() }
 
     public func fetch() async throws -> UsageSnapshot {
-        let creds = try CodexCredentials.load()
+        let loaded = try CodexCredentials.load()
+        let creds: CodexCredentials
+        if let expiry = loaded.expiresAt, expiry < .now.addingTimeInterval(120) {
+            creds = try await Self.refreshViaCLI(previous: loaded)
+        } else {
+            creds = loaded
+        }
         async let usageData = fetchRaw(creds)
         async let resetData = try? HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!, headers: Self.headers(creds))
         let response = try HTTP.decode(CodexUsageResponse.self, from: try await usageData)
@@ -24,6 +30,18 @@ public struct CodexUsageFetcher: UsageFetcher {
         return snapshot
     }
 
+    /// Let the Codex CLI refresh `auth.json` (it owns the refresh token), then re-read the file.
+    static func refreshViaCLI(previous: CodexCredentials) async throws -> CodexCredentials {
+        do {
+            guard try await CodexCLI.readRateLimits() != nil else { throw ProviderError.tokenExpired }
+        } catch let error as ProviderError {
+            throw error == .tokenExpired ? error : ProviderError.tokenExpired
+        }
+        let fresh = try CodexCredentials.load()
+        if let expiry = fresh.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
+        return fresh
+    }
+
     private static func headers(_ creds: CodexCredentials) -> [String: String] {
         var headers = ["Authorization": "Bearer \(creds.accessToken)", "User-Agent": "QuotaVadis"]
         if let id = creds.accountID { headers["ChatGPT-Account-Id"] = id }
@@ -34,7 +52,13 @@ public struct CodexUsageFetcher: UsageFetcher {
 
     private func fetchRaw(_ creds: CodexCredentials) async throws -> Data {
         if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
-        return try await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/usage")!, headers: Self.headers(creds))
+        do {
+            return try await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/usage")!, headers: Self.headers(creds))
+        } catch ProviderError.unauthorized {
+            // Token revoked server-side before its expiry: one CLI-driven refresh, then retry once.
+            let fresh = try await Self.refreshViaCLI(previous: creds)
+            return try await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/usage")!, headers: Self.headers(fresh))
+        }
     }
 
     static func snapshot(from r: CodexUsageResponse, account: String?, fallbackPlan: String?) -> UsageSnapshot {

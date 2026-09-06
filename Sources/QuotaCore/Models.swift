@@ -146,7 +146,7 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
         switch self {
         case .notInstalled: "Not installed on this Mac"
         case .notLoggedIn: "Not logged in"
-        case .tokenExpired: "Session expired, open the tool once to refresh"
+        case .tokenExpired: "Session expired. Open the tool once so it refreshes its login"
         case .unauthorized: "Token rejected, log in again"
         case .rateLimited: "Usage API is rate limited, retrying later"
         case .http(let code): "HTTP \(code)"

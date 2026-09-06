@@ -15,8 +15,18 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 
     public func isAvailable() -> Bool { keychainService == nil ? ClaudeCredentials.isAvailable() : true }
 
+    /// Extra profiles: use our refreshed copy and refresh when expired. Primary: Claude Code's item as-is.
+    private func credentials() async throws -> ClaudeCredentials {
+        guard let keychainService else { return try ClaudeCredentials.load() }
+        let creds = try ClaudeTokenRefresher.current(service: keychainService)
+        if let expiry = creds.expiresAt, expiry < .now.addingTimeInterval(60) {
+            return try await ClaudeTokenRefresher.refresh(service: keychainService, using: creds)
+        }
+        return creds
+    }
+
     public func fetch() async throws -> UsageSnapshot {
-        let creds = try ClaudeCredentials.load(service: keychainService)
+        let creds = try await credentials()
         // Usage is required; profile (seat, email) is best-effort.
         async let usageData = fetchRaw(creds)
         async let profileData = try? HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/profile")!, headers: Self.headers(creds))
@@ -27,7 +37,7 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         return snapshot
     }
 
-    public func fetchRaw() async throws -> Data { try await fetchRaw(try ClaudeCredentials.load(service: keychainService)) }
+    public func fetchRaw() async throws -> Data { try await fetchRaw(try await credentials()) }
 
     private static func headers(_ creds: ClaudeCredentials) -> [String: String] {
         ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
