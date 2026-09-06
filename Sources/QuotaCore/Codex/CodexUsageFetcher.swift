@@ -75,24 +75,27 @@ public struct CodexUsageFetcher: UsageFetcher {
 }
 
 extension CodexUsageFetcher {
-    /// The seat suffix of a workspace plan: "self_serve_business_prolite" → "Pro Lite". nil for personal plans.
+    /// The seat suffix of a workspace plan. Verified on a real Team workspace: `self_serve_business_prolite`
+    /// is what ChatGPT shows as a Premium seat. nil for personal plans.
     static func seatLabel(_ raw: String) -> String? {
         let lower = raw.lowercased()
         guard let range = lower.range(of: "business_") ?? lower.range(of: "team_") ?? lower.range(of: "enterprise_") else { return nil }
         let suffix = lower[range.upperBound...]
         guard !suffix.isEmpty else { return nil }
         switch suffix {
-        case "prolite": return "Pro Lite"
-        case "pro": return "Pro"
-        default: return suffix.replacingOccurrences(of: "_", with: " ").capitalized
+        case "prolite", "premium": return "Premium seat"
+        case "standard", "lite": return "Standard seat"
+        case "pro": return "Pro seat"
+        default: return suffix.replacingOccurrences(of: "_", with: " ").capitalized + " seat"
         }
     }
 
-    /// "self_serve_business_prolite" → "Business", "plus" → "Plus".
+    /// "self_serve_business_prolite" → "Team" (OpenAI renamed the Team plan to Business in 2025; users still
+    /// see "Team" in ChatGPT), "plus" → "Plus".
     static func planLabel(_ raw: String) -> String {
         let lower = raw.lowercased()
         if lower.contains("enterprise") { return "Enterprise" }
-        if lower.contains("business") || lower.contains("team") { return "Business" }
+        if lower.contains("business") || lower.contains("team") { return "Team" }
         if lower.contains("pro") { return "Pro" }
         if lower.contains("plus") { return "Plus" }
         if lower.contains("free") { return "Free" }

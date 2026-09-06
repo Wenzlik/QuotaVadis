@@ -25,7 +25,7 @@ private func fixture(_ name: String) throws -> Data {
     let s = CodexUsageFetcher.snapshot(from: r, account: nil, fallbackPlan: "self_serve_business_prolite")
     #expect(s.windows.map(\.kind) == [.weekly])
     #expect(s.windows.first?.title == "Weekly")
-    #expect(s.plan == "Business")
+    #expect(s.plan == "Team")
 }
 
 @Test func codexMapping() throws {
@@ -49,7 +49,7 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.windows[0].usedPercent == 67)
     #expect(s.windows[1].usedPercent == 60)
     #expect(s.windows[2].usedPercent == 7)
-    #expect(s.seat == "Team seat")
+    #expect(s.seat == nil)
     #expect(s.credits.map(\.id) == ["plan", "on-demand"])
     #expect(s.credits[0].used == 13.40)
     #expect(s.credits[0].limit == 20)   // 1340/2000 = 67% agrees with totalPercentUsed 67
@@ -81,7 +81,9 @@ private func fixture(_ name: String) throws -> Data {
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: "default_claude_max_20x") == "Max 20x")
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: nil) == nil)
     #expect(ClaudeUsageFetcher.planLabel("claude_team") == "Team")
-    #expect(CodexUsageFetcher.seatLabel("self_serve_business_prolite") == "Pro Lite")
+    #expect(CodexUsageFetcher.seatLabel("self_serve_business_prolite") == "Premium seat")
+    #expect(CodexUsageFetcher.planLabel("self_serve_business_prolite") == "Team")
+    #expect(CursorUsageFetcher.planLabel("enterprise") == "Team")
     #expect(CodexUsageFetcher.seatLabel("plus") == nil)
 }
 

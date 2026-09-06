@@ -9,9 +9,20 @@ public enum SharedStore {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)?.appendingPathComponent("payload.json")
     }
 
+    /// Last failure reason, for Settings and `defaults read`. nil after a successful write.
+    public private(set) static var lastError: String? {
+        get { UserDefaults.standard.string(forKey: "sharedStoreError") }
+        set { UserDefaults.standard.set(newValue, forKey: "sharedStoreError") }
+    }
+
     public static func write(_ payload: DevicePayload) {
-        guard let url, let data = try? payload.encoded() else { return }
-        try? data.write(to: url, options: .atomic)
+        guard let url else { lastError = "No App Group container for \(appGroup) (missing entitlement or profile)"; return }
+        do {
+            try payload.encoded().write(to: url, options: .atomic)
+            lastError = nil
+        } catch {
+            lastError = "\(url.path): \(error.localizedDescription)"
+        }
     }
 
     public static func read() -> DevicePayload? {

@@ -65,9 +65,20 @@ public struct CursorUsageFetcher: UsageFetcher {
             windows.append(UsageWindow(id: "grok-bot", kind: .weekly, title: "Grok Bot", usedPercent: pct,
                                        resetsAt: ISO8601DateFormatter.parseAny(bot.nextResetTimestampUtc)))
         }
-        let plan = r.membershipType.map { $0.replacingOccurrences(of: "_", with: " ").capitalized }
-        let seat = r.limitType.map { $0 == "team" ? "Team seat" : $0.capitalized + " seat" }
-        return UsageSnapshot(provider: .cursor, account: account, plan: plan, seat: seat, windows: windows, credits: credits)
+        // Cursor reports Teams workspaces as `enterprise`; the API exposes no seat type, so none is shown.
+        let plan = r.membershipType.map(Self.planLabel)
+        return UsageSnapshot(provider: .cursor, account: account, plan: plan, seat: nil, windows: windows, credits: credits)
+    }
+
+    static func planLabel(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "enterprise", "team", "teams", "business": "Team"
+        case "pro": "Pro"
+        case "pro_plus", "pro-plus": "Pro+"
+        case "ultra": "Ultra"
+        case "free", "hobby": "Hobby"
+        default: raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     private static func percent(used: Int?, limit: Int?) -> Double? {
