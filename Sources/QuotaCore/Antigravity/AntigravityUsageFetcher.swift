@@ -34,9 +34,21 @@ public struct AntigravityUsageFetcher: UsageFetcher {
                                            resetsAt: ISO8601DateFormatter.parseAny(bucket.resetTime)))
             }
         }
+        // `planInfo.planName` is legacy Windsurf/Codeium plan data ("Pro" even on a free Google account);
+        // the Antigravity tier lives in `userTier`.
         let us = status?.userStatus
-        return UsageSnapshot(provider: .antigravity, account: us?.email, plan: us?.planStatus?.planInfo?.planName,
-                             seat: us?.userTier?.name, windows: windows)
+        return UsageSnapshot(provider: .antigravity, account: us?.email, plan: Self.tierLabel(us?.userTier), seat: nil, windows: windows)
+    }
+
+    static func tierLabel(_ tier: AntigravityUserStatus.Tier?) -> String? {
+        guard let tier else { return nil }
+        switch tier.id?.lowercased() {
+        case "free-tier": return "Starter"
+        case "pro-tier", "ai-pro": return "AI Pro"
+        case "ultra-tier", "ai-ultra": return "AI Ultra"
+        default:
+            return tier.name?.replacingOccurrences(of: "Antigravity ", with: "").replacingOccurrences(of: " Quota", with: "") ?? tier.id
+        }
     }
 
     /// "Gemini Models" → "Gemini models · weekly", "Claude and GPT models" → "Claude & GPT · weekly".
@@ -146,7 +158,7 @@ struct AntigravityQuotaSummary: Decodable {
 struct AntigravityUserStatus: Decodable {
     struct PlanInfo: Decodable { let planName: String? }
     struct PlanStatus: Decodable { let planInfo: PlanInfo? }
-    struct Tier: Decodable { let name: String? }
+    struct Tier: Decodable { let id: String?; let name: String? }
     struct UserStatus: Decodable { let email: String?; let planStatus: PlanStatus?; let userTier: Tier? }
     let userStatus: UserStatus?
 }
