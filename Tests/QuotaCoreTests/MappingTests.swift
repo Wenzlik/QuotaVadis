@@ -25,7 +25,7 @@ private func fixture(_ name: String) throws -> Data {
     let s = CodexUsageFetcher.snapshot(from: r, account: nil, fallbackPlan: "self_serve_business_prolite")
     #expect(s.windows.map(\.kind) == [.weekly])
     #expect(s.windows.first?.title == "Weekly")
-    #expect(s.plan == "Team")
+    #expect(s.plan == "Business")
 }
 
 @Test func codexMapping() throws {
@@ -82,8 +82,13 @@ private func fixture(_ name: String) throws -> Data {
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: nil) == nil)
     #expect(ClaudeUsageFetcher.planLabel("claude_team") == "Team")
     #expect(CodexUsageFetcher.seatLabel("self_serve_business_prolite") == "Premium seat")
-    #expect(CodexUsageFetcher.planLabel("self_serve_business_prolite") == "Team")
+    #expect(CodexUsageFetcher.planLabel("self_serve_business_prolite") == "Business")
+    #expect(CodexUsageFetcher.seatLabel("self_serve_business") == "Standard seat")
+    #expect(CodexUsageFetcher.seatLabel("enterprise") == "Standard seat")
     #expect(CursorUsageFetcher.planLabel("enterprise") == "Team")
+    #expect(CursorUsageFetcher.seatLabel(billingTier: "TEAM_MEMBER_BILLING_TIER_TIER_1000") == "Standard seat")
+    #expect(CursorUsageFetcher.seatLabel(billingTier: "TEAM_MEMBER_BILLING_TIER_TIER_2000") == "Premium seat")
+    #expect(CursorUsageFetcher.seatLabel(billingTier: nil) == nil)
     #expect(CodexUsageFetcher.seatLabel("plus") == nil)
 }
 

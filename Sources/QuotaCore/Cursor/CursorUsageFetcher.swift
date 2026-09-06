@@ -13,9 +13,36 @@ public struct CursorUsageFetcher: UsageFetcher {
         async let summaryData = fetchRaw(creds)
         async let botData = try? HTTP.post(URL(string: "https://cursor.com/api/dashboard/get-sand-usage-status")!, json: "{}",
                                            headers: Self.headers(creds))
+        async let seatData = Self.fetchSeat(creds)
         let response = try HTTP.decode(CursorUsageSummary.self, from: try await summaryData)
         let bot = await botData.flatMap { try? JSONDecoder().decode(CursorBotUsage.self, from: $0) }
-        return Self.snapshot(from: response, bot: bot, account: creds.email)
+        var snapshot = Self.snapshot(from: response, bot: bot, account: creds.email)
+        snapshot.seat = await seatData
+        return snapshot
+    }
+
+    /// Team seat tier: `/api/dashboard/teams` → the team this user is a direct member of →
+    /// `/api/dashboard/team` → this user's `billingTier`. Verified: TIER_1000 = Standard seat.
+    private static func fetchSeat(_ creds: CursorCredentials) async -> String? {
+        guard let teamsData = try? await HTTP.post(URL(string: "https://cursor.com/api/dashboard/teams")!, json: "{}", headers: headers(creds)),
+              let teams = try? JSONDecoder().decode(CursorTeams.self, from: teamsData),
+              let team = teams.teams.first(where: { $0.isDirectMember == true }) ?? teams.teams.first,
+              let teamData = try? await HTTP.post(URL(string: "https://cursor.com/api/dashboard/team")!, json: #"{"teamId":\#(team.id)}"#, headers: headers(creds)),
+              let detail = try? JSONDecoder().decode(CursorTeamDetail.self, from: teamData),
+              let me = detail.teamMembers.first(where: { $0.id == detail.userId }) else { return nil }
+        return seatLabel(billingTier: me.billingTier)
+    }
+
+    static func seatLabel(billingTier: String?) -> String? {
+        guard let billingTier else { return nil }
+        switch billingTier.uppercased() {
+        case "TEAM_MEMBER_BILLING_TIER_TIER_1000": return "Standard seat"
+        case "TEAM_MEMBER_BILLING_TIER_TIER_2000": return "Premium seat"
+        default:
+            // Unknown tier: surface the number rather than hide it.
+            let digits = billingTier.split(separator: "_").last.map(String.init) ?? billingTier
+            return "Tier \(digits) seat"
+        }
     }
 
     private static func headers(_ creds: CursorCredentials) -> [String: String] {
@@ -104,6 +131,17 @@ struct CursorUsageSummary: Decodable {
     let membershipType: String?
     let limitType: String?
     let individualUsage: Individual?
+}
+
+struct CursorTeams: Decodable {
+    struct Team: Decodable { let id: Int; let isDirectMember: Bool? }
+    let teams: [Team]
+}
+
+struct CursorTeamDetail: Decodable {
+    struct Member: Decodable { let id: Int; let billingTier: String? }
+    let teamMembers: [Member]
+    let userId: Int
 }
 
 struct CursorBotUsage: Decodable {

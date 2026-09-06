@@ -23,6 +23,15 @@ public enum DebugProbes {
                 "Cookie": creds.cookieHeader, "Origin": "https://cursor.com", "User-Agent": "QuotaVadis",
             ])) ?? Data("error".utf8)
             out.append(("Cursor auth/me", data))
+            let h = ["Cookie": creds.cookieHeader, "Origin": "https://cursor.com", "Referer": "https://cursor.com/dashboard", "User-Agent": "QuotaVadis"]
+            let teamID = ProcessInfo.processInfo.environment["CURSOR_TEAM_ID"] ?? "0"
+            for path in ["/api/dashboard/team", "/api/dashboard/get-team-spend", "/api/dashboard/get-team-members", "/api/dashboard/get-team-member-info", "/api/dashboard/get-billing-info", "/api/dashboard/get-plan-info"] {
+                let url = URL(string: "https://cursor.com" + path)!
+                var d = try? await HTTP.post(url, json: #"{"teamId":\#(teamID)}"#, headers: h)
+                if d == nil { d = try? await HTTP.get(url, headers: h) }
+                out.append(("Cursor " + path, d ?? Data("error".utf8)))
+                continue
+            }
         }
         return out
     }
