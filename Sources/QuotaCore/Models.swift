@@ -2,7 +2,7 @@ import Foundation
 
 /// The three tools QuotaVadis tracks. Raw values are stable identifiers used in sync records.
 public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
-    case claude, codex, cursor
+    case claude, codex, cursor, antigravity
 
     public var id: String { rawValue }
 
@@ -11,6 +11,17 @@ public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .cursor: "Cursor"
+        case .antigravity: "Antigravity"
+        }
+    }
+
+    /// Short label for tight spaces (widget tabs).
+    public var shortName: String {
+        switch self {
+        case .claude: "Claude"
+        case .codex: "Codex"
+        case .cursor: "Cursor"
+        case .antigravity: "AG"
         }
     }
 }
@@ -141,6 +152,7 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
     case decoding(String)
     case network(String)
     case keychainDenied
+    case appNotRunning
 
     public var errorDescription: String? {
         switch self {
@@ -153,6 +165,7 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
         case .decoding(let why): "Unexpected response: \(why)"
         case .network(let why): "Network: \(why)"
         case .keychainDenied: "Keychain access denied. Click Refresh and choose Always Allow"
+        case .appNotRunning: "Open the app once; its quota is only readable while it runs"
         }
     }
 }

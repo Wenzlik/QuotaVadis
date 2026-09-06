@@ -132,3 +132,17 @@ private func fixture(_ name: String) throws -> Data {
     // Either a standard install location resolves or nothing does; never a path from the bogus PATH entry.
     #expect(url == nil || !url!.path.hasPrefix("/nonexistent"))
 }
+
+@Test func antigravityMapping() throws {
+    let summary = #"{"response":{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-weekly","displayName":"Weekly Limit Remaining","window":"weekly","remainingFraction":0.75,"resetTime":"2026-09-13T16:59:01Z"}]},{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-weekly","window":"weekly","remainingFraction":1,"resetTime":"2026-09-13T16:59:01Z"}]}]}}"#
+    let status = #"{"userStatus":{"email":"me@example.com","planStatus":{"planInfo":{"planName":"Pro"}},"userTier":{"name":"Antigravity Starter Quota"}}}"#
+    let s = AntigravityUsageFetcher.snapshot(summary: try JSONDecoder().decode(AntigravityQuotaSummary.self, from: Data(summary.utf8)),
+                                             status: try JSONDecoder().decode(AntigravityUserStatus.self, from: Data(status.utf8)))
+    #expect(s.windows.map(\.id) == ["gemini-weekly", "3p-weekly"])
+    #expect(s.windows[0].title == "Gemini models")
+    #expect(abs(s.windows[0].usedPercent - 25) < 0.001)
+    #expect(s.windows[1].usedPercent == 0)
+    #expect(s.windows[0].kind == .weekly)
+    #expect(s.plan == "Pro")
+    #expect(s.account == "me@example.com")
+}

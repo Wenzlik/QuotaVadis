@@ -19,7 +19,7 @@ public enum ProviderState: Sendable, Hashable {
 /// Results are keyed by instance id (`claude`, `claude:<suffix>`, `codex`, `cursor`).
 public actor UsageService {
     public static func defaultFetchers(extraClaudeServices: [String] = []) -> [any UsageFetcher] {
-        [ClaudeUsageFetcher()] + extraClaudeServices.map { ClaudeUsageFetcher(keychainService: $0) } + [CodexUsageFetcher(), CursorUsageFetcher()]
+        [ClaudeUsageFetcher()] + extraClaudeServices.map { ClaudeUsageFetcher(keychainService: $0) } + [CodexUsageFetcher(), CursorUsageFetcher(), AntigravityUsageFetcher()]
     }
 
     private var fetchers: [any UsageFetcher]

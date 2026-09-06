@@ -44,6 +44,7 @@ struct FixedProviderWidget {
 struct ClaudeWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .claude).configuration } }
 struct CodexWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .codex).configuration } }
 struct CursorWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .cursor).configuration } }
+struct AntigravityWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .antigravity).configuration } }
 
 // MARK: - Switcher: every tool in one compact widget, tabs on top
 
@@ -146,7 +147,7 @@ struct SwitcherWidgetView: View {
     }
 
     private func short(_ p: ProviderID) -> String {
-        switch p { case .claude: family == .systemSmall ? "Claude" : "Claude Code"; case .codex: "Codex"; case .cursor: "Cursor" }
+        family == .systemSmall || available.count > 3 ? p.shortName : p.displayName
     }
 
     private func compact(_ s: UsageSnapshot) -> some View {

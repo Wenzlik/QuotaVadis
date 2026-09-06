@@ -41,11 +41,18 @@ public struct CredentialStatus: Sendable, Hashable {
         }
     }
 
+    public static func antigravity() -> CredentialStatus {
+        let installed = AntigravityUsageFetcher().isAvailable()
+        return CredentialStatus(source: "Antigravity.app local language server (while the app runs)", expiresAt: nil,
+                                problem: installed ? nil : "Antigravity is not installed on this Mac")
+    }
+
     public static func status(for provider: ProviderID) -> CredentialStatus {
         switch provider {
         case .claude: claude()
         case .codex: codex()
         case .cursor: cursor()
+        case .antigravity: antigravity()
         }
     }
 

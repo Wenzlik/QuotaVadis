@@ -9,6 +9,7 @@ struct QuotaWidgetBundle: WidgetBundle {
         ClaudeWidget()
         CodexWidget()
         CursorWidget()
+        AntigravityWidget()
         ProviderWidget()
     }
 }
