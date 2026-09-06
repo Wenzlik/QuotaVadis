@@ -10,7 +10,7 @@ public struct CodexUsageFetcher: UsageFetcher {
     public func fetch() async throws -> UsageSnapshot {
         let creds = try CodexCredentials.load()
         let response = try HTTP.decode(CodexUsageResponse.self, from: try await fetchRaw(creds))
-        return Self.snapshot(from: response, account: creds.workspace ?? creds.email, fallbackPlan: creds.plan)
+        return Self.snapshot(from: response, account: creds.email, fallbackPlan: creds.plan)
     }
 
     public func fetchRaw() async throws -> Data { try await fetchRaw(try CodexCredentials.load()) }

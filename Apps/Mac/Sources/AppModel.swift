@@ -34,8 +34,10 @@ enum MenuBarSource: Hashable, Codable {
 @Observable
 final class AppModel {
     var states: [ProviderID: ProviderState] = [:]
+    var costs: [ProviderID: CostReport] = [:]
     var lastRefresh: Date?
     var isRefreshing = false
+    var isRefreshingCosts = false
 
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
@@ -63,6 +65,10 @@ final class AppModel {
 
     private let defaults = UserDefaults.standard
     private let service = UsageService()
+    private let costService = CostService()
+    private var lastCostRefresh: Date?
+    /// Cost scanning reads hundreds of MB of logs on a cold start and pages Cursor's dashboard; 15 min is plenty.
+    private let costInterval: TimeInterval = 15 * 60
     private var timer: Timer?
     private var warned: Set<String> = []
 
@@ -120,6 +126,18 @@ final class AppModel {
         states.merge(result) { _, new in new }
         lastRefresh = .now
         notifyIfNeeded()
+        if lastCostRefresh.map({ Date.now.timeIntervalSince($0) > costInterval }) ?? true {
+            Task { await refreshCosts() }
+        }
+    }
+
+    func refreshCosts() async {
+        guard !isRefreshingCosts else { return }
+        isRefreshingCosts = true
+        defer { isRefreshingCosts = false }
+        let result = await costService.refresh(enabled: enabledProviders)
+        costs.merge(result) { _, new in new }
+        lastCostRefresh = .now
     }
 
     private func scheduleRefresh() {

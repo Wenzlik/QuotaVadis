@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 import QuotaCore
 
@@ -15,7 +16,7 @@ struct MenuPanel: View {
                     .frame(height: 160)
             } else {
                 ForEach(model.visibleProviders) { id in
-                    ProviderRow(provider: id, state: model.states[id] ?? .unavailable,
+                    ProviderRow(provider: id, state: model.states[id] ?? .unavailable, cost: model.costs[id],
                                 isExpanded: model.expanded.contains(id)) {
                         withAnimation(.snappy(duration: 0.2)) {
                             if model.expanded.contains(id) { model.expanded.remove(id) } else { model.expanded.insert(id) }
@@ -42,7 +43,7 @@ struct MenuPanel: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+            Button { Task { await model.refresh(); await model.refreshCosts() } } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh now")
             Button { openSettings() } label: { Image(systemName: "gearshape") }
                 .help("Settings")
@@ -64,6 +65,7 @@ struct MenuPanel: View {
 struct ProviderRow: View {
     let provider: ProviderID
     let state: ProviderState
+    let cost: CostReport?
     let isExpanded: Bool
     let toggle: () -> Void
 
@@ -112,6 +114,10 @@ struct ProviderRow: View {
                         DetailLine(title: "Last error", value: error.localizedDescription).foregroundStyle(.orange)
                     }
                     DetailLine(title: "Updated", value: snapshot.fetchedAt.formatted(.relative(presentation: .named)))
+                    if let cost {
+                        Divider().padding(.vertical, 2)
+                        CostSection(report: cost)
+                    }
                 }
             } else if case .failed(let error, _) = state {
                 Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
@@ -122,6 +128,63 @@ struct ProviderRow: View {
     /// Collapsed rows show the session and the weekly/monthly bar only.
     private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
         snapshot.windows.filter { $0.kind != .model }
+    }
+}
+
+/// Today / 30-day spend and tokens, a daily bar chart, top model. Same numbers `quotactl --cost` prints.
+struct CostSection: View {
+    let report: CostReport
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                GridRow {
+                    stat("Today", money(report.today?.costUSD ?? 0))
+                    stat("30d cost", money(report.totalCostUSD))
+                }
+                GridRow {
+                    stat("Today tokens", tokens(report.today?.tokens.total ?? 0))
+                    stat("30d tokens", tokens(report.totalTokens))
+                }
+            }
+            Chart(report.days) { day in
+                BarMark(x: .value("Day", day.id), y: .value("USD", day.costUSD))
+                    .foregroundStyle(day.id == report.days.last?.id ? Color.accentColor : Color.secondary.opacity(0.45))
+                    .cornerRadius(1.5)
+            }
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { value in
+                    AxisValueLabel { if let v = value.as(Double.self) { Text(money(v, digits: 0)).font(.caption2) } }
+                }
+            }
+            .frame(height: 44)
+            if let top = report.topModel {
+                DetailLine(title: "Top model", value: top.id)
+            }
+            Text(report.source).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.callout.weight(.medium).monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func money(_ v: Double, digits: Int = 2) -> String {
+        v.formatted(.currency(code: "USD").precision(.fractionLength(digits)))
+    }
+
+    private func tokens(_ n: Int) -> String {
+        switch n {
+        case 1_000_000_000...: String(format: "%.1fB", Double(n) / 1e9)
+        case 1_000_000...: String(format: "%.0fM", Double(n) / 1e6)
+        case 1_000...: String(format: "%.0fK", Double(n) / 1e3)
+        default: "\(n)"
+        }
     }
 }
 

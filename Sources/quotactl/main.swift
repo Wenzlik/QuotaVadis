@@ -13,6 +13,20 @@ if CommandLine.arguments.contains("--profile") {
     }
     exit(0)
 }
+if CommandLine.arguments.contains("--cost") {
+    let started = Date()
+    let reports = await CostService().refresh(enabled: Set(ProviderID.allCases))
+    for id in ProviderID.allCases {
+        guard let r = reports[id] else { print("\(id.displayName): no cost data"); continue }
+        let today = r.today
+        print("\(id.displayName): today $\(String(format: "%.2f", today?.costUSD ?? 0)) · \(today?.tokens.total ?? 0) tok · 30d $\(String(format: "%.2f", r.totalCostUSD)) · \(r.totalTokens) tok")
+        for m in r.byModel.prefix(4) { print("   \(m.id.padding(toLength: 28, withPad: " ", startingAt: 0)) $\(String(format: "%8.2f", m.costUSD))  \(m.tokens.total) tok  \(m.requests) req") }
+        for pr in r.byProject.prefix(3) { print("   proj \(pr.id)  $\(String(format: "%.2f", pr.costUSD))") }
+        print("   last 7 days: " + r.days.suffix(7).map { String(format: "%.0f", $0.costUSD) }.joined(separator: " "))
+    }
+    print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
+    exit(0)
+}
 if CommandLine.arguments.contains("--raw") {
     for fetcher in UsageService.allFetchers where fetcher.isAvailable() {
         print("=== \(fetcher.provider.displayName)")

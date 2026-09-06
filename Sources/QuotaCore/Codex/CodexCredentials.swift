@@ -8,7 +8,7 @@ struct CodexCredentials: Sendable {
     let email: String?
     let plan: String?
     let idToken: String?
-    /// Default workspace title from the id_token ("GoodData Test").
+    /// Default API-platform organization from the id_token. NOT the ChatGPT workspace; informational only.
     let workspace: String?
 
     static var authFileURL: URL {

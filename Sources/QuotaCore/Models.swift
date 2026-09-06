@@ -114,7 +114,7 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
         case .http(let code): "HTTP \(code)"
         case .decoding(let why): "Unexpected response: \(why)"
         case .network(let why): "Network: \(why)"
-        case .keychainDenied: "Keychain access denied"
+        case .keychainDenied: "Keychain access denied. Click Refresh and choose Always Allow"
         }
     }
 }
