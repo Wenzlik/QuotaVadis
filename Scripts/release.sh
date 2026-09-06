@@ -9,6 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=${1:?version required, e.g. 0.1.0}
+SKIP_BUILD=${2:-}
 BUILD=$(date -u +%Y%m%d%H%M)
 export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
 TEAM=8PW5FWH7P2
@@ -17,31 +18,54 @@ KEY_ID=C7WD5C4FK2
 ISSUER=ca252666-8b4c-45a8-88b2-78606d80340d
 P8=~/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8
 WEB=../zmrhal_web/public/quotavadis
-DIST=dist; rm -rf "$DIST"; mkdir -p "$DIST" "$WEB"
-
+DIST=dist; mkdir -p "$DIST" "$WEB"
+if [ "$SKIP_BUILD" = "--skip-build" ]; then
+  APP="$DIST/export/QuotaVadis.app"
+  BUILD=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Contents/Info.plist")
+else
+rm -rf "$DIST"; mkdir -p "$DIST"
 xcodegen generate >/dev/null
 ARCHIVE="$DIST/QuotaVadis.xcarchive"
+# Archive with automatic (development) signing, then let -exportArchive re-sign for Developer ID.
+# That step creates/downloads the Developer ID provisioning profile carrying iCloud + App Group.
 xcodebuild -project QuotaVadis.xcodeproj -scheme QuotaVadis -configuration Release \
-  -archivePath "$ARCHIVE" -derivedDataPath .build/dd \
+  -archivePath "$ARCHIVE" -derivedDataPath .build/dd -allowProvisioningUpdates \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
-  CODE_SIGN_IDENTITY="$IDENTITY" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$TEAM \
-  PROVISIONING_PROFILE_SPECIFIER="" OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime" \
-  archive 2>&1 | grep -E 'error:|ARCHIVE' 
+  archive 2>&1 | grep -E 'error:|ARCHIVE'
 
-APP="$ARCHIVE/Products/Applications/QuotaVadis.app"
-# Sparkle's XPC services and framework are signed by the archive step; verify the whole bundle.
+cat > "$DIST/export.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>developer-id</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>teamID</key><string>$TEAM</string>
+  <key>destination</key><string>export</string>
+</dict></plist>
+PLIST
+xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "$DIST/export" \
+  -exportOptionsPlist "$DIST/export.plist" -allowProvisioningUpdates 2>&1 | grep -E 'error:|EXPORT'
+APP="$DIST/export/QuotaVadis.app"
 codesign --verify --deep --strict "$APP"
+# grep -c reads the whole stream; grep -q would SIGPIPE codesign and trip pipefail.
+[ "$(codesign -dvv "$APP" 2>&1 | grep -c 'Authority=Developer ID Application')" -ge 1 ] || { echo "not Developer ID signed"; exit 1; }
+fi
 
 ZIP="$DIST/QuotaVadis-$VERSION.zip"
-ditto -c -k --keepParent "$APP" "$ZIP"
-echo "notarizing…"
-xcrun notarytool submit "$ZIP" --key "$P8" --key-id $KEY_ID --issuer $ISSUER --wait 2>&1 | grep -E 'status|id:' | head -3
-xcrun stapler staple "$APP" >/dev/null
-rm "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
+if xcrun stapler validate "$APP" >/dev/null 2>&1; then
+  echo "already notarized and stapled"
+else
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "notarizing…"
+  xcrun notarytool submit "$ZIP" --key "$P8" --key-id $KEY_ID --issuer $ISSUER --wait 2>&1 | grep -E 'status|id:' | head -3
+  xcrun stapler staple "$APP" >/dev/null
+fi
+rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
 rm -rf .build/dd
 
-SIGN=$(find ~/Library/Developer/Xcode/DerivedData .build -type f -name sign_update 2>/dev/null | head -1)
-[ -n "$SIGN" ] || SIGN=$(find / -type f -name sign_update -path '*Sparkle*' 2>/dev/null | head -1)
+# Sparkle CLI tools: from the official release tarball (Scripts/sparkle-tools.sh installs them).
+SIGN=~/.local/share/sparkle-tools/sign_update
+[ -x "$SIGN" ] || { echo "sign_update missing: run Scripts/sparkle-tools.sh"; exit 1; }
 SIG=$("$SIGN" --account QuotaVadis "$ZIP" | tr -d '\n')   # sparkle:edSignature="…" length="…"
 SIZE=$(stat -f%z "$ZIP")
 DATE=$(date -R)
@@ -78,4 +102,5 @@ s = s.replace("  </channel>", item, 1)
 open(path, "w").write(s)
 PY
 cp "$ZIP" "$WEB/"
+cp "$ZIP" "$WEB/QuotaVadis-latest.zip"   # stable link for the website download button
 echo "release $VERSION ($BUILD) ready: $ZIP → $WEB (appcast updated). Deploy zmrhal_web to publish."
