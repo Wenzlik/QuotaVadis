@@ -4,6 +4,19 @@ import QuotaCore
 struct SettingsView: View {
     @Bindable var model: AppModel
 
+    private var syncDescription: String {
+        guard model.syncEnabled else { return "Usage and cost summaries stay on this Mac." }
+        switch model.syncStatus {
+        case .noAccount: return "Sign in to iCloud in System Settings to sync."
+        case .restricted: return "iCloud is restricted on this Mac."
+        case .unavailable(let why): return why
+        case .unknown, .available:
+            if let error = model.lastSyncError { return "Last push failed: \(error)" }
+            if let date = model.lastSyncPush { return "Last pushed \(date.formatted(.relative(presentation: .named))). Only derived numbers are synced, never credentials." }
+            return "Publishes this Mac's numbers to your iCloud private database for the iOS app. No credentials leave this Mac."
+        }
+    }
+
     var body: some View {
         Form {
             Section("Track") {
@@ -36,6 +49,10 @@ struct SettingsView: View {
                     Text("90%").tag(90)
                 }
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
+            }
+            Section("iCloud") {
+                Toggle("Sync to iCloud", isOn: $model.syncEnabled)
+                Text(syncDescription).font(.caption).foregroundStyle(.secondary)
             }
             Section("Cost estimates") {
                 Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)

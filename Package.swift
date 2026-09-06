@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         .target(
             name: "QuotaCore",
-            linkerSettings: [.linkedLibrary("sqlite3", .when(platforms: [.macOS]))]),
+            linkerSettings: [.linkedLibrary("sqlite3", .when(platforms: [.macOS])), .linkedFramework("CloudKit")]),
         .executableTarget(name: "quotactl", dependencies: ["QuotaCore"]),
         .testTarget(name: "QuotaCoreTests", dependencies: ["QuotaCore"], resources: [.copy("Fixtures")]),
     ])

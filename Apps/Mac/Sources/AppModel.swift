@@ -39,6 +39,11 @@ final class AppModel {
     var isRefreshing = false
     var isRefreshingCosts = false
 
+    // iCloud sync
+    var syncStatus: CloudSync.Status = .unknown
+    var lastSyncPush: Date?
+    var lastSyncError: String?
+
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
         didSet { defaults.set(enabledProviders.map(\.rawValue).sorted(), forKey: "enabledProviders"); scheduleRefresh() }
@@ -66,6 +71,13 @@ final class AppModel {
     var fastModeAt2x: Bool {
         didSet { defaults.set(fastModeAt2x, forKey: "fastModeAt2x"); Task { lastCostRefresh = nil; await refreshCosts() } }
     }
+    /// Publish snapshots + cost reports to the iCloud private database for the iOS companion and other Macs.
+    var syncEnabled: Bool {
+        didSet {
+            defaults.set(syncEnabled, forKey: "syncEnabled")
+            Task { syncEnabled ? await publishToCloud() : await unpublishFromCloud() }
+        }
+    }
     /// Providers whose row is expanded to the full detail. Remembered across launches.
     var expanded: Set<ProviderID> {
         didSet { defaults.set(expanded.map(\.rawValue).sorted(), forKey: "expandedProviders") }
@@ -74,6 +86,8 @@ final class AppModel {
     private let defaults = UserDefaults.standard
     private let service = UsageService()
     private let costService = CostService()
+    private let cloud = CloudSync()
+    private var publishTask: Task<Void, Never>?
     private var lastCostRefresh: Date?
     /// Cost scanning reads hundreds of MB of logs on a cold start and pages Cursor's dashboard; 15 min is plenty.
     private let costInterval: TimeInterval = 15 * 60
@@ -90,6 +104,7 @@ final class AppModel {
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
         useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
+        syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
         expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()
         Task { await refresh() }
@@ -136,6 +151,7 @@ final class AppModel {
         states.merge(result) { _, new in new }
         lastRefresh = .now
         notifyIfNeeded()
+        schedulePublish()
         if lastCostRefresh.map({ Date.now.timeIntervalSince($0) > costInterval }) ?? true {
             Task { await refreshCosts() }
         }
@@ -148,6 +164,43 @@ final class AppModel {
         let result = await costService.refresh(enabled: enabledProviders, fastModeAt2x: fastModeAt2x)
         costs.merge(result) { _, new in new }
         lastCostRefresh = .now
+        schedulePublish()
+    }
+
+    // MARK: - iCloud
+
+    /// Coalesces the usage and cost publishes that land a few seconds apart into one record write.
+    private func schedulePublish() {
+        guard syncEnabled else { return }
+        publishTask?.cancel()
+        publishTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            await publishToCloud()
+        }
+    }
+
+    func publishToCloud() async {
+        guard syncEnabled else { return }
+        syncStatus = await cloud.accountStatus()
+        guard syncStatus == .available else { return }
+        let payload = DevicePayload(
+            deviceID: DeviceIdentity.id,
+            deviceName: DeviceInfo.name,
+            snapshots: ProviderID.allCases.compactMap { states[$0]?.snapshot },
+            costs: ProviderID.allCases.compactMap { costs[$0] })
+        do {
+            try await cloud.publish(payload)
+            lastSyncPush = .now
+            lastSyncError = nil
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func unpublishFromCloud() async {
+        try? await cloud.unpublish(deviceID: DeviceIdentity.id)
+        lastSyncPush = nil
     }
 
     private func scheduleRefresh() {

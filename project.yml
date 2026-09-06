@@ -40,3 +40,8 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Apps/Mac/QuotaVadis.entitlements
+    entitlements:
+      path: Apps/Mac/QuotaVadis.entitlements
+      properties:
+        com.apple.developer.icloud-services: [CloudKit]
+        com.apple.developer.icloud-container-identifiers: [iCloud.cz.zmrhal.QuotaVadis]
