@@ -45,9 +45,16 @@ public struct CursorUsageFetcher: UsageFetcher {
             if let pct = plan.apiPercentUsed {
                 windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd))
             }
-            if let used = plan.used {
-                credits.append(UsageCredits(id: "plan", title: "Plan allowance used", used: Double(used) / 100,
-                                            limit: plan.limit.map { Double($0) / 100 }, resetsAt: cycleEnd))
+            // On team/enterprise seats `used`/`limit` (cents) disagree with Cursor's own `totalPercentUsed`
+            // (e.g. 713/2000 = 36% vs 2.85%): the seat draws on a pooled team allowance and `limit` is a placeholder.
+            // Only show the dollar figure when it agrees with the percentage Cursor displays itself.
+            if let used = plan.used, let limit = plan.limit, limit > 0 {
+                let derived = Double(used) / Double(limit) * 100
+                if let shown = plan.totalPercentUsed, abs(shown - derived) > 1.5 {
+                    credits.append(UsageCredits(id: "plan", title: "Plan spend this cycle", used: Double(used) / 100, limit: nil, resetsAt: cycleEnd))
+                } else {
+                    credits.append(UsageCredits(id: "plan", title: "Plan allowance used", used: Double(used) / 100, limit: Double(limit) / 100, resetsAt: cycleEnd))
+                }
             }
         }
         if let od = r.individualUsage?.onDemand, od.enabled == true, let used = od.used {

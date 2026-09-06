@@ -52,9 +52,18 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.seat == "Team seat")
     #expect(s.credits.map(\.id) == ["plan", "on-demand"])
     #expect(s.credits[0].used == 13.40)
-    #expect(s.credits[0].limit == 20)
+    #expect(s.credits[0].limit == 20)   // 1340/2000 = 67% agrees with totalPercentUsed 67
     #expect(s.credits[1].usedPercent == 5)
     #expect(s.secondaryWindow?.id == "plan")
+}
+
+@Test func cursorPooledSeatHidesBogusLimit() throws {
+    let json = #"{"billingCycleEnd":"2026-09-22T17:25:37.000Z","membershipType":"enterprise","limitType":"team","individualUsage":{"plan":{"enabled":true,"used":713,"limit":2000,"totalPercentUsed":2.852}}}"#
+    let r = try JSONDecoder().decode(CursorUsageSummary.self, from: Data(json.utf8))
+    let s = CursorUsageFetcher.snapshot(from: r, account: nil)
+    #expect(s.windows.first?.usedPercent == 2.852)
+    #expect(s.credits.first?.title == "Plan spend this cycle")
+    #expect(s.credits.first?.limit == nil)
 }
 
 @Test func cursorGrokBot() throws {
