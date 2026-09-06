@@ -116,7 +116,7 @@ struct OverviewWidget: Widget {
             OverviewWidgetView(entry: entry).containerBackground(.background, for: .widget)
         }
         .configurationDisplayName("All tools")
-        .description("Claude Code, Codex and Cursor side by side.")
+        .description("Claude Code, Codex and Cursor side by side. Limits only, no cost estimates.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -127,25 +127,7 @@ struct OverviewWidgetView: View {
 
     var body: some View {
         if let payload = entry.payload, !payload.snapshots.isEmpty {
-            VStack(alignment: .leading, spacing: family == .systemLarge ? 12 : 8) {
-                ForEach(payload.snapshots) { s in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(s.provider.displayName).font(.caption.weight(.semibold))
-                            Spacer()
-                            if family == .systemLarge, let c = payload.cost(for: s.provider) {
-                                Text("today \(money(c.today?.costUSD ?? 0)) · 30d \(money(c.totalCostUSD))")
-                                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                            }
-                        }
-                        ForEach(s.windows.filter(\.prominent).prefix(family == .systemLarge ? 3 : 2)) { w in
-                            BarLine(title: w.title, percent: w.usedPercent, resetsAt: family == .systemLarge ? w.resetsAt : nil)
-                        }
-                    }
-                }
-                Spacer(minLength: 0)
-                Text("\(payload.deviceName) · \(payload.updatedAt, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary)
-            }
+            if family == .systemLarge { large(payload) } else { medium(payload) }
         } else {
             VStack(spacing: 4) {
                 Image(systemName: "flame").font(.title2)
@@ -154,7 +136,55 @@ struct OverviewWidgetView: View {
         }
     }
 
-    private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0))) }
+    /// Medium is ~155 pt tall: one line per tool, the highest window only, so three tools always fit.
+    private func medium(_ payload: DevicePayload) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(payload.snapshots.prefix(4)) { s in
+                if let w = s.worstWindow {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(s.provider.displayName).font(.caption.weight(.semibold))
+                            Text(w.title).font(.caption2).foregroundStyle(.secondary)
+                            Spacer()
+                            if let r = w.resetsAt { Text(r, style: .relative).font(.caption2).foregroundStyle(.tertiary) }
+                            Text("\(Int(w.usedPercent.rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(levelColor(w.usedPercent))
+                        }
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(.quaternary)
+                                Capsule().fill(levelColor(w.usedPercent)).frame(width: geo.size.width * min(1, max(0, w.usedPercent / 100)))
+                            }
+                        }
+                        .frame(height: 4)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            Text("\(payload.deviceName) · \(payload.updatedAt, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+        }
+    }
+
+    private func large(_ payload: DevicePayload) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(payload.snapshots.prefix(4)) { s in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(s.provider.displayName).font(.caption.weight(.semibold))
+                        if let plan = s.plan { Text(plan).font(.caption2).foregroundStyle(.secondary) }
+                        Spacer()
+                        if let w = s.worstWindow, let r = w.resetsAt {
+                            Text("resets \(r, style: .relative)").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    ForEach(s.windows.filter(\.prominent).prefix(3)) { w in
+                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            Text("\(payload.deviceName) · \(payload.updatedAt, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
 }
 
 struct BarLine: View {

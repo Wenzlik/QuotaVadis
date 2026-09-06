@@ -4,7 +4,11 @@ import WidgetKit
 @main
 struct QuotaWidgetBundle: WidgetBundle {
     var body: some Widget {
-        ProviderWidget()
+        SwitcherWidget()
         OverviewWidget()
+        ClaudeWidget()
+        CodexWidget()
+        CursorWidget()
+        ProviderWidget()
     }
 }
