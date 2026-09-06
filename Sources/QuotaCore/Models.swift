@@ -1,6 +1,6 @@
 import Foundation
 
-/// The three tools QuotaBar tracks. Raw values are stable identifiers used in sync records.
+/// The three tools QuotaVadis tracks. Raw values are stable identifiers used in sync records.
 public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
     case claude, codex, cursor
 
@@ -37,6 +37,15 @@ public struct UsageWindow: Codable, Sendable, Hashable, Identifiable {
     }
 
     public var remainingPercent: Double { max(0, 100 - usedPercent) }
+
+    /// Classifies a rolling window by its length: up to 6 hours is a session, around a week is weekly.
+    public static func kind(forSeconds seconds: Int) -> Kind {
+        switch seconds {
+        case ...(6 * 3600): .session
+        case ...(8 * 86400): .weekly
+        default: .monthly
+        }
+    }
 }
 
 /// Everything the UI needs for one provider at one point in time. This is also the unit of iCloud sync.
@@ -45,16 +54,21 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var account: String?
     public var plan: String?
     public var windows: [UsageWindow]
+    public var credits: [UsageCredits]
+    /// Codex: number of rate-limit resets the user can still redeem. nil when the provider has no such concept.
+    public var resetCreditsAvailable: Int?
     public var fetchedAt: Date
     public var deviceName: String
 
     public var id: String { "\(deviceName)/\(provider.rawValue)" }
 
-    public init(provider: ProviderID, account: String?, plan: String?, windows: [UsageWindow], fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
+    public init(provider: ProviderID, account: String?, plan: String?, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
         self.provider = provider
         self.account = account
         self.plan = plan
         self.windows = windows
+        self.credits = credits
+        self.resetCreditsAvailable = resetCreditsAvailable
         self.fetchedAt = fetchedAt
         self.deviceName = deviceName
     }
@@ -107,4 +121,31 @@ public protocol UsageFetcher: Sendable {
     /// True when the tool's credentials exist on this machine. Cheap; no network.
     func isAvailable() -> Bool
     func fetch() async throws -> UsageSnapshot
+    /// Raw API response, for debugging shapes with `quotactl --raw`.
+    func fetchRaw() async throws -> Data
+}
+
+/// Money-style quota: how much was spent against a limit (extra usage, on-demand, credits).
+public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var title: String
+    public var used: Double
+    /// nil = no cap (pay as you go / unlimited).
+    public var limit: Double?
+    public var currency: String
+    public var resetsAt: Date?
+
+    public init(id: String, title: String, used: Double, limit: Double?, currency: String = "USD", resetsAt: Date? = nil) {
+        self.id = id
+        self.title = title
+        self.used = used
+        self.limit = limit
+        self.currency = currency
+        self.resetsAt = resetsAt
+    }
+
+    public var usedPercent: Double? {
+        guard let limit, limit > 0 else { return nil }
+        return used / limit * 100
+    }
 }

@@ -16,24 +16,41 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.secondaryWindow?.usedPercent == 61)
     #expect(s.primaryWindow?.resetsAt != nil)
     #expect(s.worstWindow?.id == "weekly")
+    #expect(s.credits == [UsageCredits(id: "extra", title: "Extra usage", used: 15.65, limit: 5, currency: "USD")])
+}
+
+@Test func codexWeeklyOnlyPlan() throws {
+    let json = #"{"rate_limit":{"primary_window":{"used_percent":94,"reset_at":1788806972,"limit_window_seconds":604800},"secondary_window":null}}"#
+    let r = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+    let s = CodexUsageFetcher.snapshot(from: r, account: nil, fallbackPlan: "self_serve_business_prolite")
+    #expect(s.windows.map(\.kind) == [.weekly])
+    #expect(s.windows.first?.title == "Weekly")
+    #expect(s.plan == "Business")
 }
 
 @Test func codexMapping() throws {
     let r = try JSONDecoder().decode(CodexUsageResponse.self, from: fixture("codex_usage"))
     let s = CodexUsageFetcher.snapshot(from: r, account: "me@example.com", fallbackPlan: nil)
     #expect(s.plan == "Plus")
-    #expect(s.windows.map(\.id) == ["session", "weekly", "gpt-5.3-codex-spark-session"])
+    #expect(s.windows.map(\.id) == ["session", "weekly", "GPT-5.3-Codex-Spark-session"])
+    #expect(s.windows.map(\.kind) == [.session, .weekly, .model])
     #expect(s.secondaryWindow?.usedPercent == 55)
     #expect(s.primaryWindow?.resetsAt == Date(timeIntervalSince1970: 1_757_100_000))
+    #expect(s.resetCreditsAvailable == 3)
+    #expect(s.credits.first?.limit == 1)
+    #expect(s.credits.first?.used == 0)
 }
 
 @Test func cursorMapping() throws {
     let r = try JSONDecoder().decode(CursorUsageSummary.self, from: fixture("cursor_usage"))
     let s = CursorUsageFetcher.snapshot(from: r, account: nil)
     #expect(s.plan == "Pro")
-    #expect(s.windows.map(\.id) == ["plan", "on-demand"])
+    #expect(s.windows.map(\.id) == ["plan"])
     #expect(s.windows[0].usedPercent == 67)
-    #expect(s.windows[1].usedPercent == 5)
+    #expect(s.credits.map(\.id) == ["plan", "on-demand"])
+    #expect(s.credits[0].used == 13.40)
+    #expect(s.credits[0].limit == 20)
+    #expect(s.credits[1].usedPercent == 5)
     #expect(s.secondaryWindow?.id == "plan")
 }
 

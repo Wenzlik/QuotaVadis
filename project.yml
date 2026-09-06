@@ -1,4 +1,4 @@
-name: QuotaBar
+name: QuotaVadis
 options:
   bundleIdPrefix: cz.zmrhal
   deploymentTarget:
@@ -18,7 +18,7 @@ packages:
   QuotaCore:
     path: .
 targets:
-  QuotaBar:
+  QuotaVadis:
     type: application
     platform: macOS
     sources:
@@ -31,10 +31,10 @@ targets:
       path: Apps/Mac/Info.plist
       properties:
         LSUIElement: true
-        CFBundleDisplayName: QuotaBar
+        CFBundleDisplayName: QuotaVadis
         NSHumanReadableCopyright: "© 2026 Václav Zmrhal"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaBar
+        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis
         ENABLE_HARDENED_RUNTIME: true
-        CODE_SIGN_ENTITLEMENTS: Apps/Mac/QuotaBar.entitlements
+        CODE_SIGN_ENTITLEMENTS: Apps/Mac/QuotaVadis.entitlements

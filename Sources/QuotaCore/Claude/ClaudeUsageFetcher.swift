@@ -9,14 +9,19 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 
     public func fetch() async throws -> UsageSnapshot {
         let creds = try ClaudeCredentials.load()
+        let response = try HTTP.decode(ClaudeUsageResponse.self, from: try await fetchRaw(creds))
+        return Self.snapshot(from: response, plan: creds.subscriptionType)
+    }
+
+    public func fetchRaw() async throws -> Data { try await fetchRaw(try ClaudeCredentials.load()) }
+
+    private func fetchRaw(_ creds: ClaudeCredentials) async throws -> Data {
         if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
-        let data = try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage")!, headers: [
+        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage")!, headers: [
             "Authorization": "Bearer \(creds.accessToken)",
             "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "QuotaBar",
+            "User-Agent": "QuotaVadis",
         ])
-        let response = try HTTP.decode(ClaudeUsageResponse.self, from: data)
-        return Self.snapshot(from: response, plan: creds.subscriptionType)
     }
 
     static func snapshot(from r: ClaudeUsageResponse, plan: String?) -> UsageSnapshot {
@@ -36,7 +41,17 @@ public struct ClaudeUsageFetcher: UsageFetcher {
             guard !windows.contains(where: { $0.id == id }) else { continue }
             windows.append(UsageWindow(id: id, kind: .model, title: name, usedPercent: pct, resetsAt: ISO8601DateFormatter.parseAny(entry.resetsAt)))
         }
-        return UsageSnapshot(provider: .claude, account: nil, plan: plan.map(Self.planLabel), windows: windows)
+        var credits: [UsageCredits] = []
+        if let spend = r.spend, spend.enabled == true, let used = spend.used?.amount {
+            // Newer shape: minor units with an explicit exponent.
+            credits.append(UsageCredits(id: "extra", title: "Extra usage", used: used, limit: spend.limit?.amount,
+                                        currency: spend.used?.currency ?? "USD"))
+        } else if let extra = r.extraUsage, extra.isEnabled == true, let used = extra.usedCredits {
+            // Older shape: cents.
+            credits.append(UsageCredits(id: "extra", title: "Extra usage", used: used / 100,
+                                        limit: extra.monthlyLimit.map { $0 / 100 }, currency: extra.currency ?? "USD"))
+        }
+        return UsageSnapshot(provider: .claude, account: nil, plan: plan.map(Self.planLabel), windows: windows, credits: credits)
     }
 
     static func planLabel(_ raw: String) -> String {
@@ -75,8 +90,35 @@ struct ClaudeUsageResponse: Decodable {
     let sevenDaySonnet: Window?
     let sevenDayOpus: Window?
     let limits: [LimitEntry]?
+    let extraUsage: ExtraUsage?
+    let spend: Spend?
+
+    struct Money: Decodable {
+        let amountMinor: Double?
+        let exponent: Int?
+        let currency: String?
+        enum CodingKeys: String, CodingKey { case amountMinor = "amount_minor"; case exponent; case currency }
+        var amount: Double? { amountMinor.map { $0 / pow(10, Double(exponent ?? 2)) } }
+    }
+    struct Spend: Decodable {
+        let enabled: Bool?
+        let used: Money?
+        let limit: Money?
+    }
+
+    struct ExtraUsage: Decodable {
+        let isEnabled: Bool?
+        let monthlyLimit: Double?
+        let usedCredits: Double?
+        let currency: String?
+        enum CodingKeys: String, CodingKey {
+            case isEnabled = "is_enabled"; case monthlyLimit = "monthly_limit"; case usedCredits = "used_credits"; case currency
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
+        case extraUsage = "extra_usage"
+        case spend
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case sevenDaySonnet = "seven_day_sonnet"
@@ -92,5 +134,7 @@ struct ClaudeUsageResponse: Decodable {
         sevenDaySonnet = try? c.decodeIfPresent(Window.self, forKey: .sevenDaySonnet)
         sevenDayOpus = try? c.decodeIfPresent(Window.self, forKey: .sevenDayOpus)
         limits = try? c.decodeIfPresent([LimitEntry].self, forKey: .limits)
+        extraUsage = try? c.decodeIfPresent(ExtraUsage.self, forKey: .extraUsage)
+        spend = try? c.decodeIfPresent(Spend.self, forKey: .spend)
     }
 }

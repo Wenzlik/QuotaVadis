@@ -13,6 +13,14 @@ struct SettingsView: View {
                         set: { on in if on { model.enabledProviders.insert(id) } else { model.enabledProviders.remove(id) } }))
                 }
             }
+            Section("Menu bar") {
+                Picker("Show", selection: $model.menuBarSource) {
+                    ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                        Text(option.1).tag(option.0)
+                    }
+                }
+                Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+            }
             Section {
                 Picker("Refresh every", selection: $model.refreshIntervalMinutes) {
                     Text("1 minute").tag(1)

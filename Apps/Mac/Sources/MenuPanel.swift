@@ -72,10 +72,42 @@ struct ProviderRow: View {
                 ForEach(snapshot.windows.filter { $0.kind != .model }) { window in
                     UsageBar(window: window)
                 }
+                ForEach(snapshot.credits) { credits in
+                    CreditsLine(credits: credits)
+                }
+                if let resets = snapshot.resetCreditsAvailable {
+                    HStack {
+                        Text("Resets available").font(.caption)
+                        Spacer()
+                        Text("\(resets)").font(.caption.monospacedDigit())
+                            .foregroundStyle(resets > 0 ? .primary : .secondary)
+                    }
+                }
             } else if case .failed(let error, _) = state {
                 Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// "Extra usage   $15.65 / $5.00" — spend against a cap, no bar.
+struct CreditsLine: View {
+    let credits: UsageCredits
+
+    var body: some View {
+        HStack {
+            Text(credits.title).font(.caption)
+            Spacer()
+            Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(overCap ? .red : .secondary)
+        }
+    }
+
+    private var overCap: Bool { credits.limit.map { credits.used >= $0 } ?? false }
+
+    private func amount(_ value: Double) -> String {
+        value.formatted(.currency(code: credits.currency).precision(.fractionLength(2)))
     }
 }
 

@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "QuotaBar",
+    name: "QuotaVadis",
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "QuotaCore", targets: ["QuotaCore"]),
