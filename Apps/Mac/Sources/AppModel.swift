@@ -105,6 +105,8 @@ final class AppModel {
         useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
+        lastSyncPush = defaults.object(forKey: "lastSyncPush") as? Date
+        lastSyncError = defaults.string(forKey: "lastSyncError")
         expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()
         Task { await refresh() }
@@ -196,6 +198,9 @@ final class AppModel {
         } catch {
             lastSyncError = error.localizedDescription
         }
+        // Persisted so the status survives relaunch and can be inspected with `defaults read`.
+        defaults.set(lastSyncPush, forKey: "lastSyncPush")
+        defaults.set(lastSyncError, forKey: "lastSyncError")
     }
 
     private func unpublishFromCloud() async {
