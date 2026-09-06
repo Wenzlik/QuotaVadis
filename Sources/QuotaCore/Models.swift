@@ -62,12 +62,14 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var credits: [UsageCredits]
     /// Codex: number of rate-limit resets the user can still redeem. nil when the provider has no such concept.
     public var resetCreditsAvailable: Int?
+    /// Codex: expiry of each available reset credit, soonest first.
+    public var resetCreditExpiries: [Date]
     public var fetchedAt: Date
     public var deviceName: String
 
     public var id: String { "\(deviceName)/\(provider.rawValue)" }
 
-    public init(provider: ProviderID, account: String?, plan: String?, seat: String? = nil, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
+    public init(provider: ProviderID, account: String?, plan: String?, seat: String? = nil, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, resetCreditExpiries: [Date] = [], fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
         self.provider = provider
         self.account = account
         self.plan = plan
@@ -75,6 +77,7 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         self.windows = windows
         self.credits = credits
         self.resetCreditsAvailable = resetCreditsAvailable
+        self.resetCreditExpiries = resetCreditExpiries
         self.fetchedAt = fetchedAt
         self.deviceName = deviceName
     }

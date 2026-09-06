@@ -9,17 +9,32 @@ public struct CodexUsageFetcher: UsageFetcher {
 
     public func fetch() async throws -> UsageSnapshot {
         let creds = try CodexCredentials.load()
-        let response = try HTTP.decode(CodexUsageResponse.self, from: try await fetchRaw(creds))
-        return Self.snapshot(from: response, account: creds.email, fallbackPlan: creds.plan)
+        async let usageData = fetchRaw(creds)
+        async let resetData = try? HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!, headers: Self.headers(creds))
+        let response = try HTTP.decode(CodexUsageResponse.self, from: try await usageData)
+        let resets = await resetData.flatMap { try? JSONDecoder().decode(CodexResetCreditsResponse.self, from: $0) }
+        var snapshot = Self.snapshot(from: response, account: creds.email, fallbackPlan: creds.plan)
+        if let resets {
+            snapshot.resetCreditExpiries = resets.credits
+                .filter { $0.status == "available" }
+                .compactMap { ISO8601DateFormatter.parseAny($0.expiresAt) }
+                .sorted()
+            snapshot.resetCreditsAvailable = resets.availableCount ?? snapshot.resetCreditsAvailable
+        }
+        return snapshot
+    }
+
+    private static func headers(_ creds: CodexCredentials) -> [String: String] {
+        var headers = ["Authorization": "Bearer \(creds.accessToken)", "User-Agent": "QuotaVadis"]
+        if let id = creds.accountID { headers["ChatGPT-Account-Id"] = id }
+        return headers
     }
 
     public func fetchRaw() async throws -> Data { try await fetchRaw(try CodexCredentials.load()) }
 
     private func fetchRaw(_ creds: CodexCredentials) async throws -> Data {
         if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
-        var headers = ["Authorization": "Bearer \(creds.accessToken)", "User-Agent": "QuotaVadis"]
-        if let id = creds.accountID { headers["ChatGPT-Account-Id"] = id }
-        return try await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/usage")!, headers: headers)
+        return try await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/usage")!, headers: Self.headers(creds))
     }
 
     static func snapshot(from r: CodexUsageResponse, account: String?, fallbackPlan: String?) -> UsageSnapshot {
@@ -174,5 +189,21 @@ struct CodexUsageResponse: Decodable {
         individualLimit = try? c.decodeIfPresent(SpendLimit.self, forKey: .individualLimit)
         spendControl = try? c.decodeIfPresent(SpendControl.self, forKey: .spendControl)
         rateLimitResetCredits = try? c.decodeIfPresent(ResetCredits.self, forKey: .rateLimitResetCredits)
+    }
+}
+
+struct CodexResetCreditsResponse: Decodable {
+    struct Credit: Decodable {
+        let status: String?
+        let expiresAt: String?
+        enum CodingKeys: String, CodingKey { case status; case expiresAt = "expires_at" }
+    }
+    let availableCount: Int?
+    let credits: [Credit]
+    enum CodingKeys: String, CodingKey { case availableCount = "available_count"; case credits }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        availableCount = try? c.decodeIfPresent(Int.self, forKey: .availableCount)
+        credits = (try? c.decodeIfPresent([Credit].self, forKey: .credits)) ?? []
     }
 }

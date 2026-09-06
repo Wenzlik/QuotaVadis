@@ -104,3 +104,12 @@ private func fixture(_ name: String) throws -> Data {
     #expect(c.email == "me@example.com")
     #expect(c.plan == "plus")
 }
+
+@Test func codexResetCreditsDecoding() throws {
+    let json = #"{"available_count":2,"credits":[{"status":"available","expires_at":"2026-10-04T02:34:40.360238Z"},{"status":"redeemed","expires_at":"2026-09-01T00:00:00Z"},{"status":"available","expires_at":"2026-09-21T00:12:35.149476Z"}]}"#
+    let r = try JSONDecoder().decode(CodexResetCreditsResponse.self, from: Data(json.utf8))
+    #expect(r.availableCount == 2)
+    let dates = r.credits.filter { $0.status == "available" }.compactMap { ISO8601DateFormatter.parseAny($0.expiresAt) }.sorted()
+    #expect(dates.count == 2)
+    #expect(dates.first! < dates.last!)
+}

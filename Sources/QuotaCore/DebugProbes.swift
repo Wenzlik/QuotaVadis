@@ -13,6 +13,10 @@ public enum DebugProbes {
         if let creds = try? CodexCredentials.load() {
             let claims = JWT.payload(creds.idToken ?? "") ?? [:]
             out.append(("Codex id_token claims", (try? JSONSerialization.data(withJSONObject: claims)) ?? Data()))
+            var headers = ["Authorization": "Bearer \(creds.accessToken)", "User-Agent": "QuotaVadis"]
+            if let id = creds.accountID { headers["ChatGPT-Account-Id"] = id }
+            let data = (try? await HTTP.get(URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!, headers: headers)) ?? Data("error".utf8)
+            out.append(("Codex reset credits", data))
         }
         if let creds = try? CursorCredentials.load() {
             let data = (try? await HTTP.get(URL(string: "https://cursor.com/api/auth/me")!, headers: [

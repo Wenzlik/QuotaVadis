@@ -63,16 +63,19 @@ struct MenuPanel: View {
             }
             Spacer()
             Button { Task { await model.refresh(); await model.refreshCosts() } } label: { Image(systemName: "arrow.clockwise") }
-                .help("Refresh now")
+                .help("Refresh now (⌘R)")
+                .keyboardShortcut("r")
             Button { openSettings() } label: { Image(systemName: "gearshape") }
-                .help("Settings")
+                .help("Settings (⌘,)")
+                .keyboardShortcut(",")
             Button {
                 openWindow(id: "about")
                 NSApp.activate(ignoringOtherApps: true)
             } label: { Image(systemName: "info.circle") }
                 .help("About QuotaVadis")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
-                .help("Quit")
+                .help("Quit (⌘Q)")
+                .keyboardShortcut("q")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 14)

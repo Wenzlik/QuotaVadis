@@ -55,6 +55,10 @@ public struct ProviderRow: View {
                     }
                     if let resets = snapshot.resetCreditsAvailable {
                         DetailLine(title: "Limit resets available", value: "\(resets)")
+                        if !snapshot.resetCreditExpiries.isEmpty {
+                            DetailLine(title: "Expire", value: snapshot.resetCreditExpiries
+                                .map { $0.formatted(.relative(presentation: .numeric)) }.joined(separator: " · "))
+                        }
                     }
                     if let account = snapshot.account {
                         DetailLine(title: "Account", value: account)
@@ -63,6 +67,13 @@ public struct ProviderRow: View {
                         DetailLine(title: "Last error", value: error.localizedDescription).foregroundStyle(.orange)
                     }
                     DetailLine(title: "Updated", value: snapshot.fetchedAt.formatted(.relative(presentation: .named)))
+                    HStack(spacing: 14) {
+                        Link(destination: provider.dashboardURL) { Label("Dashboard", systemImage: "chart.bar.xaxis") }
+                        Link(destination: provider.statusURL) { Label("Status", systemImage: "waveform.path.ecg") }
+                        Spacer()
+                    }
+                    .font(.caption)
+                    .padding(.top, 2)
                     if let cost {
                         Divider().padding(.vertical, 2)
                         CostSection(report: cost)
@@ -284,6 +295,25 @@ public struct UsageBar: View {
         case ..<50: .green
         case ..<80: .yellow
         default: .red
+        }
+    }
+}
+
+public extension ProviderID {
+    /// The provider's own usage page.
+    var dashboardURL: URL {
+        switch self {
+        case .claude: URL(string: "https://claude.ai/settings/usage")!
+        case .codex: URL(string: "https://chatgpt.com/codex/settings/usage")!
+        case .cursor: URL(string: "https://cursor.com/dashboard")!
+        }
+    }
+
+    var statusURL: URL {
+        switch self {
+        case .claude: URL(string: "https://status.anthropic.com")!
+        case .codex: URL(string: "https://status.openai.com")!
+        case .cursor: URL(string: "https://status.cursor.com")!
         }
     }
 }
