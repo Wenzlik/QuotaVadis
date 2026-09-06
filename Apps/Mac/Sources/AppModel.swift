@@ -254,7 +254,11 @@ final class AppModel {
         isSyncing = true
         defer { isSyncing = false }
         lastSyncAttempt = .now
-        syncStatus = await cloud.accountStatus()
+        do {
+            syncStatus = try await withTimeout(seconds: 20) { await self.cloud.accountStatus() }
+        } catch {
+            syncStatus = .unavailable("iCloud account check did not answer within 20 s")
+        }
         guard syncStatus == .available else {
             lastSyncError = "iCloud not available: \(syncStatus)"
             defaults.set(lastSyncError, forKey: "lastSyncError")

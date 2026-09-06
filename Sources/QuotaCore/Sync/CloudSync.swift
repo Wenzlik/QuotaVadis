@@ -1,5 +1,8 @@
 import CloudKit
 import Foundation
+import os
+
+let syncLog = Logger(subsystem: "cz.zmrhal.QuotaVadis", category: "sync")
 
 /// iCloud private database, default zone, record type `Device`, record name = device id.
 /// Publisher (Mac) overwrites its own record and adds itself to a fixed `DeviceIndex` record; readers (iOS,
@@ -28,8 +31,11 @@ public actor CloudSync {
     }
 
     public func accountStatus() async -> Status {
+        syncLog.info("accountStatus: asking")
         do {
-            switch try await container.accountStatus() {
+            let status = try await container.accountStatus()
+            syncLog.info("accountStatus: \(status.rawValue)")
+            switch status {
             case .available: return .available
             case .noAccount: return .noAccount
             case .restricted: return .restricted
@@ -44,13 +50,17 @@ public actor CloudSync {
 
     /// Save-or-replace this device's record, then make sure the index lists it.
     public func publish(_ payload: DevicePayload) async throws {
+        syncLog.info("publish: start device=\(payload.deviceID, privacy: .public) snapshots=\(payload.snapshots.count)")
+        defer { syncLog.info("publish: end") }
         let id = CKRecord.ID(recordName: payload.deviceID)
         let record = CKRecord(recordType: Self.recordType, recordID: id)
         record[Self.payloadField] = try payload.encoded() as NSData
         record[Self.updatedField] = payload.updatedAt as NSDate
         record[Self.nameField] = payload.deviceName as NSString
         try await save(record, policy: .allKeys)
+        syncLog.info("publish: device record saved")
         try await updateIndex { ids in ids.contains(payload.deviceID) ? nil : ids + [payload.deviceID] }
+        syncLog.info("publish: index updated")
     }
 
     /// Remove this device's record and index entry (sync switched off or app removed).
@@ -109,12 +119,14 @@ public actor CloudSync {
     private func save(_ record: CKRecord, policy: CKModifyRecordsOperation.RecordSavePolicy) async throws {
         let op = CKModifyRecordsOperation(recordsToSave: [record])
         op.savePolicy = policy
-        op.qualityOfService = .utility
+        // .utility/.background make CloudKit use a discretionary URL session that macOS may defer for a long
+        // time (seen: a record save queued for minutes). The payload is tiny; send it right away.
+        op.qualityOfService = .userInitiated
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             op.modifyRecordsResultBlock = { result in
                 switch result {
-                case .success: c.resume()
-                case .failure(let error): c.resume(throwing: error)
+                case .success: syncLog.info("save: ok"); c.resume()
+                case .failure(let error): syncLog.error("save: \(error.localizedDescription, privacy: .public)"); c.resume(throwing: error)
                 }
             }
             database.add(op)
