@@ -44,7 +44,7 @@ struct SettingsView: View {
             } header: {
                 Text("Claude organizations")
             } footer: {
-                Text("Claude Code holds one login per profile. For another organization run `CLAUDE_CONFIG_DIR=~/.claude-<name> claude login`, pick the organization, then add the new Keychain item here.")
+                Text("Each organization needs its own Claude Code login. “Add organization…” walks you through it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Menu bar") {
@@ -87,25 +87,55 @@ struct SettingsView: View {
     }
 }
 
-/// Lists Claude Code's Keychain items (attributes only, no prompt) so the user can pick another organization's login.
+/// Guides the user through adding another organization's Claude Code login and picks its Keychain item.
 struct ClaudeKeychainPicker: View {
     @Bindable var model: AppModel
     @Binding var isPresented: Bool
+    @State private var profileName = "work"
+    @State private var copied = false
+    @State private var refreshTick = 0
+
+    private var command: String { "CLAUDE_CONFIG_DIR=~/.claude-\(profileName.isEmpty ? "work" : profileName) claude login" }
 
     private var entries: [ClaudeCredentials.KeychainEntry] {
-        ClaudeCredentials.keychainEntries().filter { $0.service != ClaudeCredentials.keychainService && !model.extraClaudeServices.contains($0.service) }
+        _ = refreshTick
+        return ClaudeCredentials.keychainEntries().filter { $0.service != ClaudeCredentials.keychainService && !model.extraClaudeServices.contains($0.service) }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Claude Code logins in your Keychain").font(.headline)
-            Text("Pick the item created by your `claude login` for the other organization. Reading it asks for Keychain access once; choose Always Allow.")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add another Claude organization").font(.headline)
+
+            step(1, "Claude Code keeps one login per profile. Create a profile for the other organization and log in:")
+            HStack(spacing: 6) {
+                Text("Profile name").font(.caption).foregroundStyle(.secondary)
+                TextField("work", text: $profileName).textFieldStyle(.roundedBorder).frame(width: 120)
+            }
+            HStack {
+                Text(command).font(.caption.monospaced()).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button(copied ? "Copied" : "Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                    copied = true
+                }
+                .controlSize(.small)
+            }
+            .padding(8)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            Text("Run it in Terminal and pick the organization when asked. It does not touch your normal `claude` login.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            step(2, "Pick the login it created. The newest item is the one you just made; the others are older profiles.")
+            HStack {
+                Spacer()
+                Button { refreshTick += 1 } label: { Label("Refresh list", systemImage: "arrow.clockwise") }.controlSize(.small)
+            }
             if entries.isEmpty {
-                Text("No extra Claude Code logins found.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
+                Text("No extra Claude Code logins in the Keychain yet.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         ForEach(entries) { entry in
                             Button {
                                 model.extraClaudeServices.append(entry.service)
@@ -114,20 +144,31 @@ struct ClaudeKeychainPicker: View {
                                 HStack {
                                     Text(entry.suffix).font(.body.monospaced())
                                     Spacer()
-                                    Text(entry.modified.map { "modified " + $0.formatted(.relative(presentation: .named)) } ?? "")
+                                    Text(entry.modified.map { $0.formatted(.relative(presentation: .named)) } ?? "")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
+                                .padding(.vertical, 4).padding(.horizontal, 6)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .padding(.vertical, 3)
+                            .background(entry == entries.first ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 5))
                         }
                     }
                 }
-                .frame(maxHeight: 220)
+                .frame(maxHeight: 160)
             }
+
+            step(3, "macOS asks once for Keychain access to that item. Choose Always Allow, otherwise it asks on every refresh.")
         }
-        .padding(14)
-        .frame(width: 360)
+        .padding(16)
+        .frame(width: 420)
+    }
+
+    private func step(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(n)").font(.caption.weight(.bold)).frame(width: 18, height: 18)
+                .background(Color.accentColor.opacity(0.15), in: Circle())
+            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
