@@ -1,5 +1,7 @@
 #!/bin/zsh
 # Archive the iOS app, export for App Store Connect and upload to TestFlight.
+# Export signs manually with the local "Apple Distribution" certificate (created via the ASC API, key in the
+# login Keychain) and API-created App Store profiles, so it does not depend on an Xcode account session.
 #   Scripts/testflight-ios.sh 0.1.0            # marketing version; build = UTC timestamp
 #   Scripts/testflight-ios.sh 0.1.0 --no-upload  # stop after exporting the .ipa
 set -euo pipefail
@@ -24,7 +26,12 @@ cat > "$DIST/export.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>method</key><string>app-store-connect</string>
-  <key>signingStyle</key><string>automatic</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key><dict>
+    <key>cz.zmrhal.QuotaVadis</key><string>QuotaVadis App iOS Store</string>
+    <key>cz.zmrhal.QuotaVadis.widgets</key><string>QuotaVadis Widgets iOS App Store</string>
+  </dict>
   <key>teamID</key><string>$TEAM</string>
   <key>destination</key><string>export</string>
   <key>uploadSymbols</key><true/>

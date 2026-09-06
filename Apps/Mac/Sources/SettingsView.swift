@@ -20,91 +20,124 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("Track") {
-                ForEach(ProviderID.allCases) { id in
-                    ProviderToggleRow(model: model, provider: id)
+        // Standard macOS settings tabs; each pane scrolls on its own so the window fits small displays.
+        TabView {
+            pane {
+                Section("Track") {
+                    ForEach(ProviderID.allCases) { id in
+                        ProviderToggleRow(model: model, provider: id)
+                    }
+                }
+                .onAppear { model.refreshCredentialStatuses() }
+                Section {
+                    Picker("Refresh every", selection: $model.refreshIntervalMinutes) {
+                        Text("1 minute").tag(1)
+                        Text("5 minutes").tag(5)
+                        Text("15 minutes").tag(15)
+                        Text("30 minutes").tag(30)
+                    }
+                    Toggle("Launch at login", isOn: $model.launchAtLogin)
                 }
             }
-            .onAppear { model.refreshCredentialStatuses() }
-            Section {
-                ForEach(model.extraClaudeServices, id: \.self) { service in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(model.states["claude:" + AppModel.suffix(service)]?.snapshot?.organization ?? "Organization (\(AppModel.suffix(service)))")
-                            Text(service).font(.caption2).foregroundStyle(.tertiary)
+            .tabItem { Label("General", systemImage: "gearshape") }
+
+            pane {
+                Section("Menu bar") {
+                    Picker("Show", selection: $model.menuBarSource) {
+                        ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                            Text(option.1).tag(option.0)
                         }
+                    }
+                    Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+                    Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
+                }
+            }
+            .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
+
+            pane {
+                Section("Notifications") {
+                    Picker("Notify at", selection: $model.warnAtPercent) {
+                        Text("Never").tag(101)
+                        Text("70%").tag(70)
+                        Text("80%").tag(80)
+                        Text("90%").tag(90)
+                    }
+                    Toggle("Notify when a window resets", isOn: $model.notifyOnReset)
+                        .disabled(model.warnAtPercent > 100)
+                    Text("One alert per window when it crosses the threshold, with a “Snooze 1 hour” action. Reset alerts fire when a nearly used-up window is available again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .tabItem { Label("Notifications", systemImage: "bell") }
+
+            pane {
+                Section {
+                    ForEach(model.extraClaudeServices, id: \.self) { service in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(model.states["claude:" + AppModel.suffix(service)]?.snapshot?.organization ?? "Organization (\(AppModel.suffix(service)))")
+                                Text(service).font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) { model.extraClaudeServices.removeAll { $0 == service } } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                    Button("Add organization…") { showKeychainPicker = true }
+                        .popover(isPresented: $showKeychainPicker) { ClaudeKeychainPicker(model: model, isPresented: $showKeychainPicker) }
+                } header: {
+                    Text("Claude organizations")
+                } footer: {
+                    Text("Each organization needs its own Claude Code login. “Add organization…” walks you through it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .tabItem { Label("Claude", systemImage: "person.2") }
+
+            pane {
+                Section("iCloud") {
+                    Toggle("Sync to iCloud", isOn: $model.syncEnabled)
+                    HStack {
+                        Button("Sync now") { Task { await model.publishToCloud() } }
+                            .disabled(!model.syncEnabled || model.isSyncing)
+                        if model.isSyncing { ProgressView().controlSize(.small) }
                         Spacer()
-                        Button(role: .destructive) { model.extraClaudeServices.removeAll { $0 == service } } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
+                        if let attempt = model.lastSyncAttempt {
+                            Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
+                        }
                     }
+                    Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                 }
-                Button("Add organization…") { showKeychainPicker = true }
-                    .popover(isPresented: $showKeychainPicker) { ClaudeKeychainPicker(model: model, isPresented: $showKeychainPicker) }
-            } header: {
-                Text("Claude organizations")
-            } footer: {
-                Text("Each organization needs its own Claude Code login. “Add organization…” walks you through it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Menu bar") {
-                Picker("Show", selection: $model.menuBarSource) {
-                    ForEach(model.menuBarSourceOptions, id: \.0) { option in
-                        Text(option.1).tag(option.0)
-                    }
-                }
-                Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
-                Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
-            }
-            Section {
-                Picker("Refresh every", selection: $model.refreshIntervalMinutes) {
-                    Text("1 minute").tag(1)
-                    Text("5 minutes").tag(5)
-                    Text("15 minutes").tag(15)
-                    Text("30 minutes").tag(30)
-                }
-                Picker("Notify at", selection: $model.warnAtPercent) {
-                    Text("Never").tag(101)
-                    Text("70%").tag(70)
-                    Text("80%").tag(80)
-                    Text("90%").tag(90)
-                }
-                Toggle("Notify when a window resets", isOn: $model.notifyOnReset)
-                    .disabled(model.warnAtPercent > 100)
-                Toggle("Launch at login", isOn: $model.launchAtLogin)
-            }
-            Section("iCloud") {
-                Toggle("Sync to iCloud", isOn: $model.syncEnabled)
-                HStack {
-                    Button("Sync now") { Task { await model.publishToCloud() } }
-                        .disabled(!model.syncEnabled || model.isSyncing)
-                    if model.isSyncing { ProgressView().controlSize(.small) }
-                    Spacer()
-                    if let attempt = model.lastSyncAttempt {
-                        Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-                Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
-            }
-            Section("Updates") {
-                Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
-                HStack {
-                    Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
-                    Spacer()
-                    if let date = updater.lastCheck {
-                        Text("Last checked \(date.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
+                Section("Updates") {
+                    Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
+                    HStack {
+                        Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
+                        Spacer()
+                        if let date = updater.lastCheck {
+                            Text("Last checked \(date.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
-            Section("Cost estimates") {
-                Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)
-                Text("Costs are estimates at API list prices from local logs (Cursor: from its dashboard). Subscriptions are not billed per token.")
-                    .font(.caption).foregroundStyle(.secondary)
+            .tabItem { Label("iCloud & Updates", systemImage: "icloud") }
+
+            pane {
+                Section("Cost estimates") {
+                    Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)
+                    Text("Costs are estimates at API list prices from local logs (Cursor: from its dashboard). Subscriptions are not billed per token.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
+            .tabItem { Label("Cost", systemImage: "dollarsign.circle") }
         }
-        .formStyle(.grouped)
-        .frame(width: 340)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 480, height: 400)
+    }
+
+    /// A grouped, scrolling settings pane.
+    private func pane<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        Form { content() }
+            .formStyle(.grouped)
+            .scrollContentBackground(.automatic)
     }
 }
 
