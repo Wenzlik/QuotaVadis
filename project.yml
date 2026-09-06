@@ -139,3 +139,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis.widgets
         CODE_SIGN_IDENTITY: "Apple Development"
         TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  QuotaVadis:
+    build:
+      targets:
+        QuotaVadis: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  QuotaVadis-iOS:
+    build:
+      targets:
+        QuotaVadis-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release

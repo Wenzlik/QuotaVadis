@@ -11,7 +11,7 @@ struct ContentView: View {
                 if let device = store.selectedDevice {
                     deviceList(device)
                 } else {
-                    emptyState
+                    ScrollView { emptyState.frame(maxWidth: .infinity, minHeight: 400) }
                 }
             }
             .navigationTitle("QuotaVadis")
@@ -72,6 +72,8 @@ struct ContentView: View {
         case .unknown, .available:
             if store.isRefreshing && store.devices.isEmpty {
                 ProgressView("Looking for your Mac…")
+            } else if let error = store.lastError {
+                ContentUnavailableView("iCloud read failed", systemImage: "exclamationmark.icloud", description: Text(error))
             } else {
                 ContentUnavailableView("No Mac publishing yet", systemImage: "desktopcomputer.trianglebadge.exclamationmark",
                                        description: Text("Run QuotaVadis on a Mac signed in to the same iCloud account with “Sync to iCloud” on. Then pull to refresh."))
