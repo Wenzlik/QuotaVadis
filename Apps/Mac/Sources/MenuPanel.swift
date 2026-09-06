@@ -15,6 +15,8 @@ struct MenuPanel: View {
                                        description: Text("Log in to Claude Code, Codex or Cursor on this Mac."))
                     .frame(height: 160)
             } else {
+                // A bare ScrollView inside a MenuBarExtra window gets no height proposal and collapses to zero.
+                // fixedSize makes it report its content height; the frame then caps it so long lists scroll.
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 0) {
                         providerRows
@@ -22,6 +24,7 @@ struct MenuPanel: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: maxListHeight)
+                .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             footer
