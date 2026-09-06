@@ -22,15 +22,7 @@ struct SettingsView: View {
         Form {
             Section("Track") {
                 ForEach(ProviderID.allCases) { id in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Toggle(id.displayName, isOn: Binding(
-                            get: { model.enabledProviders.contains(id) },
-                            set: { on in if on { model.enabledProviders.insert(id) } else { model.enabledProviders.remove(id) } }))
-                        if let status = model.credentialStatuses[id] {
-                            Text(status.summary).font(.caption).foregroundStyle(status.problem == nil ? .secondary : .orange)
-                                .lineLimit(2).truncationMode(.middle)
-                        }
-                    }
+                    ProviderToggleRow(model: model, provider: id)
                 }
             }
             .onAppear { model.refreshCredentialStatuses() }
@@ -91,6 +83,27 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct ProviderToggleRow: View {
+    @Bindable var model: AppModel
+    let provider: ProviderID
+
+    private var isOn: Binding<Bool> {
+        Binding(get: { model.enabledProviders.contains(provider) },
+                set: { on in if on { model.enabledProviders.insert(provider) } else { model.enabledProviders.remove(provider) } })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle(provider.displayName, isOn: isOn)
+            if let status = model.credentialStatuses[provider] {
+                Text(status.summary).font(.caption)
+                    .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                    .lineLimit(2).truncationMode(.middle)
+            }
+        }
     }
 }
 
