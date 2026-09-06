@@ -62,8 +62,7 @@ private func fixture(_ name: String) throws -> Data {
     let r = try JSONDecoder().decode(CursorUsageSummary.self, from: Data(json.utf8))
     let s = CursorUsageFetcher.snapshot(from: r, account: nil)
     #expect(s.windows.first?.usedPercent == 2.852)
-    #expect(s.credits.first?.title == "Plan spend this cycle")
-    #expect(s.credits.first?.limit == nil)
+    #expect(s.credits.isEmpty)
 }
 
 @Test func cursorGrokBot() throws {
