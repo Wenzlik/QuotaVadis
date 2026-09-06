@@ -116,8 +116,12 @@ struct ProviderRow: View {
                 ForEach(mainWindows(snapshot)) { window in
                     UsageBar(window: window)
                 }
+                // Money spent shows up front whenever there is any; zero-spend lines stay in the detail.
+                ForEach(snapshot.credits.filter { $0.used > 0 }) { credits in
+                    CreditsLine(credits: credits)
+                }
                 if isExpanded {
-                    ForEach(snapshot.credits) { credits in
+                    ForEach(snapshot.credits.filter { $0.used == 0 }) { credits in
                         CreditsLine(credits: credits)
                     }
                     ForEach(snapshot.windows.filter { !$0.prominent }) { window in
