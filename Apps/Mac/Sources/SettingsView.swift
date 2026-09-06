@@ -20,7 +20,7 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
-                Toggle("Use app icon", isOn: $model.useAppIconInMenuBar)
+                Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
             }
             Section {
                 Picker("Refresh every", selection: $model.refreshIntervalMinutes) {

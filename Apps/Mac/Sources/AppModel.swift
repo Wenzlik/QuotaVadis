@@ -58,7 +58,7 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
-    /// App icon (colour) or a monochrome gauge glyph that tracks the percentage.
+    /// Colour app icon instead of the monochrome flame glyph.
     var useAppIconInMenuBar: Bool {
         didSet { defaults.set(useAppIconInMenuBar, forKey: "useAppIconInMenuBar") }
     }
@@ -88,7 +88,7 @@ final class AppModel {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
-        useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? true
+        useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()

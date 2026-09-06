@@ -25,7 +25,7 @@ struct QuotaVadisApp: App {
     }
 }
 
-/// Menu bar item: a small gauge glyph plus the worst percentage across enabled providers.
+/// Menu bar item: a flame glyph (monochrome, or the colour app icon) plus the chosen percentage.
 struct MenuBarLabel: View {
     let model: AppModel
 
@@ -35,7 +35,7 @@ struct MenuBarLabel: View {
             if model.useAppIconInMenuBar {
                 Image("MenuBarIcon")
             } else {
-                Image(systemName: symbolName)
+                Image(systemName: "flame.fill")
             }
             if model.showPercentInMenuBar, let percent = model.menuBarPercent {
                 Text("\(Int(percent.rounded()))%")
@@ -44,13 +44,4 @@ struct MenuBarLabel: View {
         }
     }
 
-    private var symbolName: String {
-        guard let p = model.menuBarPercent else { return "gauge.with.dots.needle.0percent" }
-        switch p {
-        case ..<25: return "gauge.with.dots.needle.0percent"
-        case ..<50: return "gauge.with.dots.needle.33percent"
-        case ..<80: return "gauge.with.dots.needle.67percent"
-        default: return "gauge.with.dots.needle.100percent"
-        }
-    }
 }
