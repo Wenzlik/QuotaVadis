@@ -7,6 +7,9 @@ struct CodexCredentials: Sendable {
     let expiresAt: Date?
     let email: String?
     let plan: String?
+    let idToken: String?
+    /// Default workspace title from the id_token ("GoodData Test").
+    let workspace: String?
 
     static var authFileURL: URL {
         let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
@@ -33,13 +36,17 @@ struct CodexCredentials: Sendable {
         var accountID = (tokens["account_id"] ?? tokens["accountId"]) as? String
         var email: String?
         var plan: String?
+        var workspace: String?
         // The id_token carries the ChatGPT account id, email and plan under the openai auth claim.
         let claims = JWT.payload(tokens["id_token"] as? String ?? "") ?? [:]
         email = claims["email"] as? String
         if let auth = claims["https://api.openai.com/auth"] as? [String: Any] {
             accountID = accountID ?? auth["chatgpt_account_id"] as? String
             plan = auth["chatgpt_plan_type"] as? String
+            let orgs = auth["organizations"] as? [[String: Any]] ?? []
+            workspace = (orgs.first { $0["is_default"] as? Bool == true } ?? orgs.first)?["title"] as? String
         }
-        return CodexCredentials(accessToken: access, accountID: accountID, expiresAt: JWT.expiry(access), email: email, plan: plan)
+        return CodexCredentials(accessToken: access, accountID: accountID, expiresAt: JWT.expiry(access), email: email, plan: plan,
+                                idToken: tokens["id_token"] as? String, workspace: workspace)
     }
 }

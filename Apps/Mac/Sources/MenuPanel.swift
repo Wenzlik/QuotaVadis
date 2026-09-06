@@ -14,9 +14,14 @@ struct MenuPanel: View {
                     .frame(height: 160)
             } else {
                 ForEach(model.visibleProviders) { id in
-                    ProviderRow(provider: id, state: model.states[id] ?? .unavailable)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                    ProviderRow(provider: id, state: model.states[id] ?? .unavailable,
+                                isExpanded: model.expanded.contains(id)) {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            if model.expanded.contains(id) { model.expanded.remove(id) } else { model.expanded.insert(id) }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                     if id != model.visibleProviders.last { Divider().padding(.horizontal, 14) }
                 }
             }
@@ -49,43 +54,81 @@ struct MenuPanel: View {
     }
 }
 
+/// Collapsed: name, plan and the main bars. Expanded: every window, credits, resets, account, freshness.
 struct ProviderRow: View {
     let provider: ProviderID
     let state: ProviderState
+    let isExpanded: Bool
+    let toggle: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(provider.displayName).font(.headline)
-                if let plan = state.snapshot?.plan {
-                    Text(plan).font(.caption).foregroundStyle(.secondary)
+            Button(action: toggle) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(provider.displayName).font(.headline)
+                    if let plan = state.snapshot?.plan {
+                        Text([plan, isExpanded ? state.snapshot?.seat : nil].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if case .failed(let error, _) = state {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .help(error.localizedDescription)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
-                Spacer()
-                if case .failed(let error, _) = state {
-                    Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.orange)
-                        .help(error.localizedDescription)
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
             if let snapshot = state.snapshot {
-                ForEach(snapshot.windows.filter { $0.kind != .model }) { window in
+                ForEach(mainWindows(snapshot)) { window in
                     UsageBar(window: window)
                 }
-                ForEach(snapshot.credits) { credits in
-                    CreditsLine(credits: credits)
-                }
-                if let resets = snapshot.resetCreditsAvailable {
-                    HStack {
-                        Text("Resets available").font(.caption)
-                        Spacer()
-                        Text("\(resets)").font(.caption.monospacedDigit())
-                            .foregroundStyle(resets > 0 ? .primary : .secondary)
+                if isExpanded {
+                    ForEach(snapshot.windows.filter { $0.kind == .model }) { window in
+                        UsageBar(window: window, compact: true)
                     }
+                    ForEach(snapshot.credits) { credits in
+                        CreditsLine(credits: credits)
+                    }
+                    if let resets = snapshot.resetCreditsAvailable {
+                        DetailLine(title: "Limit resets available", value: "\(resets)")
+                    }
+                    if let account = snapshot.account {
+                        DetailLine(title: "Account", value: account)
+                    }
+                    if case .failed(let error, _) = state {
+                        DetailLine(title: "Last error", value: error.localizedDescription).foregroundStyle(.orange)
+                    }
+                    DetailLine(title: "Updated", value: snapshot.fetchedAt.formatted(.relative(presentation: .named)))
                 }
             } else if case .failed(let error, _) = state {
                 Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Collapsed rows show the session and the weekly/monthly bar only.
+    private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
+        snapshot.windows.filter { $0.kind != .model }
+    }
+}
+
+struct DetailLine: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(title).font(.caption)
+            Spacer()
+            Text(value).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
         }
     }
 }
@@ -113,11 +156,13 @@ struct CreditsLine: View {
 
 struct UsageBar: View {
     let window: UsageWindow
+    /// Sub-window (per-model breakdown): indented, thinner bar.
+    var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(window.title).font(.caption)
+                Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
                 if let reset = window.resetsAt {
                     Text(reset, format: .relative(presentation: .numeric))
@@ -134,8 +179,9 @@ struct UsageBar: View {
                         .frame(width: geo.size.width * min(1, max(0, window.usedPercent / 100)))
                 }
             }
-            .frame(height: 5)
+            .frame(height: compact ? 3 : 5)
         }
+        .padding(.leading, compact ? 12 : 0)
     }
 
     private var tint: Color {

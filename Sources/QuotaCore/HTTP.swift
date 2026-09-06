@@ -9,8 +9,18 @@ enum HTTP {
     }()
 
     static func get(_ url: URL, headers: [String: String]) async throws -> Data {
+        try await send(url, method: "GET", body: nil, headers: headers)
+    }
+
+    static func post(_ url: URL, json body: String, headers: [String: String]) async throws -> Data {
+        try await send(url, method: "POST", body: Data(body.utf8), headers: headers)
+    }
+
+    private static func send(_ url: URL, method: String, body: Data?, headers: [String: String]) async throws -> Data {
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
+        request.httpBody = body
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         let (data, response): (Data, URLResponse)

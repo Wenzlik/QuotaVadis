@@ -3,6 +3,16 @@ import QuotaCore
 
 // Tiny harness: `quotactl` prints a table, `quotactl --json` prints snapshots as JSON.
 let json = CommandLine.arguments.contains("--json")
+if CommandLine.arguments.contains("--profile") {
+    for (name, data) in await DebugProbes.profiles() {
+        print("=== \(name)")
+        if let obj = try? JSONSerialization.jsonObject(with: data),
+           let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
+            print(String(decoding: pretty, as: UTF8.self))
+        } else { print(String(decoding: data, as: UTF8.self)) }
+    }
+    exit(0)
+}
 if CommandLine.arguments.contains("--raw") {
     for fetcher in UsageService.allFetchers where fetcher.isAvailable() {
         print("=== \(fetcher.provider.displayName)")
@@ -35,7 +45,7 @@ if json {
         case .failed(let error, _):
             print("\(id.displayName): ERROR \(error.localizedDescription)")
         case .fresh(let s):
-            let who = [s.plan, s.account].compactMap { $0 }.joined(separator: " · ")
+            let who = [s.plan, s.seat, s.account].compactMap { $0 }.joined(separator: " · ")
             print("\(id.displayName)\(who.isEmpty ? "" : " (\(who))")")
             for w in s.windows {
                 let reset = w.resetsAt.map { " resets \(rel.localizedString(for: $0, relativeTo: .now))" } ?? ""

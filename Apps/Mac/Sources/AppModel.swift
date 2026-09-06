@@ -56,6 +56,10 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
+    /// Providers whose row is expanded to the full detail. Remembered across launches.
+    var expanded: Set<ProviderID> {
+        didSet { defaults.set(expanded.map(\.rawValue).sorted(), forKey: "expandedProviders") }
+    }
 
     private let defaults = UserDefaults.standard
     private let service = UsageService()
@@ -70,6 +74,7 @@ final class AppModel {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
+        expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
         scheduleRefresh()
         Task { await refresh() }
     }

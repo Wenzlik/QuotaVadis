@@ -45,13 +45,35 @@ private func fixture(_ name: String) throws -> Data {
     let r = try JSONDecoder().decode(CursorUsageSummary.self, from: fixture("cursor_usage"))
     let s = CursorUsageFetcher.snapshot(from: r, account: nil)
     #expect(s.plan == "Pro")
-    #expect(s.windows.map(\.id) == ["plan"])
+    #expect(s.windows.map(\.id) == ["plan", "auto", "api"])
     #expect(s.windows[0].usedPercent == 67)
+    #expect(s.windows[1].usedPercent == 60)
+    #expect(s.windows[2].usedPercent == 7)
+    #expect(s.seat == "Team seat")
     #expect(s.credits.map(\.id) == ["plan", "on-demand"])
     #expect(s.credits[0].used == 13.40)
     #expect(s.credits[0].limit == 20)
     #expect(s.credits[1].usedPercent == 5)
     #expect(s.secondaryWindow?.id == "plan")
+}
+
+@Test func cursorGrokBot() throws {
+    let r = try JSONDecoder().decode(CursorUsageSummary.self, from: fixture("cursor_usage"))
+    let bot = CursorBotUsage(nextResetTimestampUtc: "2026-09-08T00:00:00.000Z", usagePercent: 12, hasNonZeroIncludedLimit: true)
+    let s = CursorUsageFetcher.snapshot(from: r, bot: bot, account: nil)
+    #expect(s.windows.last?.id == "grok-bot")
+    #expect(s.windows.last?.usedPercent == 12)
+    let none = CursorUsageFetcher.snapshot(from: r, bot: CursorBotUsage(nextResetTimestampUtc: nil, usagePercent: 0, hasNonZeroIncludedLimit: false), account: nil)
+    #expect(!none.windows.contains { $0.id == "grok-bot" })
+}
+
+@Test func seatLabels() {
+    #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_tier_1", rateTier: "default_claude_max_5x") == "Team tier 1 · Max 5x")
+    #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: "default_claude_max_20x") == "Max 20x")
+    #expect(ClaudeUsageFetcher.seatLabel(seatTier: nil, rateTier: nil) == nil)
+    #expect(ClaudeUsageFetcher.planLabel("claude_team") == "Team")
+    #expect(CodexUsageFetcher.seatLabel("self_serve_business_prolite") == "Pro Lite")
+    #expect(CodexUsageFetcher.seatLabel("plus") == nil)
 }
 
 @Test func claudeCredentialsParsing() throws {

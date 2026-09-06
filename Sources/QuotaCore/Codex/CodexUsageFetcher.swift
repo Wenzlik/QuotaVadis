@@ -10,7 +10,7 @@ public struct CodexUsageFetcher: UsageFetcher {
     public func fetch() async throws -> UsageSnapshot {
         let creds = try CodexCredentials.load()
         let response = try HTTP.decode(CodexUsageResponse.self, from: try await fetchRaw(creds))
-        return Self.snapshot(from: response, account: creds.email, fallbackPlan: creds.plan)
+        return Self.snapshot(from: response, account: creds.workspace ?? creds.email, fallbackPlan: creds.plan)
     }
 
     public func fetchRaw() async throws -> Data { try await fetchRaw(try CodexCredentials.load()) }
@@ -41,7 +41,9 @@ public struct CodexUsageFetcher: UsageFetcher {
             add(prefix: name, extra.rateLimit?.primaryWindow, kindOverride: .model)
             add(prefix: name, extra.rateLimit?.secondaryWindow, kindOverride: .model)
         }
-        let plan = (r.planType ?? fallbackPlan).map(Self.planLabel)
+        let rawPlan = r.planType ?? fallbackPlan
+        let plan = rawPlan.map(Self.planLabel)
+        let seat = rawPlan.flatMap(Self.seatLabel)
         var credits: [UsageCredits] = []
         // Business/Team workspaces: monthly credit pool with a per-user cap.
         if let cap = r.individualLimit ?? r.rateLimit?.individualLimit ?? r.spendControl?.individualLimit, let used = cap.used {
@@ -52,12 +54,25 @@ public struct CodexUsageFetcher: UsageFetcher {
         if let c = r.credits, c.hasCredits, !c.unlimited, let balance = c.balance {
             credits.append(UsageCredits(id: "balance", title: "Credit balance", used: 0, limit: balance))
         }
-        return UsageSnapshot(provider: .codex, account: account, plan: plan, windows: windows, credits: credits,
+        return UsageSnapshot(provider: .codex, account: account, plan: plan, seat: seat, windows: windows, credits: credits,
                              resetCreditsAvailable: r.rateLimitResetCredits?.availableCount)
     }
 }
 
 extension CodexUsageFetcher {
+    /// The seat suffix of a workspace plan: "self_serve_business_prolite" → "Pro Lite". nil for personal plans.
+    static func seatLabel(_ raw: String) -> String? {
+        let lower = raw.lowercased()
+        guard let range = lower.range(of: "business_") ?? lower.range(of: "team_") ?? lower.range(of: "enterprise_") else { return nil }
+        let suffix = lower[range.upperBound...]
+        guard !suffix.isEmpty else { return nil }
+        switch suffix {
+        case "prolite": return "Pro Lite"
+        case "pro": return "Pro"
+        default: return suffix.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
     /// "self_serve_business_prolite" → "Business", "plus" → "Plus".
     static func planLabel(_ raw: String) -> String {
         let lower = raw.lowercased()

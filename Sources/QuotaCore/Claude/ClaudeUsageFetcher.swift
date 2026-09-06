@@ -9,22 +9,26 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 
     public func fetch() async throws -> UsageSnapshot {
         let creds = try ClaudeCredentials.load()
-        let response = try HTTP.decode(ClaudeUsageResponse.self, from: try await fetchRaw(creds))
-        return Self.snapshot(from: response, plan: creds.subscriptionType)
+        // Usage is required; profile (seat, email) is best-effort.
+        async let usageData = fetchRaw(creds)
+        async let profileData = try? HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/profile")!, headers: Self.headers(creds))
+        let response = try HTTP.decode(ClaudeUsageResponse.self, from: try await usageData)
+        let profile = await profileData.flatMap { try? JSONDecoder().decode(ClaudeProfileResponse.self, from: $0) }
+        return Self.snapshot(from: response, plan: creds.subscriptionType, profile: profile)
     }
 
     public func fetchRaw() async throws -> Data { try await fetchRaw(try ClaudeCredentials.load()) }
 
-    private func fetchRaw(_ creds: ClaudeCredentials) async throws -> Data {
-        if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
-        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage")!, headers: [
-            "Authorization": "Bearer \(creds.accessToken)",
-            "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "QuotaVadis",
-        ])
+    private static func headers(_ creds: ClaudeCredentials) -> [String: String] {
+        ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
     }
 
-    static func snapshot(from r: ClaudeUsageResponse, plan: String?) -> UsageSnapshot {
+    private func fetchRaw(_ creds: ClaudeCredentials) async throws -> Data {
+        if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
+        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage")!, headers: Self.headers(creds))
+    }
+
+    static func snapshot(from r: ClaudeUsageResponse, plan: String?, profile: ClaudeProfileResponse? = nil) -> UsageSnapshot {
         var windows: [UsageWindow] = []
         func add(_ id: String, _ kind: UsageWindow.Kind, _ title: String, _ w: ClaudeUsageResponse.Window?) {
             guard let w, let pct = w.utilization else { return }
@@ -51,18 +55,58 @@ public struct ClaudeUsageFetcher: UsageFetcher {
             credits.append(UsageCredits(id: "extra", title: "Extra usage", used: used / 100,
                                         limit: extra.monthlyLimit.map { $0 / 100 }, currency: extra.currency ?? "USD"))
         }
-        return UsageSnapshot(provider: .claude, account: nil, plan: plan.map(Self.planLabel), windows: windows, credits: credits)
+        let org = profile?.organization
+        let planLabel = org?.organizationType.map(Self.planLabel) ?? plan.map(Self.planLabel)
+        return UsageSnapshot(provider: .claude, account: profile?.account?.email, plan: planLabel,
+                             seat: Self.seatLabel(seatTier: org?.seatTier, rateTier: org?.rateLimitTier),
+                             windows: windows, credits: credits)
     }
 
+    /// Accepts both `subscriptionType` ("max") and `organization_type` ("claude_team").
     static func planLabel(_ raw: String) -> String {
-        switch raw.lowercased() {
-        case "max": "Max"
-        case "pro": "Pro"
-        case "team": "Team"
-        case "enterprise": "Enterprise"
-        default: raw.capitalized
+        let lower = raw.lowercased().replacingOccurrences(of: "claude_", with: "")
+        switch lower {
+        case "max": return "Max"
+        case "pro": return "Pro"
+        case "team": return "Team"
+        case "enterprise": return "Enterprise"
+        case "free": return "Free"
+        default: return lower.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
+
+    /// "team_tier_1" + "default_claude_max_5x" → "Team tier 1 · Max 5x". Unknown values pass through humanized.
+    static func seatLabel(seatTier: String?, rateTier: String?) -> String? {
+        var parts: [String] = []
+        if let seatTier, !seatTier.isEmpty {
+            parts.append(seatTier.replacingOccurrences(of: "_", with: " ").capitalized
+                .replacingOccurrences(of: "Tier", with: "tier"))
+        }
+        if let rateTier {
+            let lower = rateTier.lowercased()
+            if let range = lower.range(of: "max_") {
+                let multiplier = lower[range.upperBound...].uppercased()   // "5X", "20X"
+                parts.append("Max \(multiplier.lowercased())")
+            } else if lower.contains("pro") { parts.append("Pro") }
+            else if lower.contains("enterprise") { parts.append("Enterprise") }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+struct ClaudeProfileResponse: Decodable {
+    struct Account: Decodable { let email: String?; let displayName: String?
+        enum CodingKeys: String, CodingKey { case email; case displayName = "display_name" } }
+    struct Organization: Decodable {
+        let organizationType: String?
+        let rateLimitTier: String?
+        let seatTier: String?
+        enum CodingKeys: String, CodingKey {
+            case organizationType = "organization_type"; case rateLimitTier = "rate_limit_tier"; case seatTier = "seat_tier"
+        }
+    }
+    let account: Account?
+    let organization: Organization?
 }
 
 struct ClaudeUsageResponse: Decodable {

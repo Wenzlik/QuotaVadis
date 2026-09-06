@@ -53,6 +53,8 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var provider: ProviderID
     public var account: String?
     public var plan: String?
+    /// The seat/tier assigned to this user inside the plan, e.g. "Premium seat · Max 5x".
+    public var seat: String?
     public var windows: [UsageWindow]
     public var credits: [UsageCredits]
     /// Codex: number of rate-limit resets the user can still redeem. nil when the provider has no such concept.
@@ -62,10 +64,11 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
 
     public var id: String { "\(deviceName)/\(provider.rawValue)" }
 
-    public init(provider: ProviderID, account: String?, plan: String?, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
+    public init(provider: ProviderID, account: String?, plan: String?, seat: String? = nil, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
         self.provider = provider
         self.account = account
         self.plan = plan
+        self.seat = seat
         self.windows = windows
         self.credits = credits
         self.resetCreditsAvailable = resetCreditsAvailable
