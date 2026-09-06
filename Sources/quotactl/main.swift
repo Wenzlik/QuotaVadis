@@ -27,8 +27,14 @@ if CommandLine.arguments.contains("--cost") {
     print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
     exit(0)
 }
+if CommandLine.arguments.contains("--keychain") {
+    for e in ClaudeCredentials.keychainEntries() {
+        print("\(e.service)  created \(e.created?.formatted() ?? "?")  modified \(e.modified?.formatted() ?? "?")")
+    }
+    exit(0)
+}
 if CommandLine.arguments.contains("--raw") {
-    for fetcher in UsageService.allFetchers where fetcher.isAvailable() {
+    for fetcher in UsageService.defaultFetchers() where fetcher.isAvailable() {
         print("=== \(fetcher.provider.displayName)")
         do {
             let data = try await fetcher.fetchRaw()
@@ -46,21 +52,22 @@ if json {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     encoder.dateEncodingStrategy = .iso8601
-    let snapshots = ProviderID.allCases.compactMap { states[$0]?.snapshot }
+    let snapshots = states.keys.sorted().compactMap { states[$0]?.snapshot }
     print(String(decoding: try encoder.encode(snapshots), as: UTF8.self))
 } else {
     let rel = RelativeDateTimeFormatter()
     rel.unitsStyle = .abbreviated
-    for id in ProviderID.allCases {
+    for id in states.keys.sorted() {
         guard let state = states[id] else { continue }
+        let name = ProviderID(rawValue: id)?.displayName ?? id
         switch state {
         case .unavailable:
-            print("\(id.displayName): not installed")
+            print("\(name): not installed")
         case .failed(let error, _):
-            print("\(id.displayName): ERROR \(error.localizedDescription)")
+            print("\(name): ERROR \(error.localizedDescription)")
         case .fresh(let s):
-            let who = [s.plan, s.seat, s.account].compactMap { $0 }.joined(separator: " · ")
-            print("\(id.displayName)\(who.isEmpty ? "" : " (\(who))")")
+            let who = [s.organization, s.plan, s.seat, s.account].compactMap { $0 }.joined(separator: " · ")
+            print("\(s.provider.displayName)\(who.isEmpty ? "" : " (\(who))")")
             for w in s.windows {
                 let reset = w.resetsAt.map { " resets \(rel.localizedString(for: $0, relativeTo: .now))" } ?? ""
                 print("  " + w.title.padding(toLength: 14, withPad: " ", startingAt: 0) + String(format: "%5.1f%%", w.usedPercent) + reset)

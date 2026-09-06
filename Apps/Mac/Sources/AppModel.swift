@@ -10,20 +10,20 @@ import QuotaCore
 enum MenuBarSource: Hashable, Codable {
     /// Highest usage across every visible provider.
     case worst
-    /// One provider's primary (session) or secondary (weekly/monthly) window.
-    case provider(ProviderID, secondary: Bool)
+    /// One instance's primary (session) or secondary (weekly/monthly) window.
+    case provider(String, secondary: Bool)
 
     var storageKey: String {
         switch self {
         case .worst: "worst"
-        case .provider(let id, let secondary): "\(id.rawValue):\(secondary ? "secondary" : "primary")"
+        case .provider(let id, let secondary): "\(id)|\(secondary ? "secondary" : "primary")"
         }
     }
 
     init(storageKey: String) {
-        let parts = storageKey.split(separator: ":")
-        if parts.count == 2, let id = ProviderID(rawValue: String(parts[0])) {
-            self = .provider(id, secondary: parts[1] == "secondary")
+        let parts = storageKey.split(separator: "|")
+        if parts.count == 2 {
+            self = .provider(String(parts[0]), secondary: parts[1] == "secondary")
         } else {
             self = .worst
         }
@@ -34,7 +34,8 @@ enum MenuBarSource: Hashable, Codable {
 @MainActor
 @Observable
 final class AppModel {
-    var states: [ProviderID: ProviderState] = [:]
+    /// Keyed by instance id: "claude", "claude:<suffix>", "codex", "cursor".
+    var states: [String: ProviderState] = [:]
     var costs: [ProviderID: CostReport] = [:]
     var lastRefresh: Date?
     var isRefreshing = false
@@ -79,13 +80,28 @@ final class AppModel {
             Task { syncEnabled ? await publishToCloud() : await unpublishFromCloud() }
         }
     }
-    /// Providers whose row is expanded to the full detail. Remembered across launches.
-    var expanded: Set<ProviderID> {
-        didSet { defaults.set(expanded.map(\.rawValue).sorted(), forKey: "expandedProviders") }
+    /// Instances whose row is expanded to the full detail. Remembered across launches.
+    var expanded: Set<String> {
+        didSet { defaults.set(expanded.sorted(), forKey: "expandedInstances") }
+    }
+    /// Extra Claude logins (Keychain services of other organizations' Claude Code profiles).
+    var extraClaudeServices: [String] {
+        didSet {
+            defaults.set(extraClaudeServices, forKey: "extraClaudeServices")
+            Task {
+                await service.setFetchers(UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices))
+                states = states.filter { key, _ in !key.hasPrefix("claude:") || extraClaudeServices.contains { key == "claude:" + Self.suffix($0) } }
+                await refresh()
+            }
+        }
+    }
+
+    static func suffix(_ service: String) -> String {
+        service.replacingOccurrences(of: ClaudeCredentials.keychainService, with: "").trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
     private let defaults = UserDefaults.standard
-    private let service = UsageService()
+    private let service: UsageService
     private let costService = CostService()
     private let cloud = CloudSync()
     private var publishTask: Task<Void, Never>?
@@ -108,18 +124,30 @@ final class AppModel {
         syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
         lastSyncPush = defaults.object(forKey: "lastSyncPush") as? Date
         lastSyncError = defaults.string(forKey: "lastSyncError")
-        expanded = Set(defaults.stringArray(forKey: "expandedProviders")?.compactMap(ProviderID.init(rawValue:)) ?? [])
+        expanded = Set(defaults.stringArray(forKey: "expandedInstances") ?? [])
+        extraClaudeServices = defaults.stringArray(forKey: "extraClaudeServices") ?? []
+        service = UsageService(fetchers: UsageService.defaultFetchers(extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? []))
         scheduleRefresh()
         Task { await refresh() }
     }
 
-    /// Providers in display order: enabled ones whose tool exists on this Mac.
-    var visibleProviders: [ProviderID] {
-        ProviderID.allCases.filter { enabledProviders.contains($0) && states[$0] != .unavailable }
+    struct Instance: Hashable, Identifiable {
+        let id: String
+        let provider: ProviderID
+    }
+
+    /// Instances in display order: primary Claude, extra Claude logins, Codex, Cursor; only enabled + present.
+    var visibleInstances: [Instance] {
+        var out: [Instance] = []
+        for provider in ProviderID.allCases where enabledProviders.contains(provider) {
+            let ids = states.keys.filter { $0 == provider.rawValue || $0.hasPrefix(provider.rawValue + ":") }.sorted()
+            for id in ids where states[id] != .unavailable { out.append(Instance(id: id, provider: provider)) }
+        }
+        return out
     }
 
     var worstPercent: Double? {
-        visibleProviders.compactMap { states[$0]?.snapshot?.worstWindow?.usedPercent }.max()
+        visibleInstances.compactMap { states[$0.id]?.snapshot?.worstWindow?.usedPercent }.max()
     }
 
     /// The number shown in the menu bar, per the user's `menuBarSource` choice.
@@ -133,14 +161,22 @@ final class AppModel {
         }
     }
 
+    func title(for instance: Instance) -> String {
+        guard instance.provider == .claude, instance.id != "claude", let org = states[instance.id]?.snapshot?.organization else {
+            return instance.provider.displayName
+        }
+        return "\(instance.provider.displayName) · \(org)"
+    }
+
     /// Menu bar choices that make sense right now: only windows the providers actually report.
     var menuBarSourceOptions: [(MenuBarSource, String)] {
         var options: [(MenuBarSource, String)] = [(.worst, "Highest usage")]
-        for id in ProviderID.allCases where enabledProviders.contains(id) {
-            let snapshot = states[id]?.snapshot
-            if let w = snapshot?.primaryWindow { options.append((.provider(id, secondary: false), "\(id.displayName) · \(w.title)")) }
+        for instance in visibleInstances {
+            let snapshot = states[instance.id]?.snapshot
+            let name = title(for: instance)
+            if let w = snapshot?.primaryWindow { options.append((.provider(instance.id, secondary: false), "\(name) · \(w.title)")) }
             if let w = snapshot?.secondaryWindow, w.id != snapshot?.primaryWindow?.id {
-                options.append((.provider(id, secondary: true), "\(id.displayName) · \(w.title)"))
+                options.append((.provider(instance.id, secondary: true), "\(name) · \(w.title)"))
             }
         }
         return options
@@ -184,7 +220,7 @@ final class AppModel {
 
     private var currentPayload: DevicePayload {
         DevicePayload(deviceID: DeviceIdentity.id, deviceName: DeviceInfo.name,
-                      snapshots: ProviderID.allCases.compactMap { states[$0]?.snapshot },
+                      snapshots: visibleInstances.compactMap { states[$0.id]?.snapshot },
                       costs: ProviderID.allCases.compactMap { costs[$0] })
     }
 
@@ -236,15 +272,15 @@ final class AppModel {
     /// One notification per window per crossing of the threshold; resets once the window drops back under.
     private func notifyIfNeeded() {
         let center = UNUserNotificationCenter.current()
-        for id in visibleProviders {
-            guard let snapshot = states[id]?.snapshot else { continue }
+        for instance in visibleInstances {
+            guard let snapshot = states[instance.id]?.snapshot else { continue }
             for window in snapshot.windows {
-                let key = "\(id.rawValue)/\(window.id)"
+                let key = "\(instance.id)/\(window.id)"
                 if window.usedPercent >= Double(warnAtPercent) {
                     guard !warned.contains(key) else { continue }
                     warned.insert(key)
                     let content = UNMutableNotificationContent()
-                    content.title = "\(id.displayName) \(window.title) at \(Int(window.usedPercent))%"
+                    content.title = "\(title(for: instance)) \(window.title) at \(Int(window.usedPercent))%"
                     if let reset = window.resetsAt {
                         content.body = "Resets \(reset.formatted(.relative(presentation: .named)))"
                     }

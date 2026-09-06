@@ -3,21 +3,31 @@ import Foundation
 /// `GET https://api.anthropic.com/api/oauth/usage` with the Claude Code OAuth token.
 public struct ClaudeUsageFetcher: UsageFetcher {
     public let provider: ProviderID = .claude
-    public init() {}
+    /// Keychain service of the login to read; nil = Claude Code's default item.
+    public let keychainService: String?
 
-    public func isAvailable() -> Bool { ClaudeCredentials.isAvailable() }
+    public init(keychainService: String? = nil) { self.keychainService = keychainService }
+
+    public var instanceID: String {
+        guard let keychainService else { return provider.rawValue }
+        return "claude:" + keychainService.replacingOccurrences(of: ClaudeCredentials.keychainService, with: "").trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    public func isAvailable() -> Bool { keychainService == nil ? ClaudeCredentials.isAvailable() : true }
 
     public func fetch() async throws -> UsageSnapshot {
-        let creds = try ClaudeCredentials.load()
+        let creds = try ClaudeCredentials.load(service: keychainService)
         // Usage is required; profile (seat, email) is best-effort.
         async let usageData = fetchRaw(creds)
         async let profileData = try? HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/profile")!, headers: Self.headers(creds))
         let response = try HTTP.decode(ClaudeUsageResponse.self, from: try await usageData)
         let profile = await profileData.flatMap { try? JSONDecoder().decode(ClaudeProfileResponse.self, from: $0) }
-        return Self.snapshot(from: response, plan: creds.subscriptionType, profile: profile)
+        var snapshot = Self.snapshot(from: response, plan: creds.subscriptionType, profile: profile)
+        snapshot.instanceID = instanceID
+        return snapshot
     }
 
-    public func fetchRaw() async throws -> Data { try await fetchRaw(try ClaudeCredentials.load()) }
+    public func fetchRaw() async throws -> Data { try await fetchRaw(try ClaudeCredentials.load(service: keychainService)) }
 
     private static func headers(_ creds: ClaudeCredentials) -> [String: String] {
         ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
@@ -57,7 +67,7 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         }
         let org = profile?.organization
         let planLabel = org?.organizationType.map(Self.planLabel) ?? plan.map(Self.planLabel)
-        return UsageSnapshot(provider: .claude, account: profile?.account?.email, plan: planLabel,
+        return UsageSnapshot(provider: .claude, account: profile?.account?.email, organization: org?.name, plan: planLabel,
                              seat: Self.seatLabel(seatTier: org?.seatTier, rateTier: org?.rateLimitTier),
                              windows: windows, credits: credits)
     }
@@ -102,11 +112,12 @@ struct ClaudeProfileResponse: Decodable {
     struct Account: Decodable { let email: String?; let displayName: String?
         enum CodingKeys: String, CodingKey { case email; case displayName = "display_name" } }
     struct Organization: Decodable {
+        let name: String?
         let organizationType: String?
         let rateLimitTier: String?
         let seatTier: String?
         enum CodingKeys: String, CodingKey {
-            case organizationType = "organization_type"; case rateLimitTier = "rate_limit_tier"; case seatTier = "seat_tier"
+            case name; case organizationType = "organization_type"; case rateLimitTier = "rate_limit_tier"; case seatTier = "seat_tier"
         }
     }
     let account: Account?

@@ -5,23 +5,25 @@ import QuotaCore
 /// Collapsed: name, plan and the main bars. Expanded: every window, credits, resets, account, freshness.
 public struct ProviderRow: View {
     let provider: ProviderID
+    let title: String
     let state: ProviderState
     let cost: CostReport?
     let isExpanded: Bool
     let toggle: () -> Void
 
-    public init(provider: ProviderID, state: ProviderState, cost: CostReport?, isExpanded: Bool, toggle: @escaping () -> Void) {
-        self.provider = provider; self.state = state; self.cost = cost; self.isExpanded = isExpanded; self.toggle = toggle
+    public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool, toggle: @escaping () -> Void) {
+        self.provider = provider; self.title = title ?? provider.displayName; self.state = state; self.cost = cost
+        self.isExpanded = isExpanded; self.toggle = toggle
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: toggle) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(provider.displayName).font(.headline)
-                    if let plan = state.snapshot?.plan {
-                        Text([plan, isExpanded ? state.snapshot?.seat : nil].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(.secondary)
+                    Text(title).font(.headline).lineLimit(1)
+                    if let snapshot = state.snapshot {
+                        Text([snapshot.plan, isExpanded ? snapshot.seat : nil].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
                     if case .failed(let error, _) = state {
@@ -59,6 +61,9 @@ public struct ProviderRow: View {
                             DetailLine(title: "Expire", value: snapshot.resetCreditExpiries
                                 .map { $0.formatted(.relative(presentation: .numeric)) }.joined(separator: " · "))
                         }
+                    }
+                    if let org = snapshot.organization {
+                        DetailLine(title: "Organization", value: org)
                     }
                     if let account = snapshot.account {
                         DetailLine(title: "Account", value: account)

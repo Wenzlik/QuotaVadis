@@ -26,11 +26,14 @@ struct ContentView: View {
 
     private func deviceList(_ device: DevicePayload) -> some View {
         List {
-            ForEach(ProviderID.allCases.filter { device.snapshot(for: $0) != nil }) { id in
-                ProviderRow(provider: id, state: .fresh(device.snapshot(for: id)!), cost: device.cost(for: id),
-                            isExpanded: store.expanded.contains(id)) {
+            ForEach(device.snapshots) { snapshot in
+                let title = snapshot.instanceID == snapshot.provider.rawValue ? snapshot.provider.displayName
+                    : "\(snapshot.provider.displayName) · \(snapshot.organization ?? snapshot.instanceID)"
+                ProviderRow(provider: snapshot.provider, title: title, state: .fresh(snapshot),
+                            cost: snapshot.instanceID == snapshot.provider.rawValue ? device.cost(for: snapshot.provider) : nil,
+                            isExpanded: store.expanded.contains(snapshot.instanceID)) {
                     withAnimation(.snappy(duration: 0.2)) {
-                        if store.expanded.contains(id) { store.expanded.remove(id) } else { store.expanded.insert(id) }
+                        if store.expanded.contains(snapshot.instanceID) { store.expanded.remove(snapshot.instanceID) } else { store.expanded.insert(snapshot.instanceID) }
                     }
                 }
                 .padding(.vertical, 6)

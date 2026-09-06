@@ -15,32 +15,38 @@ public enum ProviderState: Sendable, Hashable {
     }
 }
 
-/// Runs every installed fetcher concurrently and keeps the last good snapshot when a refresh fails.
+/// Runs every configured fetcher concurrently and keeps the last good snapshot when a refresh fails.
+/// Results are keyed by instance id (`claude`, `claude:<suffix>`, `codex`, `cursor`).
 public actor UsageService {
-    public static let allFetchers: [any UsageFetcher] = [ClaudeUsageFetcher(), CodexUsageFetcher(), CursorUsageFetcher()]
+    public static func defaultFetchers(extraClaudeServices: [String] = []) -> [any UsageFetcher] {
+        [ClaudeUsageFetcher()] + extraClaudeServices.map { ClaudeUsageFetcher(keychainService: $0) } + [CodexUsageFetcher(), CursorUsageFetcher()]
+    }
 
-    private let fetchers: [any UsageFetcher]
-    private var last: [ProviderID: UsageSnapshot] = [:]
+    private var fetchers: [any UsageFetcher]
+    private var last: [String: UsageSnapshot] = [:]
 
-    public init(fetchers: [any UsageFetcher] = UsageService.allFetchers) {
+    public init(fetchers: [any UsageFetcher] = UsageService.defaultFetchers()) {
         self.fetchers = fetchers
     }
 
-    public func refresh(enabled: Set<ProviderID> = Set(ProviderID.allCases)) async -> [ProviderID: ProviderState] {
-        await withTaskGroup(of: (ProviderID, ProviderState).self) { group in
+    public func setFetchers(_ fetchers: [any UsageFetcher]) { self.fetchers = fetchers }
+
+    public func refresh(enabled: Set<ProviderID> = Set(ProviderID.allCases)) async -> [String: ProviderState] {
+        await withTaskGroup(of: (String, ProviderState).self) { group in
             for fetcher in fetchers where enabled.contains(fetcher.provider) {
                 group.addTask { [last] in
-                    guard fetcher.isAvailable() else { return (fetcher.provider, .unavailable) }
+                    let id = fetcher.instanceID
+                    guard fetcher.isAvailable() else { return (id, .unavailable) }
                     do {
-                        return (fetcher.provider, .fresh(try await fetcher.fetch()))
+                        return (id, .fresh(try await fetcher.fetch()))
                     } catch let error as ProviderError {
-                        return (fetcher.provider, .failed(error, last: last[fetcher.provider]))
+                        return (id, .failed(error, last: last[id]))
                     } catch {
-                        return (fetcher.provider, .failed(.network(error.localizedDescription), last: last[fetcher.provider]))
+                        return (id, .failed(.network(error.localizedDescription), last: last[id]))
                     }
                 }
             }
-            var result: [ProviderID: ProviderState] = [:]
+            var result: [String: ProviderState] = [:]
             for await (id, state) in group {
                 result[id] = state
                 if case .fresh(let s) = state { last[id] = s }

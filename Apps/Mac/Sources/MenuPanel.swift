@@ -10,7 +10,7 @@ struct MenuPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if model.visibleProviders.isEmpty {
+            if model.visibleInstances.isEmpty {
                 ContentUnavailableView("Nothing to track", systemImage: "gauge.with.dots.needle.0percent",
                                        description: Text("Log in to Claude Code, Codex or Cursor on this Mac."))
                     .frame(height: 160)
@@ -40,16 +40,19 @@ struct MenuPanel: View {
     }
 
     @ViewBuilder private var providerRows: some View {
-                ForEach(model.visibleProviders) { id in
-                    ProviderRow(provider: id, state: model.states[id] ?? .unavailable, cost: model.costs[id],
-                                isExpanded: model.expanded.contains(id)) {
+                ForEach(model.visibleInstances) { instance in
+                    // Cost reports come from local logs and cannot be split per organization: primary instance only.
+                    ProviderRow(provider: instance.provider, title: model.title(for: instance),
+                                state: model.states[instance.id] ?? .unavailable,
+                                cost: instance.id == instance.provider.rawValue ? model.costs[instance.provider] : nil,
+                                isExpanded: model.expanded.contains(instance.id)) {
                         withAnimation(.snappy(duration: 0.2)) {
-                            if model.expanded.contains(id) { model.expanded.remove(id) } else { model.expanded.insert(id) }
+                            if model.expanded.contains(instance.id) { model.expanded.remove(instance.id) } else { model.expanded.insert(instance.id) }
                         }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    if id != model.visibleProviders.last { Divider().padding(.horizontal, 14) }
+                    if instance != model.visibleInstances.last { Divider().padding(.horizontal, 14) }
                 }
     }
 

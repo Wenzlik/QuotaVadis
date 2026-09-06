@@ -54,7 +54,11 @@ public struct UsageWindow: Codable, Sendable, Hashable, Identifiable {
 /// Everything the UI needs for one provider at one point in time. This is also the unit of iCloud sync.
 public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var provider: ProviderID
+    /// Distinguishes several logins of one provider (e.g. two Claude organizations). Defaults to the provider id.
+    public var instanceID: String
     public var account: String?
+    /// Organization / workspace name when the provider has one (Claude org, Codex workspace).
+    public var organization: String?
     public var plan: String?
     /// The seat/tier assigned to this user inside the plan, e.g. "Premium seat · Max 5x".
     public var seat: String?
@@ -67,10 +71,12 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var fetchedAt: Date
     public var deviceName: String
 
-    public var id: String { "\(deviceName)/\(provider.rawValue)" }
+    public var id: String { "\(deviceName)/\(instanceID)" }
 
-    public init(provider: ProviderID, account: String?, plan: String?, seat: String? = nil, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, resetCreditExpiries: [Date] = [], fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
+    public init(provider: ProviderID, instanceID: String? = nil, account: String?, organization: String? = nil, plan: String?, seat: String? = nil, windows: [UsageWindow], credits: [UsageCredits] = [], resetCreditsAvailable: Int? = nil, resetCreditExpiries: [Date] = [], fetchedAt: Date = .now, deviceName: String = DeviceInfo.name) {
         self.provider = provider
+        self.instanceID = instanceID ?? provider.rawValue
+        self.organization = organization
         self.account = account
         self.plan = plan
         self.seat = seat
@@ -80,6 +86,32 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         self.resetCreditExpiries = resetCreditExpiries
         self.fetchedAt = fetchedAt
         self.deviceName = deviceName
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider, instanceID, account, organization, plan, seat, windows, credits, resetCreditsAvailable, resetCreditExpiries, fetchedAt, deviceName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(ProviderID.self, forKey: .provider)
+        instanceID = try c.decodeIfPresent(String.self, forKey: .instanceID) ?? provider.rawValue
+        account = try c.decodeIfPresent(String.self, forKey: .account)
+        organization = try c.decodeIfPresent(String.self, forKey: .organization)
+        plan = try c.decodeIfPresent(String.self, forKey: .plan)
+        seat = try c.decodeIfPresent(String.self, forKey: .seat)
+        windows = try c.decodeIfPresent([UsageWindow].self, forKey: .windows) ?? []
+        credits = try c.decodeIfPresent([UsageCredits].self, forKey: .credits) ?? []
+        resetCreditsAvailable = try c.decodeIfPresent(Int.self, forKey: .resetCreditsAvailable)
+        resetCreditExpiries = try c.decodeIfPresent([Date].self, forKey: .resetCreditExpiries) ?? []
+        fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? .now
+        deviceName = try c.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
+    }
+
+    /// Header subtitle: organization, plan and seat in one line.
+    public var subtitle: String? {
+        let parts = [organization, plan, seat].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// The window that matters most right now: highest utilization.
@@ -127,11 +159,17 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
 
 public protocol UsageFetcher: Sendable {
     var provider: ProviderID { get }
+    /// Unique per login; equals `provider.rawValue` for the primary instance.
+    var instanceID: String { get }
     /// True when the tool's credentials exist on this machine. Cheap; no network.
     func isAvailable() -> Bool
     func fetch() async throws -> UsageSnapshot
     /// Raw API response, for debugging shapes with `quotactl --raw`.
     func fetchRaw() async throws -> Data
+}
+
+public extension UsageFetcher {
+    var instanceID: String { provider.rawValue }
 }
 
 /// Money-style quota: how much was spent against a limit (extra usage, on-demand, credits).

@@ -9,6 +9,22 @@ public enum DebugProbes {
                 "Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis",
             ])) ?? Data("error".utf8)
             out.append(("Claude profile", data))
+            let h = ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
+            if let org = ProcessInfo.processInfo.environment["CLAUDE_ORG"] {
+                var variants: [(String, String, [String: String])] = [
+                    ("query organization_id", "/api/oauth/usage?organization_id=\(org)", h),
+                    ("query organization_uuid", "/api/oauth/usage?organization_uuid=\(org)", h),
+                ]
+                for header in ["anthropic-organization-id", "x-organization-uuid", "X-Organization-UUID", "anthropic-organization"] {
+                    var hh = h; hh[header] = org
+                    variants.append(("header \(header)", "/api/oauth/usage", hh))
+                    variants.append(("profile header \(header)", "/api/oauth/profile", hh))
+                }
+                for (label, path, hh) in variants {
+                    let d = (try? await HTTP.get(URL(string: "https://api.anthropic.com" + path)!, headers: hh)) ?? Data("error".utf8)
+                    out.append(("Claude \(label)", d))
+                }
+            }
         }
         if let creds = try? CodexCredentials.load() {
             let claims = JWT.payload(creds.idToken ?? "") ?? [:]

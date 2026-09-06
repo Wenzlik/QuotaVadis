@@ -13,7 +13,7 @@ final class DeviceStore {
     var lastRefresh: Date?
     var lastError: String?
     var isRefreshing = false
-    var expanded: Set<ProviderID> = []
+    var expanded: Set<String> = []
 
     /// Remembered device choice; falls back to the most recently updated Mac.
     var selectedDeviceID: String? {
