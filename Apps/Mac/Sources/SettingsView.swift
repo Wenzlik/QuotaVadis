@@ -22,11 +22,18 @@ struct SettingsView: View {
         Form {
             Section("Track") {
                 ForEach(ProviderID.allCases) { id in
-                    Toggle(id.displayName, isOn: Binding(
-                        get: { model.enabledProviders.contains(id) },
-                        set: { on in if on { model.enabledProviders.insert(id) } else { model.enabledProviders.remove(id) } }))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(id.displayName, isOn: Binding(
+                            get: { model.enabledProviders.contains(id) },
+                            set: { on in if on { model.enabledProviders.insert(id) } else { model.enabledProviders.remove(id) } }))
+                        if let status = model.credentialStatuses[id] {
+                            Text(status.summary).font(.caption).foregroundStyle(status.problem == nil ? .secondary : .orange)
+                                .lineLimit(2).truncationMode(.middle)
+                        }
+                    }
                 }
             }
+            .onAppear { model.refreshCredentialStatuses() }
             Section {
                 ForEach(model.extraClaudeServices, id: \.self) { service in
                     HStack {

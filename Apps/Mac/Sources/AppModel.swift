@@ -127,8 +127,24 @@ final class AppModel {
         expanded = Set(defaults.stringArray(forKey: "expandedInstances") ?? [])
         extraClaudeServices = defaults.stringArray(forKey: "extraClaudeServices") ?? []
         service = UsageService(fetchers: UsageService.defaultFetchers(extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? []))
+        hasOnboarded = defaults.bool(forKey: "hasOnboarded")
         scheduleRefresh()
+        // First launch waits for the welcome window so the Keychain prompt is explained before it appears.
+        if hasOnboarded { Task { await refresh() } }
+    }
+
+    private(set) var hasOnboarded: Bool
+
+    func completeOnboarding() {
+        hasOnboarded = true
+        defaults.set(true, forKey: "hasOnboarded")
         Task { await refresh() }
+    }
+
+    /// Per-provider login source and validity for Settings; refreshed on demand.
+    var credentialStatuses: [ProviderID: CredentialStatus] = [:]
+    func refreshCredentialStatuses() {
+        for provider in ProviderID.allCases { credentialStatuses[provider] = CredentialStatus.status(for: provider) }
     }
 
     struct Instance: Hashable, Identifiable {

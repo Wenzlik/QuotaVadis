@@ -10,9 +10,13 @@ struct MenuPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if model.visibleInstances.isEmpty {
-                ContentUnavailableView("Nothing to track", systemImage: "gauge.with.dots.needle.0percent",
-                                       description: Text("Log in to Claude Code, Codex or Cursor on this Mac."))
+            if !model.hasOnboarded {
+                ContentUnavailableView("Welcome", systemImage: "flame",
+                                       description: Text("Finish the welcome window to start reading your limits."))
+                    .frame(height: 160)
+            } else if model.visibleInstances.isEmpty {
+                ContentUnavailableView("Nothing to track", systemImage: "flame",
+                                       description: Text("Log in to Claude Code, Codex or Cursor on this Mac, then Refresh."))
                     .frame(height: 160)
             } else {
                 // A bare ScrollView inside a MenuBarExtra window gets no height proposal and collapses to zero.

@@ -4,14 +4,27 @@ import QuotaCore
 @main
 struct QuotaVadisApp: App {
     @State private var model = AppModel()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra {
             MenuPanel(model: model)
+                .onAppear {
+                    if !model.hasOnboarded {
+                        openWindow(id: "welcome")
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                }
         } label: {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Welcome", id: "welcome") {
+            WelcomeView(model: model)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
 
         Settings {
             SettingsView(model: model)
