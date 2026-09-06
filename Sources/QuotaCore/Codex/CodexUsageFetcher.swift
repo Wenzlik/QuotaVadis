@@ -32,7 +32,7 @@ public struct CodexUsageFetcher: UsageFetcher {
             let id = [prefix, kind.rawValue].compactMap { $0 }.joined(separator: "-")
             let title = prefix.map { "\($0) \(baseTitle.lowercased())" } ?? baseTitle
             windows.append(UsageWindow(id: id, kind: kindOverride ?? kind, title: title, usedPercent: Double(w.usedPercent),
-                                       resetsAt: Date(timeIntervalSince1970: TimeInterval(w.resetAt))))
+                                       resetsAt: Date(timeIntervalSince1970: TimeInterval(w.resetAt)), prominent: kindOverride == nil))
         }
         add(prefix: nil, r.rateLimit?.primaryWindow)
         add(prefix: nil, r.rateLimit?.secondaryWindow)

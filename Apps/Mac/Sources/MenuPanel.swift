@@ -120,7 +120,7 @@ struct ProviderRow: View {
                     ForEach(snapshot.credits) { credits in
                         CreditsLine(credits: credits)
                     }
-                    ForEach(snapshot.windows.filter { $0.kind == .model }) { window in
+                    ForEach(snapshot.windows.filter { !$0.prominent }) { window in
                         UsageBar(window: window, compact: true)
                     }
                     if let resets = snapshot.resetCreditsAvailable {
@@ -144,9 +144,9 @@ struct ProviderRow: View {
         }
     }
 
-    /// Collapsed rows show the session and the weekly/monthly bar only.
+    /// Collapsed rows show the prominent windows (Claude's per-model weekly limits included).
     private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
-        snapshot.windows.filter { $0.kind != .model }
+        snapshot.windows.filter(\.prominent)
     }
 }
 
@@ -270,21 +270,41 @@ struct DetailLine: View {
     }
 }
 
-/// "Extra usage   $15.65 / $5.00" — spend against a cap, no bar.
+/// Spend against a cap as a bar: "Extra usage  $15.65 / $5.00". Without a cap, a plain line.
 struct CreditsLine: View {
     let credits: UsageCredits
 
     var body: some View {
-        HStack {
-            Text(credits.title).font(.caption)
-            Spacer()
-            Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(overCap ? .red : .secondary)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(credits.title).font(.caption)
+                Spacer()
+                if let reset = credits.resetsAt, credits.limit != nil {
+                    Text(reset, format: .relative(presentation: .numeric)).font(.caption2).foregroundStyle(.tertiary)
+                }
+                Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+            }
+            if let percent = credits.usedPercent {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.quaternary)
+                        Capsule().fill(tint).frame(width: geo.size.width * min(1, max(0, percent / 100)))
+                    }
+                }
+                .frame(height: 5)
+            }
         }
     }
 
-    private var overCap: Bool { credits.limit.map { credits.used >= $0 } ?? false }
+    private var tint: Color {
+        switch credits.usedPercent ?? 0 {
+        case ..<50: .green
+        case ..<80: .yellow
+        default: .red
+        }
+    }
 
     private func amount(_ value: Double) -> String {
         value.formatted(.currency(code: credits.currency).precision(.fractionLength(2)))

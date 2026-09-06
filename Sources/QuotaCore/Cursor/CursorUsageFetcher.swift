@@ -40,10 +40,10 @@ public struct CursorUsageFetcher: UsageFetcher {
                 windows.append(UsageWindow(id: "plan", kind: .monthly, title: "Included total", usedPercent: pct, resetsAt: cycleEnd))
             }
             if let pct = plan.autoPercentUsed {
-                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd))
+                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd, prominent: false))
             }
             if let pct = plan.apiPercentUsed {
-                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd))
+                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd, prominent: false))
             }
             // On team/enterprise seats `used`/`limit` (cents) disagree with Cursor's own `totalPercentUsed`
             // (e.g. 713/2000 = 36% vs 2.85%): the seat draws on a pooled team allowance and `limit` is a placeholder.

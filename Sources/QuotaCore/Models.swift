@@ -27,13 +27,16 @@ public struct UsageWindow: Codable, Sendable, Hashable, Identifiable {
     /// 0...100. Values above 100 are clamped by the UI, not here.
     public var usedPercent: Double
     public var resetsAt: Date?
+    /// Shown in the collapsed row. False for breakdown sub-windows (Cursor Auto/Other, Codex extra limits).
+    public var prominent: Bool
 
-    public init(id: String, kind: Kind, title: String, usedPercent: Double, resetsAt: Date?) {
+    public init(id: String, kind: Kind, title: String, usedPercent: Double, resetsAt: Date?, prominent: Bool = true) {
         self.id = id
         self.kind = kind
         self.title = title
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
+        self.prominent = prominent
     }
 
     public var remainingPercent: Double { max(0, 100 - usedPercent) }
