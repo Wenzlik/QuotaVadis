@@ -1,0 +1,36 @@
+import SwiftUI
+import QuotaCore
+
+struct SettingsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Form {
+            Section("Track") {
+                ForEach(ProviderID.allCases) { id in
+                    Toggle(id.displayName, isOn: Binding(
+                        get: { model.enabledProviders.contains(id) },
+                        set: { on in if on { model.enabledProviders.insert(id) } else { model.enabledProviders.remove(id) } }))
+                }
+            }
+            Section {
+                Picker("Refresh every", selection: $model.refreshIntervalMinutes) {
+                    Text("1 minute").tag(1)
+                    Text("5 minutes").tag(5)
+                    Text("15 minutes").tag(15)
+                    Text("30 minutes").tag(30)
+                }
+                Picker("Notify at", selection: $model.warnAtPercent) {
+                    Text("Never").tag(101)
+                    Text("70%").tag(70)
+                    Text("80%").tag(80)
+                    Text("90%").tag(90)
+                }
+                Toggle("Launch at login", isOn: $model.launchAtLogin)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
