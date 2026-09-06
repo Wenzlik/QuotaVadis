@@ -39,6 +39,8 @@ targets:
     info:
       path: Apps/Mac/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
         CFBundleDisplayName: QuotaVadis
         NSHumanReadableCopyright: "© 2026 Václav Zmrhal"
@@ -76,6 +78,8 @@ targets:
     info:
       path: Apps/iOS/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: QuotaVadis
         UILaunchScreen: {}
         UIBackgroundModes: [remote-notification]
@@ -109,6 +113,8 @@ targets:
     info:
       path: Apps/Widgets/Info-Mac.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: QuotaVadis Widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -136,6 +142,8 @@ targets:
     info:
       path: Apps/Widgets/Info-iOS.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: QuotaVadis Widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
