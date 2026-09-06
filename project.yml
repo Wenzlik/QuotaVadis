@@ -17,6 +17,9 @@ settings:
 packages:
   QuotaCore:
     path: .
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.3
 targets:
   QuotaVadis:
     type: application
@@ -29,6 +32,8 @@ targets:
         product: QuotaCore
       - package: QuotaCore
         product: QuotaUI
+      - package: Sparkle
+        product: Sparkle
       - target: QuotaWidgets-Mac
         embed: true
     info:
@@ -37,6 +42,10 @@ targets:
         LSUIElement: true
         CFBundleDisplayName: QuotaVadis
         NSHumanReadableCopyright: "© 2026 Václav Zmrhal"
+        SUFeedURL: https://zmrhal.cz/quotavadis/appcast.xml
+        SUPublicEDKey: uchYgkRDkq9Yzq1GqgEkUCA8nOUZNdbe17zfMGzTpME=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis

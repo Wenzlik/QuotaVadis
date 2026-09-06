@@ -3,6 +3,7 @@ import QuotaCore
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @Bindable var updater: Updater
     @State private var showKeychainPicker = false
 
     private var syncDescription: String {
@@ -73,6 +74,16 @@ struct SettingsView: View {
             Section("iCloud") {
                 Toggle("Sync to iCloud", isOn: $model.syncEnabled)
                 Text(syncDescription).font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
+                HStack {
+                    Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
+                    Spacer()
+                    if let date = updater.lastCheck {
+                        Text("Last checked \(date.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             Section("Cost estimates") {
                 Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)

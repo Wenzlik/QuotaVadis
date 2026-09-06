@@ -24,5 +24,13 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Václav Zmrhal</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://zmrhal.cz/quotavadis/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>uchYgkRDkq9Yzq1GqgEkUCA8nOUZNdbe17zfMGzTpME=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

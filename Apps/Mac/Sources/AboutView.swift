@@ -2,6 +2,8 @@ import SwiftUI
 
 /// About window: name, version, author, links. Opened from the panel footer.
 struct AboutView: View {
+    var updater: Updater
+
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
@@ -16,6 +18,7 @@ struct AboutView: View {
                 .frame(width: 96, height: 96)
             Text("QuotaVadis").font(.title2.weight(.semibold))
             Text(version).font(.caption).foregroundStyle(.secondary)
+            Button("Check for Updates…") { updater.check() }.controlSize(.small).disabled(!updater.canCheck)
             Text("Your AI coding limits, at a glance.")
                 .font(.callout)
                 .multilineTextAlignment(.center)

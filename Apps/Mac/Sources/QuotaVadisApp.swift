@@ -4,6 +4,7 @@ import QuotaCore
 @main
 struct QuotaVadisApp: App {
     @State private var model = AppModel()
+    @State private var updater = Updater()
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
@@ -27,11 +28,11 @@ struct QuotaVadisApp: App {
         .windowStyle(.hiddenTitleBar)
 
         Settings {
-            SettingsView(model: model)
+            SettingsView(model: model, updater: updater)
         }
 
         Window("About QuotaVadis", id: "about") {
-            AboutView()
+            AboutView(updater: updater)
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
