@@ -41,7 +41,7 @@ struct SettingsView: View {
                         Text("30 minutes").tag(1800)
                     }
                     Toggle("Launch at login", isOn: $model.launchAtLogin)
-                    Text("Short intervals can hit provider rate limits (HTTP 429); QuotaVadis then backs off automatically and keeps the last values.")
+                    Text("Claude Code is read at most every 5 minutes whatever you pick here: Anthropic's usage API throttles faster polling. Other tools follow the interval. After an HTTP 429 the app backs off and keeps the last values.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

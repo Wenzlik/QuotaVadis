@@ -222,3 +222,23 @@ private func fixture(_ name: String) throws -> Data {
     await gate.recordSuccess("api.example.com")
     #expect(await gate.isBlocked("api.example.com", now: now) == false)
 }
+
+private struct CountingFetcher: UsageFetcher {
+    let provider: ProviderID
+    let counter: Counter
+    func isAvailable() -> Bool { true }
+    func fetch() async throws -> UsageSnapshot {
+        await counter.bump()
+        return UsageSnapshot(provider: provider, account: nil, plan: nil, windows: [UsageWindow(id: "w", kind: .session, title: "S", usedPercent: 1, resetsAt: nil)])
+    }
+    func fetchRaw() async throws -> Data { Data() }
+}
+private actor Counter { var n = 0; func bump() { n += 1 } }
+
+@Test func claudeIsPolledAtMostEveryFiveMinutes() async {
+    let claude = Counter(), codex = Counter()
+    let service = UsageService(fetchers: [CountingFetcher(provider: .claude, counter: claude), CountingFetcher(provider: .codex, counter: codex)])
+    _ = await service.refresh(); _ = await service.refresh(); _ = await service.refresh()
+    #expect(await claude.n == 1)
+    #expect(await codex.n == 3)
+}

@@ -25,6 +25,12 @@ public actor UsageService {
     private var fetchers: [any UsageFetcher]
     private var pending: [String: Task<UsageSnapshot?, Error>] = [:]
     private var last: [String: UsageSnapshot] = [:]
+    private var lastSuccessAt: [String: Date] = [:]
+
+    /// Providers whose usage API throttles aggressively are polled no more often than this, whatever the user's
+    /// refresh interval. Anthropic's /api/oauth/usage answers 429 to sub-minute polling (claude-code #31021, #31637);
+    /// CodexBar's default cadence there is 5 minutes.
+    public static let minimumInterval: [ProviderID: TimeInterval] = [.claude: 300]
 
     public init(fetchers: [any UsageFetcher] = UsageService.defaultFetchers()) {
         self.fetchers = fetchers
@@ -37,6 +43,12 @@ public actor UsageService {
         await withTaskGroup(of: (String, ProviderState).self) { group in
             for fetcher in fetchers where enabled.contains(fetcher.provider) {
                 let id = fetcher.instanceID
+                // Too soon for this provider: hand back the last good snapshot without touching the network.
+                if let floor = Self.minimumInterval[fetcher.provider], let at = lastSuccessAt[id], let cached = last[id],
+                   Date.now.timeIntervalSince(at) < floor {
+                    group.addTask { (id, .fresh(cached)) }
+                    continue
+                }
                 // Reuse a still-blocked system call rather than accumulate Keychain readers on each retry.
                 let work: Task<UsageSnapshot?, Error>
                 if let existing = pending[id] { work = existing }
@@ -72,7 +84,10 @@ public actor UsageService {
             for await (id, state) in group {
                 await onResult(id, state)
                 result[id] = state
-                if case .fresh(let s) = state { last[id] = s }
+                if case .fresh(let s) = state, last[id] != s || lastSuccessAt[id] == nil {
+                    last[id] = s
+                    lastSuccessAt[id] = s.fetchedAt
+                }
             }
             return result
         }
