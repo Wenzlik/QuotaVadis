@@ -33,6 +33,30 @@ final class DeviceStore {
         didSet { UserDefaults.standard.set(selectedDeviceID, forKey: "selectedDeviceID"); updateWidgets() }
     }
 
+    /// Same samples as the Mac app's Settings button.
+    func sendTestNotifications() {
+        let now = Date(); let soon = now.addingTimeInterval(30 * 60)
+        let samples = [
+            QuotaAlert(kind: .threshold, key: "test/threshold", title: "Claude Code: Session at 85%", body: "15% left · resets \(soon.resetLabel(now: now))"),
+            QuotaAlert(kind: .reset, key: "test/reset", title: "Codex: Weekly reset", body: "Back to 100% available."),
+            QuotaAlert(kind: .extraUsageUnexpected, key: "test/extra-unexpected", title: "Claude Code: paying extra usage while limits remain",
+                       body: "Extra usage grew by $0.42 to $3.17 although no window is exhausted. A model outside your seat (e.g. Fable on a Standard seat) is billed separately."),
+            QuotaAlert(kind: .extraUsageAtLimit, key: "test/extra-limit", title: "Claude Code: paying extra usage, reset in 30 min",
+                       body: "Session is exhausted; further use is billed. Extra usage is at $3.59. Resets \(soon.resetLabel(now: now))."),
+        ]
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            for alert in samples {
+                let content = UNMutableNotificationContent()
+                content.title = alert.title; content.body = alert.body
+                content.sound = alert.kind == .reset ? nil : .default
+                center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content,
+                                                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)))
+            }
+        }
+    }
+
     private func evaluateAlerts() {
         guard notificationsEnabled, let device = selectedDevice else { return }
         var titles: [String: String] = [:]
