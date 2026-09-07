@@ -1,4 +1,5 @@
 import SwiftUI
+import QuotaCore
 
 /// Shown once before the first refresh so the Keychain prompt does not come out of nowhere.
 struct WelcomeView: View {
@@ -15,11 +16,11 @@ struct WelcomeView: View {
                 }
             }
             point("key.fill", "Nothing to log into",
-                  "QuotaVadis reuses the logins those tools already keep on this Mac. It reads them, never changes them.")
+                  "QuotaVadis reuses existing tool logins. Codex refreshes its own login through its CLI; additional Claude profiles use a QuotaVadis-managed credential copy.")
             point("lock.shield", "One Keychain question",
                   "Claude Code stores its login in the Keychain. macOS will ask whether QuotaVadis may read it. Choose “Always Allow”, otherwise the question comes back on every refresh.")
-            point("icloud", "Only numbers leave this Mac",
-                  "Percentages, reset times and cost estimates can sync to your iCloud private database for the iPhone app. Tokens and logs stay here. You can turn sync off in Settings.")
+            point("icloud", "Choose whether to sync",
+                  SyncPrivacy.summary)
             HStack {
                 Spacer()
                 Button("Continue") {

@@ -1,4 +1,5 @@
 import SwiftUI
+import QuotaCore
 
 /// About window: name, version, author, links. Opened from the panel footer.
 struct AboutView: View {
@@ -28,7 +29,7 @@ struct AboutView: View {
                 Link("zmrhal.cz", destination: URL(string: "https://zmrhal.cz")!)
             }
             .font(.callout)
-            Text("Not affiliated with Anthropic, OpenAI or Cursor. Reads the sessions those tools already keep on this Mac; nothing leaves your device except the usage requests they make themselves.")
+            Text("Not affiliated with Anthropic, OpenAI or Cursor. Reads existing tool logins to request usage. " + SyncPrivacy.summary)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
