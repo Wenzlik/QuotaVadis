@@ -119,8 +119,11 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 }
 
 struct ClaudeProfileResponse: Decodable {
-    struct Account: Decodable { let email: String?; let displayName: String?
-        enum CodingKeys: String, CodingKey { case email; case displayName = "display_name" } }
+    struct Account: Decodable {
+        let email: String?; let displayName: String?
+        enum CodingKeys: String, CodingKey { case email; case displayName = "display_name" }
+        init(email: String?, displayName: String?) { self.email = email; self.displayName = displayName }
+    }
     struct Organization: Decodable {
         let name: String?
         let organizationType: String?
@@ -129,9 +132,13 @@ struct ClaudeProfileResponse: Decodable {
         enum CodingKeys: String, CodingKey {
             case name; case organizationType = "organization_type"; case rateLimitTier = "rate_limit_tier"; case seatTier = "seat_tier"
         }
+        init(name: String?, organizationType: String?, rateLimitTier: String?, seatTier: String?) {
+            self.name = name; self.organizationType = organizationType; self.rateLimitTier = rateLimitTier; self.seatTier = seatTier
+        }
     }
     let account: Account?
     let organization: Organization?
+    init(account: Account?, organization: Organization?) { self.account = account; self.organization = organization }
 }
 
 struct ClaudeUsageResponse: Decodable {

@@ -92,8 +92,9 @@ public struct CursorUsageFetcher: UsageFetcher {
                                         limit: od.limit.map { Double($0) / 100 }, resetsAt: cycleEnd))
         }
         if let bot, bot.hasNonZeroIncludedLimit == true, let pct = bot.usagePercent {
+            // Grok Bot sits in the main list once it has been used; an untouched 0% stays in the detail.
             windows.append(UsageWindow(id: "grok-bot", kind: .weekly, title: "Grok Bot", usedPercent: pct,
-                                       resetsAt: ISO8601DateFormatter.parseAny(bot.nextResetTimestampUtc)))
+                                       resetsAt: ISO8601DateFormatter.parseAny(bot.nextResetTimestampUtc), prominent: pct > 0))
         }
         // Cursor reports Teams workspaces as `enterprise`; the API exposes no seat type, so none is shown.
         let plan = r.membershipType.map(Self.planLabel)

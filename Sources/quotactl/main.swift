@@ -27,6 +27,16 @@ if CommandLine.arguments.contains("--cost") {
     print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))
     exit(0)
 }
+if CommandLine.arguments.contains("--claude-web") {
+    for (name, data) in try await DebugProbes.claudeWeb() {
+        print("=== \(name)")
+        if let obj = try? JSONSerialization.jsonObject(with: data),
+           let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
+            print(String(decoding: pretty, as: UTF8.self).prefix(1600))
+        } else { print(String(decoding: data, as: UTF8.self).prefix(300)) }
+    }
+    exit(0)
+}
 if CommandLine.arguments.contains("--codex-cli") {
     let result = try await CodexCLI.readRateLimits()
     print(result.map { String(decoding: $0, as: UTF8.self) } ?? "codex CLI not found")
@@ -50,7 +60,8 @@ if CommandLine.arguments.contains("--raw") {
     }
     exit(0)
 }
-let service = UsageService()
+let source = CommandLine.arguments.contains("--web") ? UsageService.ClaudeSource.web : .automatic
+let service = UsageService(fetchers: UsageService.defaultFetchers(claudeSource: source))
 let states = await service.refresh()
 
 if json {

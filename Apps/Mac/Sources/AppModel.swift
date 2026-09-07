@@ -114,15 +114,36 @@ final class AppModel {
     var expanded: Set<String> {
         didSet { defaults.set(expanded.sorted(), forKey: "expandedInstances") }
     }
+    /// Where Claude limits come from: Claude Code login, claude.ai web session (desktop app / Chrome / pasted key), or both.
+    var claudeSource: UsageService.ClaudeSource {
+        didSet { defaults.set(claudeSource.rawValue, forKey: "claudeSource"); rebuildFetchers() }
+    }
+    /// Pasted claude.ai session key (kept in our own Keychain item), for people without the desktop app or Chrome.
+    var manualClaudeSessionKey: String {
+        didSet { ClaudeWebSession.saveManualKey(manualClaudeSessionKey); rebuildFetchers() }
+    }
+    var claudeCodeAvailable: Bool { ClaudeUsageFetcher().isAvailable() }
+    var claudeWebAvailable: Bool { ClaudeWebSession.isAvailable() }
+
+    /// Organizations already shown through Claude Code logins; the web path skips them in automatic mode.
+    private var coveredOrganizations: Set<String> {
+        Set(states.filter { $0.key == "claude" || $0.key.hasPrefix("claude:") }.compactMap { $0.value.snapshot?.organization })
+    }
+
+    private func rebuildFetchers() {
+        Task {
+            await service.setFetchers(UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource,
+                                                                   coveredOrganizations: coveredOrganizations))
+            states = states.filter { key, _ in !key.hasPrefix("claude") }
+            await refresh()
+        }
+    }
+
     /// Extra Claude logins (Keychain services of other organizations' Claude Code profiles).
     var extraClaudeServices: [String] {
         didSet {
             defaults.set(extraClaudeServices, forKey: "extraClaudeServices")
-            Task {
-                await service.setFetchers(UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices))
-                states = states.filter { key, _ in !key.hasPrefix("claude:") || extraClaudeServices.contains { key == "claude:" + Self.suffix($0) } }
-                await refresh()
-            }
+            rebuildFetchers()
         }
     }
 
@@ -174,7 +195,11 @@ final class AppModel {
         lastSyncError = defaults.string(forKey: "lastSyncError")
         expanded = Set(defaults.stringArray(forKey: "expandedInstances") ?? [])
         extraClaudeServices = defaults.stringArray(forKey: "extraClaudeServices") ?? []
-        service = UsageService(fetchers: UsageService.defaultFetchers(extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? []))
+        claudeSource = UsageService.ClaudeSource(rawValue: defaults.string(forKey: "claudeSource") ?? "") ?? .automatic
+        manualClaudeSessionKey = ClaudeWebSession.manualKey() ?? ""
+        service = UsageService(fetchers: UsageService.defaultFetchers(
+            extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? [],
+            claudeSource: UsageService.ClaudeSource(rawValue: defaults.string(forKey: "claudeSource") ?? "") ?? .automatic))
         hasOnboarded = defaults.bool(forKey: "hasOnboarded")
         scheduleRefresh()
         if !syncEnabled && defaults.bool(forKey: "pendingCloudRemoval") { requestSync() }
@@ -205,7 +230,14 @@ final class AppModel {
     var visibleInstances: [Instance] {
         var out: [Instance] = []
         for provider in ProviderID.allCases where enabledProviders.contains(provider) {
-            let ids = [provider.rawValue] + (provider == .claude ? extraClaudeServices.map { "claude:" + Self.suffix($0) } : [])
+            var ids: [String] = [provider.rawValue]
+            if provider == .claude {
+                let useClaudeCode = claudeSource == .claudeCode || (claudeSource == .automatic && claudeCodeAvailable)
+                ids = useClaudeCode ? ["claude"] + extraClaudeServices.map { "claude:" + Self.suffix($0) } : []
+                let web = states.keys.filter { $0.hasPrefix("claude-web:") }.sorted()
+                ids += web
+                if ids.isEmpty { ids = ["claude-web"] }   // placeholder row until a web session is found
+            }
             for id in ids { out.append(Instance(id: id, provider: provider)) }
         }
         return out
@@ -249,10 +281,10 @@ final class AppModel {
     }
 
     func title(for instance: Instance) -> String {
-        guard instance.provider == .claude, instance.id != "claude", let org = states[instance.id]?.snapshot?.organization else {
-            return instance.provider.displayName
-        }
-        return "\(instance.provider.displayName) · \(org)"
+        guard instance.provider == .claude, instance.id != "claude" else { return instance.provider.displayName }
+        let base = instance.id.hasPrefix("claude-web") ? "Claude" : instance.provider.displayName
+        guard let org = states[instance.id]?.snapshot?.organization else { return base }
+        return "\(base) · \(org)"
     }
 
     /// Every window that can feed "Highest usage", for the Settings checklist.

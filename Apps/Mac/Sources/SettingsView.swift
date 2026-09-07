@@ -113,6 +113,21 @@ struct SettingsView: View {
 
             pane {
                 Section {
+                    Picker("Read limits from", selection: $model.claudeSource) {
+                        Text("Automatic").tag(UsageService.ClaudeSource.automatic)
+                        Text("Claude Code login").tag(UsageService.ClaudeSource.claudeCode)
+                        Text("claude.ai web session").tag(UsageService.ClaudeSource.web)
+                    }
+                    LabeledContent("Claude Code", value: model.claudeCodeAvailable ? "logged in on this Mac" : "not found")
+                    LabeledContent("claude.ai session", value: model.claudeWebAvailable ? "found (Claude app, Chrome or pasted key)" : "not found")
+                    SecureField("Paste a claude.ai sessionKey (optional)", text: $model.manualClaudeSessionKey)
+                } header: {
+                    Text("Claude source")
+                } footer: {
+                    Text("Automatic uses your Claude Code login and adds organizations from your claude.ai session. Without Claude Code, the session of the Claude desktop app or Chrome is enough. Safari is not read yet; paste the sessionKey cookie from claude.ai instead.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section {
                     ForEach(model.extraClaudeServices, id: \.self) { service in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
@@ -129,7 +144,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Claude organizations")
                 } footer: {
-                    Text("Each organization needs its own Claude Code login. “Add organization…” walks you through it.")
+                    Text("Only needed if you belong to more than one Claude organization and use Claude Code: each organization needs its own Claude Code login, and “Add organization…” walks you through it. With a claude.ai web session, organizations are picked up automatically.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -51,4 +51,22 @@ public enum DebugProbes {
         }
         return out
     }
+
+    /// claude.ai web API through the sessionKey cookie: organizations + usage/spend/credits for chat-capable orgs.
+    public static func claudeWeb() async throws -> [(String, Data)] {
+        guard let session = try ClaudeWebSession.load() else { return [("session", Data("none".utf8))] }
+        var out: [(String, Data)] = [("session", Data("source=\(session.source.rawValue) lastActiveOrg=\(session.lastActiveOrg ?? "-") key=\(session.sessionKey.prefix(12))…".utf8))]
+        let h = ClaudeWebUsageFetcher.headers(sessionKey: session.sessionKey)
+        let orgsData = try await HTTP.get(URL(string: "https://claude.ai/api/organizations")!, headers: h)
+        out.append(("organizations", orgsData))
+        let orgs = (try? JSONSerialization.jsonObject(with: orgsData) as? [[String: Any]]) ?? []
+        for o in orgs.prefix(3) {
+            guard let id = o["uuid"] as? String, (o["capabilities"] as? [String])?.contains("chat") == true else { continue }
+            for path in ["usage", "overage_spend_limit", "prepaid/credits"] {
+                let d = (try? await HTTP.get(URL(string: "https://claude.ai/api/organizations/\(id)/\(path)")!, headers: h)) ?? Data("error".utf8)
+                out.append(("\(o["name"] ?? id) /\(path)", d))
+            }
+        }
+        return out
+    }
 }

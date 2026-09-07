@@ -73,6 +73,9 @@ private func fixture(_ name: String) throws -> Data {
     let s = CursorUsageFetcher.snapshot(from: r, bot: bot, account: nil)
     #expect(s.windows.last?.id == "grok-bot")
     #expect(s.windows.last?.usedPercent == 12)
+    #expect(s.windows.last?.prominent == true)
+    let idle = CursorUsageFetcher.snapshot(from: r, bot: CursorBotUsage(nextResetTimestampUtc: nil, usagePercent: 0, hasNonZeroIncludedLimit: true), account: nil)
+    #expect(idle.windows.last?.prominent == false)
     let none = CursorUsageFetcher.snapshot(from: r, bot: CursorBotUsage(nextResetTimestampUtc: nil, usagePercent: 0, hasNonZeroIncludedLimit: false), account: nil)
     #expect(!none.windows.contains { $0.id == "grok-bot" })
 }
@@ -252,4 +255,25 @@ private actor Counter { var n = 0; func bump() { n += 1 } }
     #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-7200), lastCodingActivity: now.addingTimeInterval(-60))) == (300, .codingActivity))
     #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-7200))) == (900, .idle))
     #expect(d(.init(now: now)) == (1800, .longIdle))
+}
+
+@Test func claudeWebOrganizationDecoding() throws {
+    let json = #"[{"uuid":"o1","name":"Acme","capabilities":["chat","raven"],"rate_limit_tier":"default_raven","billing_type":"stripe_subscription"},{"uuid":"o2","name":"API only","capabilities":["api"]}]"#
+    let orgs = try JSONDecoder().decode([ClaudeWebUsageFetcher.Organization].self, from: Data(json.utf8))
+    #expect(orgs.count == 2)
+    #expect(ClaudeWebUsageFetcher.inferredType(orgs[0]) == "claude_team")
+    #expect(ClaudeWebUsageFetcher.inferredType(orgs[1]) == nil)
+    let profile = ClaudeProfileResponse(account: .init(email: "a@b.c", displayName: nil),
+                                        organization: .init(name: "Acme", organizationType: "claude_team", rateLimitTier: "default_raven", seatTier: "team_tier_1"))
+    let usage = try JSONDecoder().decode(ClaudeUsageResponse.self, from: fixture("claude_usage"))
+    let s = ClaudeUsageFetcher.snapshot(from: usage, plan: nil, profile: profile)
+    #expect(s.organization == "Acme" && s.plan == "Team" && s.seat == "Premium seat")
+}
+
+@Test func chromiumV10DecryptRoundTrip() throws {
+    #if os(macOS)
+    let key = try ChromiumCookieStore.deriveKey(password: "test-password")
+    #expect(key.count == 16)
+    #expect(ChromiumCookieStore.decrypt(Data("v10".utf8), key: key, hostKey: ".claude.ai") == nil)
+    #endif
 }

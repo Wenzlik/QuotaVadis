@@ -134,9 +134,9 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         (alertWindows.isEmpty ? windows : alertWindows).max { $0.usedPercent < $1.usedPercent }
     }
 
-    /// Two normal windows plus every binding exception. Widgets prioritize the worst before truncating.
+    /// Every prominent window plus any sub-window that became the binding constraint. Widgets truncate later.
     public var overviewWindows: [UsageWindow] {
-        let normal = Array(windows.filter(\.prominent).prefix(2))
+        let normal = windows.filter(\.prominent)
         let highest = normal.map(\.usedPercent).max() ?? 0
         return normal + alertWindows.filter { w in
             !normal.contains(where: { $0.id == w.id }) && (w.usedPercent >= 100 || w.usedPercent > highest)
@@ -215,10 +215,13 @@ public protocol UsageFetcher: Sendable {
     func fetch() async throws -> UsageSnapshot
     /// Raw API response, for debugging shapes with `quotactl --raw`.
     func fetchRaw() async throws -> Data
+    func fetchAll() async throws -> [UsageSnapshot]
 }
 
 public extension UsageFetcher {
     var instanceID: String { provider.rawValue }
+    /// Fetchers that expose several logins/organizations at once override this; default is one snapshot.
+    func fetchAll() async throws -> [UsageSnapshot] { [try await fetch()] }
 }
 
 /// Money-style quota: how much was spent against a limit (extra usage, on-demand, credits).
