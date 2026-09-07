@@ -71,13 +71,10 @@ struct MenuPanel: View {
             Button { Task { await model.refresh(); await model.refreshCosts() } } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh now (⌘R)")
                 .keyboardShortcut("r")
-            Button { openSettings() } label: { Image(systemName: "gearshape") }
+            Button { bringToFront { openSettings() } } label: { Image(systemName: "gearshape") }
                 .help("Settings (⌘,)")
                 .keyboardShortcut(",")
-            Button {
-                openWindow(id: "about")
-                NSApp.activate(ignoringOtherApps: true)
-            } label: { Image(systemName: "info.circle") }
+            Button { bringToFront { openWindow(id: "about") } } label: { Image(systemName: "info.circle") }
                 .help("About QuotaVadis")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .help("Quit (⌘Q)")
@@ -86,5 +83,18 @@ struct MenuPanel: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// A menu bar app is never the active app, so its windows open behind whatever is frontmost.
+/// Activate first, open, then make the newest window key once SwiftUI has created it.
+@MainActor
+func bringToFront(_ open: () -> Void) {
+    NSApp.activate(ignoringOtherApps: true)
+    open()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        NSApp.activate(ignoringOtherApps: true)
+        let candidates = NSApp.windows.filter { $0.isVisible && $0.canBecomeKey && !($0.className.contains("StatusBar") || $0.className.contains("MenuBarExtra")) }
+        candidates.last?.makeKeyAndOrderFront(nil)
     }
 }
