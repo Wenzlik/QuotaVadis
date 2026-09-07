@@ -66,11 +66,14 @@ public struct CursorUsageFetcher: UsageFetcher {
             if let pct = plan.totalPercentUsed ?? percent(used: plan.used, limit: plan.limit) {
                 windows.append(UsageWindow(id: "plan", kind: .monthly, title: "Included total", usedPercent: pct, resetsAt: cycleEnd))
             }
+            // Auto and named-model usage have their own included allowances. Keep them as sub-rows unless one of
+            // them is the binding constraint (higher than the total): then it must be visible and alertable.
+            let total = plan.totalPercentUsed ?? percent(used: plan.used, limit: plan.limit) ?? 0
             if let pct = plan.autoPercentUsed {
-                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd, prominent: false))
+                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5))
             }
             if let pct = plan.apiPercentUsed {
-                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd, prominent: false))
+                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5))
             }
             // On team/enterprise seats `used`/`limit` (cents) disagree with Cursor's own `totalPercentUsed`
             // (e.g. 713/2000 = 36% vs 2.85%): the seat draws on a pooled team allowance and `limit` is a placeholder.

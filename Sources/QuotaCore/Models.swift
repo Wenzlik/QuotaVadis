@@ -125,8 +125,12 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// The window that matters most right now: highest utilization.
-    public var worstWindow: UsageWindow? { windows.max { $0.usedPercent < $1.usedPercent } }
+    /// The window that matters most right now: highest utilization among the windows shown in the collapsed
+    /// row (sub-rows are promoted when they become the binding constraint, so nothing important hides here).
+    public var worstWindow: UsageWindow? {
+        let shown = windows.filter(\.prominent)
+        return (shown.isEmpty ? windows : shown).max { $0.usedPercent < $1.usedPercent }
+    }
     public var primaryWindow: UsageWindow? { windows.first { $0.kind == .session } ?? windows.first }
     public var secondaryWindow: UsageWindow? { windows.first { $0.kind == .weekly || $0.kind == .monthly } }
 }

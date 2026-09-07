@@ -49,6 +49,8 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.windows[0].usedPercent == 67)
     #expect(s.windows[1].usedPercent == 60)
     #expect(s.windows[2].usedPercent == 7)
+    #expect(s.windows.map(\.prominent) == [true, false, false])
+    #expect(s.worstWindow?.id == "plan")
     #expect(s.seat == nil)
     #expect(s.credits.map(\.id) == ["plan", "on-demand"])
     #expect(s.credits[0].used == 13.40)
@@ -171,4 +173,13 @@ private func fixture(_ name: String) throws -> Data {
     #expect(label.contains("·"))
     let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
     #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
+}
+
+@Test func cursorSubWindowPromotedWhenBinding() throws {
+    let json = #"{"billingCycleEnd":"2026-09-22T17:25:37.000Z","membershipType":"enterprise","limitType":"team","individualUsage":{"plan":{"enabled":true,"used":700,"limit":2000,"totalPercentUsed":14,"autoPercentUsed":8.8,"apiPercentUsed":41.5}}}"#
+    let r = try JSONDecoder().decode(CursorUsageSummary.self, from: Data(json.utf8))
+    let s = CursorUsageFetcher.snapshot(from: r, account: nil)
+    #expect(s.windows.first { $0.id == "api" }?.prominent == true)
+    #expect(s.windows.first { $0.id == "auto" }?.prominent == false)
+    #expect(s.worstWindow?.id == "api")
 }
