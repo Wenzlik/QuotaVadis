@@ -69,7 +69,7 @@ private actor EventLog {
 }
 
 #if os(macOS)
-@Test func helperWithNoResponseAndFullStderrIsKilled() async throws {
+@Test(arguments: [false, true]) func helperWithNoResponseAndFullStderrIsKilled(cancel: Bool) async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -79,11 +79,45 @@ private actor EventLog {
     try "#!/bin/sh\necho $$ > '\(pidFile.path)'\ntrap '' TERM\nwhile :; do echo 'stderr noise stderr noise stderr noise' >&2; done\n".write(to: helper, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
     let start = ContinuousClock.now
-    do { _ = try await CodexCLI.readRateLimits(binary: helper, timeout: 1); Issue.record("Expected timeout") }
-    catch { #expect(error is TimeoutError) }
+    let task = Task { try await CodexCLI.readRateLimits(binary: helper, timeout: 1) }
+    if cancel {
+        // Wait for a confirmed launch, then cancel the caller rather than the internal deadline.
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: pidFile.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        task.cancel()
+    }
+    do { _ = try await task.value; Issue.record("Expected cancellation or timeout") }
+    catch { #expect(cancel ? error is CancellationError : error is TimeoutError) }
     #expect(start.duration(to: .now) < .seconds(4))
     let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)
 }
 #endif
+
+private actor ChangingSchemaFetcher: UsageFetcher {
+    nonisolated let provider: ProviderID = .codex
+    private var requests = 0
+    nonisolated func isAvailable() -> Bool { true }
+    func fetchRaw() async throws -> Data { Data() }
+    func fetch() async throws -> UsageSnapshot {
+        requests += 1
+        if requests == 1 {
+            return UsageSnapshot(provider: .codex, account: nil, plan: nil,
+                                 windows: [UsageWindow(id: "session", kind: .session, title: "Session", usedPercent: 42, resetsAt: nil)])
+        }
+        let empty = try JSONDecoder().decode(CodexUsageResponse.self, from: Data("{}".utf8))
+        return try CodexUsageFetcher.snapshot(from: empty, account: nil, fallbackPlan: nil).validated()
+    }
+}
+
+@Test func unusableResponseKeepsLastGoodSnapshot() async {
+    let service = UsageService(fetchers: [ChangingSchemaFetcher()])
+    let first = await service.refresh()
+    #expect(first["codex"]?.snapshot?.worstWindow?.usedPercent == 42)
+    let second = await service.refresh()
+    if case .failed(.decoding, let last) = second["codex"] {
+        #expect(last?.worstWindow?.usedPercent == 42)
+    } else { Issue.record("Unrecognized schema must preserve the previous snapshot as failed") }
+}

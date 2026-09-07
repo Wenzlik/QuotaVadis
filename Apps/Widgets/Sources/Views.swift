@@ -13,7 +13,7 @@ struct ProviderWidget: Widget {
             ProviderWidgetView(entry: entry).containerBackground(.background, for: .widget)
         }
         .configurationDisplayName("Tool usage")
-        .description("How much of one tool's quota is left.")
+        .description("How much of one tool's quota is used.")
         .supportedFamilies(supported)
     }
 
@@ -35,7 +35,7 @@ struct ProviderWidgetView: View {
             switch family {
             case .accessoryCircular: circular(snapshot)
             case .accessoryRectangular: rectangular(snapshot)
-            case .accessoryInline: Text("\(snapshot.provider.displayName) \(pct(snapshot.worstWindow))")
+            case .accessoryInline: Text("\(snapshot.provider.shortName) \(pct(snapshot.worstWindow)) used · \(entry.payload?.status(for: snapshot).freshness(now: entry.date).rawValue ?? "Stale")")
             case .systemMedium: medium(snapshot)
             default: small(snapshot)
             }
@@ -51,20 +51,26 @@ struct ProviderWidgetView: View {
         }.foregroundStyle(.secondary)
     }
 
+    private func measurement(_ s: UsageSnapshot) -> some View {
+        Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale")
+            .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+    }
+
     private func pct(_ w: UsageWindow?) -> String { w.map { "\(Int($0.usedPercent.rounded()))%" } ?? "—" }
 
     private func small(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(s.provider.displayName).font(.caption.weight(.semibold)).lineLimit(1)
+            measurement(s)
             Spacer(minLength: 0)
             if let w = s.worstWindow {
                 Gauge(value: min(1, w.usedPercent / 100)) { EmptyView() } currentValueLabel: {
-                    Text("\(Int(w.usedPercent.rounded()))").font(.title3.weight(.semibold).monospacedDigit())
+                    Text("\(Int(w.usedPercent.rounded()))%").font(.title3.weight(.semibold).monospacedDigit())
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
                 .tint(levelColor(w.usedPercent))
                 .frame(maxWidth: .infinity)
-                Text(w.title).font(.caption2).foregroundStyle(.secondary)
+                Text("\(w.title) · used").font(.caption2).foregroundStyle(.secondary)
                 if let reset = w.resetsAt {
                     Text("resets \(reset, style: .relative)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
@@ -80,7 +86,8 @@ struct ProviderWidgetView: View {
                 Spacer()
                 Text(entry.payload?.deviceName ?? "").font(.caption2).foregroundStyle(.tertiary)
             }
-            ForEach(s.windows.filter(\.prominent).prefix(3)) { w in
+            measurement(s)
+            ForEach(s.compactWindows.prefix(3)) { w in
                 BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
             }
         }
@@ -88,7 +95,7 @@ struct ProviderWidgetView: View {
 
     private func circular(_ s: UsageSnapshot) -> some View {
         Gauge(value: min(1, (s.worstWindow?.usedPercent ?? 0) / 100)) {
-            Image(systemName: "flame.fill")
+            Image(systemName: entry.payload?.status(for: s).freshness(now: entry.date) == .fresh ? "flame.fill" : "exclamationmark.triangle")
         } currentValueLabel: {
             Text("\(Int((s.worstWindow?.usedPercent ?? 0).rounded()))")
         }
@@ -98,11 +105,12 @@ struct ProviderWidgetView: View {
     private func rectangular(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(s.provider.displayName).font(.headline)
-            ForEach(s.windows.filter(\.prominent).prefix(2)) { w in
+            measurement(s)
+            ForEach(s.compactWindows.prefix(2)) { w in
                 HStack {
                     Text(w.title).font(.caption2)
                     Spacer()
-                    Text("\(Int(w.usedPercent.rounded()))%").font(.caption2.monospacedDigit())
+                    Text("\(Int(w.usedPercent.rounded()))% used").font(.caption2.monospacedDigit())
                 }
             }
         }
@@ -143,11 +151,11 @@ struct OverviewWidgetView: View {
                 if let w = s.worstWindow {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text(s.provider.displayName).font(.caption.weight(.semibold))
+                            Text("\(s.provider.shortName) · \(payload.status(for: s).freshness(now: entry.date).rawValue)").font(.caption.weight(.semibold))
                             Text(w.title).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
                             if let r = w.resetsAt { Text(r, style: .relative).font(.caption2).foregroundStyle(.tertiary) }
-                            Text("\(Int(w.usedPercent.rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(levelColor(w.usedPercent))
+                            Text("\(Int(w.usedPercent.rounded()))% used").font(.caption.monospacedDigit()).foregroundStyle(levelColor(w.usedPercent))
                         }
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
@@ -160,7 +168,7 @@ struct OverviewWidgetView: View {
                 }
             }
             Spacer(minLength: 0)
-            Text("\(payload.deviceName) · \(payload.updatedAt, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+            Text("\(payload.deviceName) · oldest measurement \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
         }
     }
 
@@ -169,20 +177,20 @@ struct OverviewWidgetView: View {
             ForEach(payload.snapshots.prefix(4)) { s in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(s.provider.displayName).font(.caption.weight(.semibold))
+                        Text("\(s.provider.shortName) · \(payload.status(for: s).freshness(now: entry.date).rawValue)").font(.caption.weight(.semibold))
                         if let plan = s.plan { Text(plan).font(.caption2).foregroundStyle(.secondary) }
                         Spacer()
                         if let w = s.worstWindow, let r = w.resetsAt {
                             Text("resets \(r, style: .relative)").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
-                    ForEach(s.windows.filter(\.prominent).prefix(3)) { w in
+                    ForEach(s.compactWindows.prefix(3)) { w in
                         BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
                     }
                 }
             }
             Spacer(minLength: 0)
-            Text("\(payload.deviceName) · \(payload.updatedAt, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary)
+            Text("\(payload.deviceName) · oldest measurement \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary)
         }
     }
 }
@@ -198,7 +206,7 @@ struct BarLine: View {
                 Text(title).font(.caption2)
                 Spacer()
                 if let resetsAt { Text(resetsAt.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
-                Text("\(Int(percent.rounded()))%").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
+                Text("\(Int(percent.rounded()))% used").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {

@@ -20,17 +20,8 @@ public struct ProviderRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: toggle) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title).font(.headline).lineLimit(1)
-                    if let snapshot = state.snapshot {
-                        Text([snapshot.plan, isExpanded ? snapshot.seat : nil].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                    Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    if case .failed(let error, _) = state {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .help(error.localizedDescription)
-                    }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
@@ -39,8 +30,20 @@ public struct ProviderRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(isExpanded ? "hide details" : "show details")")
+            if let subtitle = state.snapshot?.subtitle {
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+            MeasurementStatusView(status: ProviderSyncStatus(instanceID: state.snapshot?.instanceID ?? provider.rawValue,
+                                                             provider: provider, state: state, lastAttemptAt: nil))
+            if case .failed(let error, _) = state {
+                Text(ProviderFailureCode(error).nextStep).font(.caption).foregroundStyle(.orange)
+            }
 
             if let snapshot = state.snapshot {
+                if let notice = snapshot.modelLimitNotice {
+                    Text(notice).font(.caption).foregroundStyle(.orange)
+                }
                 ForEach(mainWindows(snapshot)) { window in
                     UsageBar(window: window)
                 }
@@ -52,7 +55,7 @@ public struct ProviderRow: View {
                     ForEach(snapshot.credits.filter { $0.used == 0 }) { credits in
                         CreditsLine(credits: credits)
                     }
-                    ForEach(snapshot.windows.filter { !$0.prominent }) { window in
+                    ForEach(snapshot.windows.filter { w in !mainWindows(snapshot).contains { $0.id == w.id } }) { window in
                         UsageBar(window: window, compact: true)
                     }
                     if let resets = snapshot.resetCreditsAvailable {
@@ -84,15 +87,16 @@ public struct ProviderRow: View {
                         CostSection(report: cost)
                     }
                 }
-            } else if case .failed(let error, _) = state {
-                Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
+            } else if case .unavailable = state {
+                Text("Open \(provider.displayName) on this Mac and sign in, then use Refresh above.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
 
-    /// Collapsed rows show the prominent windows (Claude's per-model weekly limits included).
+    /// Keep the overview compact while retaining every binding exception.
     private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
-        snapshot.windows.filter(\.prominent)
+        snapshot.overviewWindows
     }
 }
 
@@ -106,17 +110,25 @@ public struct CostSection: View {
     enum ChartMetric: String, CaseIterable { case cost, tokens }
 
     public var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    stat("Today", money(report.today?.costUSD ?? 0))
+                    stat("Today", report.day(at: now).map { money($0.costUSD) } ?? "Unavailable")
                     stat("30d cost", money(report.totalCostUSD))
                 }
                 GridRow {
-                    stat("Today tokens", tokens(report.today?.tokens.total ?? 0))
+                    stat("Today tokens", report.day(at: now).map { tokens($0.tokens.total) } ?? "Unavailable")
                     stat("30d tokens", tokens(report.totalTokens))
                 }
             }
+            Text("Report from \(report.generatedAt.formatted(date: .abbreviated, time: .shortened)) · days in \(report.timeZoneID ?? "Mac local time")")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("Last 30 days").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
@@ -275,11 +287,7 @@ public struct UsageBar: View {
             HStack {
                 Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
-                if let reset = window.resetsAt {
-                    Text(reset.resetLabel())
-                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                }
-                Text("\(Int(window.usedPercent.rounded()))%")
+                Text("\(Int(window.usedPercent.rounded()))% used")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(tint)
             }
@@ -290,9 +298,15 @@ public struct UsageBar: View {
                         .frame(width: geo.size.width * min(1, max(0, window.usedPercent / 100)))
                 }
             }
-            .frame(height: compact ? 3 : 5)
+            .frame(height: compact ? 4 : 7)
+            .accessibilityHidden(true)
+            if let reset = window.resetsAt {
+                Text(reset <= .now ? "Reset passed · waiting for a new measurement" : "Resets \(reset.resetLabel())")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(.leading, compact ? 12 : 0)
+        .accessibilityElement(children: .combine)
     }
 
     private var tint: Color {

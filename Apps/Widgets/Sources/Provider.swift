@@ -27,6 +27,16 @@ struct QuotaEntry: TimelineEntry {
     var snapshot: UsageSnapshot? { provider.flatMap { payload?.snapshot(for: $0) } }
     var cost: CostReport? { provider.flatMap { payload?.cost(for: $0) } }
 
+    /// Pre-schedule age/reset boundaries; re-reading an unchanged file must never rejuvenate a sample.
+    static func entries(payload: DevicePayload?, provider: ProviderID?, now: Date = .now) -> [QuotaEntry] {
+        let snapshots = payload?.snapshots ?? []
+        let nextReload = now.addingTimeInterval(30 * 60)
+        let boundaries = snapshots.flatMap { snapshot in
+            [snapshot.fetchedAt.addingTimeInterval(ProviderSyncStatus.staleAfter + 1)] + snapshot.windows.compactMap(\.resetsAt)
+        }.filter { $0 > now && $0 < nextReload }
+        return ([now] + Set(boundaries).sorted()).map { QuotaEntry(date: $0, payload: payload, provider: provider) }
+    }
+
     static let placeholder = QuotaEntry(date: .now, payload: .preview, provider: .claude)
 }
 
@@ -38,7 +48,7 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: ProviderIntent, in context: Context) async -> Timeline<QuotaEntry> {
         let entry = QuotaEntry(date: .now, payload: SharedStore.read(), provider: configuration.provider.providerID)
-        return Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(30 * 60)))
+        return Timeline(entries: QuotaEntry.entries(payload: entry.payload, provider: entry.provider), policy: .after(.now.addingTimeInterval(30 * 60)))
     }
 }
 
@@ -49,7 +59,7 @@ struct OverviewTimelineProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
         let entry = QuotaEntry(date: .now, payload: SharedStore.read(), provider: nil)
-        completion(Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(30 * 60))))
+        completion(Timeline(entries: QuotaEntry.entries(payload: entry.payload, provider: entry.provider), policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
 

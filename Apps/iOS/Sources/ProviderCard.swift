@@ -1,9 +1,11 @@
 import SwiftUI
 import QuotaCore
+import QuotaUI
 
 /// Overview card: identity, the prominent windows as big bars, the first real spend line.
 struct ProviderCard: View {
     let snapshot: UsageSnapshot
+    let status: ProviderSyncStatus
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -19,14 +21,17 @@ struct ProviderCard: View {
                 }
                 Spacer()
                 if let worst = snapshot.worstWindow {
-                    Text("\(Int(worst.usedPercent.rounded()))%")
+                    Text("\(Int(worst.usedPercent.rounded()))% used")
                         .font(.title2.weight(.semibold).monospacedDigit())
                         .foregroundStyle(levelColor(worst.usedPercent))
                 }
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
             }
+            MeasurementStatusView(status: status)
+            if let error = status.errorCode { Text(error.nextStep).font(.caption).foregroundStyle(.orange) }
+            if let notice = snapshot.modelLimitNotice { Text(notice).font(.caption).foregroundStyle(.orange) }
             VStack(spacing: 10) {
-                ForEach(snapshot.windows.filter(\.prominent)) { window in
+                ForEach(snapshot.overviewWindows) { window in
                     WindowLine(window: window)
                 }
                 ForEach(snapshot.credits.filter { $0.used > 0 }) { credit in
@@ -58,7 +63,7 @@ struct WindowLine: View {
                 if let reset = window.resetsAt {
                     Text(reset.resetLabel()).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
                 }
-                Text("\(Int(window.usedPercent.rounded()))%")
+                Text("\(Int(window.usedPercent.rounded()))% used")
                     .font((compact ? Font.footnote : .subheadline).weight(.medium).monospacedDigit())
                     .foregroundStyle(levelColor(window.usedPercent))
             }

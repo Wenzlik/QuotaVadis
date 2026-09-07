@@ -41,15 +41,23 @@ public struct CostReport: Codable, Sendable, Hashable {
     public var byModel: [CostBucket]
     public var byProject: [CostBucket]
     public var generatedAt: Date
+    /// Calendar zone of the Mac that produced the daily buckets (optional for older payloads).
+    public var timeZoneID: String?
     /// Where the numbers come from, shown verbatim under the chart.
     public var source: String
 
     public init(provider: ProviderID, days: [CostBucket], byModel: [CostBucket], byProject: [CostBucket], generatedAt: Date = .now, source: String) {
         self.provider = provider; self.days = days; self.byModel = byModel; self.byProject = byProject
         self.generatedAt = generatedAt; self.source = source
+        self.timeZoneID = TimeZone.current.identifier
     }
 
-    public var today: CostBucket? { days.last }
+    public var today: CostBucket? { day(at: .now) }
+    public func day(at date: Date) -> CostBucket? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZoneID.flatMap(TimeZone.init(identifier:)) ?? .current
+        return days.first { $0.id == CostAccumulator.dayKey(date, calendar: calendar) }
+    }
     public var totalCostUSD: Double { days.reduce(0) { $0 + $1.costUSD } }
     public var totalTokens: Int { days.reduce(0) { $0 + $1.tokens.total } }
     public var topModel: CostBucket? { byModel.max { $0.costUSD < $1.costUSD } }
@@ -63,8 +71,8 @@ struct CostAccumulator {
     private let calendar = Calendar.current
     private static let dayFormat: Date.FormatStyle = .init().year().month(.twoDigits).day(.twoDigits)
 
-    static func dayKey(_ date: Date) -> String {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
@@ -84,6 +92,6 @@ struct CostAccumulator {
         return CostReport(provider: provider, days: filled,
                           byModel: models.values.sorted { $0.costUSD > $1.costUSD },
                           byProject: projects.values.sorted { $0.costUSD > $1.costUSD },
-                          source: source)
+                          generatedAt: now, source: source)
     }
 }
