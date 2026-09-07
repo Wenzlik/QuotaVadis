@@ -19,9 +19,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     func deliver(_ alerts: [QuotaAlert]) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
             for alert in alerts {
                 let content = UNMutableNotificationContent()
                 content.title = alert.title
@@ -30,7 +30,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 content.userInfo = ["key": alert.key]
                 content.sound = alert.kind == .reset ? nil : .default
                 content.threadIdentifier = alert.key.split(separator: "/").first.map(String.init) ?? "quota"
-                center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
+                try? await center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
             }
         }
     }

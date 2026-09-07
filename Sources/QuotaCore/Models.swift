@@ -115,7 +115,7 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         credits = try c.decodeIfPresent([UsageCredits].self, forKey: .credits) ?? []
         resetCreditsAvailable = try c.decodeIfPresent(Int.self, forKey: .resetCreditsAvailable)
         resetCreditExpiries = try c.decodeIfPresent([Date].self, forKey: .resetCreditExpiries) ?? []
-        fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? .now
+        fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? .distantPast
         deviceName = try c.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
     }
 
@@ -125,11 +125,43 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// The window that matters most right now: highest utilization among the windows shown in the collapsed
-    /// row (sub-rows are promoted when they become the binding constraint, so nothing important hides here).
+    /// Alert significance is independent of compact visibility. Codex model limits are real limits.
+    public var alertWindows: [UsageWindow] {
+        windows.filter { $0.prominent || (provider == .codex && $0.kind == .model) }
+    }
+
     public var worstWindow: UsageWindow? {
-        let shown = windows.filter(\.prominent)
-        return (shown.isEmpty ? windows : shown).max { $0.usedPercent < $1.usedPercent }
+        (alertWindows.isEmpty ? windows : alertWindows).max { $0.usedPercent < $1.usedPercent }
+    }
+
+    /// Two normal windows plus every binding exception. Widgets prioritize the worst before truncating.
+    public var overviewWindows: [UsageWindow] {
+        let normal = Array(windows.filter(\.prominent).prefix(2))
+        let highest = normal.map(\.usedPercent).max() ?? 0
+        return normal + alertWindows.filter { w in
+            !normal.contains(where: { $0.id == w.id }) && (w.usedPercent >= 100 || w.usedPercent > highest)
+        }
+    }
+
+    public var compactWindows: [UsageWindow] {
+        guard let worstWindow else { return overviewWindows }
+        return [worstWindow] + overviewWindows.filter { $0.id != worstWindow.id }
+    }
+
+    public var modelLimitNotice: String? {
+        guard provider == .codex, let worstWindow, worstWindow.kind == .model else { return nil }
+        return "\(worstWindow.title): model-specific limit. Other Codex limits are shown separately."
+    }
+
+    /// A successful HTTP response is not sufficient evidence of usable quota data.
+    func validated(allowUnlimited: Bool = false) throws -> UsageSnapshot {
+        guard !windows.isEmpty || !credits.isEmpty || allowUnlimited else {
+            throw ProviderError.decoding("No recognized usage limits or credits")
+        }
+        guard windows.allSatisfy({ $0.usedPercent.isFinite && $0.usedPercent >= 0 }) else {
+            throw ProviderError.decoding("Invalid usage percentage")
+        }
+        return self
     }
     public var primaryWindow: UsageWindow? { windows.first { $0.kind == .session } ?? windows.first }
     public var secondaryWindow: UsageWindow? { windows.first { $0.kind == .weekly || $0.kind == .monthly } }

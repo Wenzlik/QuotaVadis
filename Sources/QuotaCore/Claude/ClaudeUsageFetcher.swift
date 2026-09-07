@@ -34,7 +34,7 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         let profile = await profileData.flatMap { try? JSONDecoder().decode(ClaudeProfileResponse.self, from: $0) }
         var snapshot = Self.snapshot(from: response, plan: creds.subscriptionType, profile: profile)
         snapshot.instanceID = instanceID
-        return snapshot
+        return try snapshot.validated()
     }
 
     public func fetchRaw() async throws -> Data { try await fetchRaw(try await credentials()) }

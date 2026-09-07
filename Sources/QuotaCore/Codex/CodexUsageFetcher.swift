@@ -27,7 +27,7 @@ public struct CodexUsageFetcher: UsageFetcher {
                 .sorted()
             snapshot.resetCreditsAvailable = resets.availableCount ?? snapshot.resetCreditsAvailable
         }
-        return snapshot
+        return try snapshot.validated(allowUnlimited: response.credits?.unlimited == true)
     }
 
     /// Let the Codex CLI refresh `auth.json` (it owns the refresh token), then re-read the file.
