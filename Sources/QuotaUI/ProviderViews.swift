@@ -20,7 +20,11 @@ public struct ProviderRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: toggle) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    Text(title).font(.headline).lineLimit(1)
+                    if let snapshot = state.snapshot {
+                        Text([snapshot.plan, isExpanded ? snapshot.seat : nil].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -31,11 +35,11 @@ public struct ProviderRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(title), \(isExpanded ? "hide details" : "show details")")
-            if let subtitle = state.snapshot?.subtitle {
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            // Only speak up when something is wrong: a fresh row stays quiet.
+            let status = ProviderSyncStatus(instanceID: state.snapshot?.instanceID ?? provider.rawValue, provider: provider, state: state, lastAttemptAt: nil)
+            if status.freshness() != .fresh, state.snapshot != nil || status.errorCode != .unavailable {
+                MeasurementStatusView(status: status)
             }
-            MeasurementStatusView(status: ProviderSyncStatus(instanceID: state.snapshot?.instanceID ?? provider.rawValue,
-                                                             provider: provider, state: state, lastAttemptAt: nil))
             if case .failed(let error, _) = state {
                 Text(ProviderFailureCode(error).nextStep).font(.caption).foregroundStyle(.orange)
             }
@@ -127,8 +131,6 @@ public struct CostSection: View {
                     stat("30d tokens", tokens(report.totalTokens))
                 }
             }
-            Text("Report from \(report.generatedAt.formatted(date: .abbreviated, time: .shortened)) · days in \(report.timeZoneID ?? "Mac local time")")
-                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("Last 30 days").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
@@ -140,8 +142,10 @@ public struct CostSection: View {
             }
             Chart(report.days) { day in
                 BarMark(x: .value("Day", day.id), y: .value(metric == .cost ? "USD" : "Tokens", value(day)))
-                    .foregroundStyle(day.id == report.days.last?.id ? Color.accentColor : Color.secondary.opacity(0.45))
-                    .cornerRadius(1.5)
+                    .foregroundStyle(day.id == report.days.last?.id
+                        ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .bottom, endPoint: .top))
+                        : AnyShapeStyle(Color.secondary.opacity(0.35)))
+                    .cornerRadius(3)
             }
             .chartXAxis(.hidden)
             .chartYAxis {
@@ -149,7 +153,7 @@ public struct CostSection: View {
                     AxisValueLabel { if let d = v.as(Double.self) { Text(axisLabel(d)).font(.caption2) } }
                 }
             }
-            .frame(height: 44)
+            .frame(height: 56)
 
             breakdown("By model", report.byModel)
             if !report.byProject.isEmpty { breakdown("By project", report.byProject) }
@@ -177,10 +181,10 @@ public struct CostSection: View {
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     GeometryReader { geo in
-                        Capsule().fill(Color.accentColor.opacity(0.7))
-                            .frame(width: max(2, geo.size.width * value(b) / maxValue))
+                        Capsule().fill(LinearGradient(colors: [Color.accentColor.opacity(0.45), Color.accentColor.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(3, geo.size.width * value(b) / maxValue))
                     }
-                    .frame(height: 3)
+                    .frame(height: 4)
                 }
             }
         }
@@ -251,24 +255,12 @@ public struct CreditsLine: View {
                     .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
             }
             if let percent = credits.usedPercent {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(tint).frame(width: geo.size.width * min(1, max(0, percent / 100)))
-                    }
-                }
-                .frame(height: 5)
+                GlowBar(percent: percent, height: 6)
             }
         }
     }
 
-    private var tint: Color {
-        switch credits.usedPercent ?? 0 {
-        case ..<50: .green
-        case ..<80: .yellow
-        default: .red
-        }
-    }
+    private var tint: Color { usageTint(credits.usedPercent ?? 0) }
 
     private func amount(_ value: Double) -> String {
         value.formatted(.currency(code: credits.currency).precision(.fractionLength(2)))
@@ -283,38 +275,22 @@ public struct UsageBar: View {
     public init(window: UsageWindow, compact: Bool = false) { self.window = window; self.compact = compact }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
-                Text("\(Int(window.usedPercent.rounded()))% used")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(tint)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(tint)
-                        .frame(width: geo.size.width * min(1, max(0, window.usedPercent / 100)))
+                if let reset = window.resetsAt {
+                    Text(reset <= .now ? "reset passed" : reset.resetLabel())
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
+                Text("\(Int(window.usedPercent.rounded()))%")
+                    .font(.caption.weight(.medium).monospacedDigit())
+                    .foregroundStyle(usageTint(window.usedPercent))
             }
-            .frame(height: compact ? 4 : 7)
-            .accessibilityHidden(true)
-            if let reset = window.resetsAt {
-                Text(reset <= .now ? "Reset passed · waiting for a new measurement" : "Resets \(reset.resetLabel())")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
         }
         .padding(.leading, compact ? 12 : 0)
         .accessibilityElement(children: .combine)
-    }
-
-    private var tint: Color {
-        switch window.usedPercent {
-        case ..<50: .green
-        case ..<80: .yellow
-        default: .red
-        }
     }
 }
 

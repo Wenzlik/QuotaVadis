@@ -1,6 +1,7 @@
 import SwiftUI
 import QuotaCore
 import QuotaUI
+import QuotaUI
 
 /// Overview card: identity, the prominent windows as big bars, the first real spend line.
 struct ProviderCard: View {
@@ -47,7 +48,7 @@ struct ProviderCard: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .glassCard(cornerRadius: 22)
     }
 }
 
@@ -67,14 +68,7 @@ struct WindowLine: View {
                     .font((compact ? Font.footnote : .subheadline).weight(.medium).monospacedDigit())
                     .foregroundStyle(levelColor(window.usedPercent))
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color(.tertiarySystemFill))
-                    Capsule().fill(levelColor(window.usedPercent).gradient)
-                        .frame(width: max(4, geo.size.width * min(1, max(0, window.usedPercent / 100))))
-                }
-            }
-            .frame(height: compact ? 6 : 9)
+            GlowBar(percent: window.usedPercent, height: compact ? 6 : 9)
         }
     }
 }

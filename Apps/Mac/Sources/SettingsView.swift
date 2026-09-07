@@ -55,6 +55,20 @@ struct SettingsView: View {
                     Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
                     Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
                 }
+                if model.menuBarSource == .worst {
+                    Section {
+                        ForEach(model.menuBarCandidates, id: \.key) { candidate in
+                            Toggle(candidate.label, isOn: Binding(
+                                get: { !model.menuBarExcluded.contains(candidate.key) },
+                                set: { on in if on { model.menuBarExcluded.remove(candidate.key) } else { model.menuBarExcluded.insert(candidate.key) } }))
+                        }
+                    } header: {
+                        Text("Counted in “Highest usage”")
+                    } footer: {
+                        Text("Untick a window to leave it out of the menu bar number. New windows count by default.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
 

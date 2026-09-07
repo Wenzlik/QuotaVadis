@@ -84,6 +84,10 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
+    /// Windows left out of the "Highest usage" menu bar number, as "<instanceID>/<windowID>". New windows count by default.
+    var menuBarExcluded: Set<String> {
+        didSet { defaults.set(menuBarExcluded.sorted(), forKey: "menuBarExcluded") }
+    }
     /// Colour app icon instead of the monochrome flame glyph.
     var useAppIconInMenuBar: Bool {
         didSet { defaults.set(useAppIconInMenuBar, forKey: "useAppIconInMenuBar") }
@@ -158,6 +162,7 @@ final class AppModel {
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
         useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
+        menuBarExcluded = Set(defaults.stringArray(forKey: "menuBarExcluded") ?? [])
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
         lastSyncPush = defaults.object(forKey: "lastSyncPush") as? Date
@@ -212,7 +217,10 @@ final class AppModel {
         switch menuBarSource {
         case .worst:
             return visibleInstances.compactMap { instance -> (snapshot: UsageSnapshot, window: UsageWindow)? in
-                guard let snapshot = states[instance.id]?.snapshot, let window = snapshot.worstWindow else { return nil }
+                guard let snapshot = states[instance.id]?.snapshot else { return nil }
+                let candidates = (snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows)
+                    .filter { !menuBarExcluded.contains("\(instance.id)/\($0.id)") }
+                guard let window = candidates.max(by: { $0.usedPercent < $1.usedPercent }) else { return nil }
                 return (snapshot, window)
             }.max { $0.window.usedPercent < $1.window.usedPercent }
         case .provider(let id, let secondary):
@@ -239,6 +247,15 @@ final class AppModel {
             return instance.provider.displayName
         }
         return "\(instance.provider.displayName) · \(org)"
+    }
+
+    /// Every window that can feed "Highest usage", for the Settings checklist.
+    var menuBarCandidates: [(key: String, label: String)] {
+        visibleInstances.flatMap { instance -> [(key: String, label: String)] in
+            guard let snapshot = states[instance.id]?.snapshot else { return [] }
+            let windows = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
+            return windows.map { ("\(instance.id)/\($0.id)", "\(title(for: instance)) · \($0.title)") }
+        }
     }
 
     /// Menu bar choices that make sense right now: only windows the providers actually report.
