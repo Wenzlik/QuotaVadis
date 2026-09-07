@@ -33,11 +33,12 @@ struct SettingsView: View {
                 }
                 .onAppear { model.refreshCredentialStatuses() }
                 Section {
-                    Picker("Refresh every", selection: $model.refreshIntervalMinutes) {
-                        Text("1 minute").tag(1)
-                        Text("5 minutes").tag(5)
-                        Text("15 minutes").tag(15)
-                        Text("30 minutes").tag(30)
+                    Picker("Refresh every", selection: $model.refreshIntervalSeconds) {
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                        Text("5 minutes").tag(300)
+                        Text("15 minutes").tag(900)
+                        Text("30 minutes").tag(1800)
                     }
                     Toggle("Launch at login", isOn: $model.launchAtLogin)
                 }
