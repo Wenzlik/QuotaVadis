@@ -7,14 +7,17 @@ struct SettingsView: View {
     @State private var showKeychainPicker = false
 
     private var syncDescription: String {
-        guard model.syncEnabled else { return "Usage and cost summaries stay on this Mac." }
+        if let error = model.lastSyncError { return error }
+        guard model.syncEnabled else {
+            return model.isSyncing ? "Removing this Mac's published data…" : "Sync is off. Local widget data stays on this Mac."
+        }
         switch model.syncStatus {
         case .noAccount: return "Sign in to iCloud in System Settings to sync."
         case .restricted: return "iCloud is restricted on this Mac."
         case .unavailable(let why): return why
         case .unknown, .available:
             if let error = model.lastSyncError { return "Last push failed: \(error)" }
-            if let date = model.lastSyncPush { return "Last pushed \(date.formatted(.relative(presentation: .named))). Only derived numbers are synced, never credentials." }
+            if let date = model.lastSyncPush { return "Last pushed \(date.formatted(.relative(presentation: .named))). " }
             return "Publishes this Mac's numbers to your iCloud private database for the iOS app. No credentials leave this Mac."
         }
     }
@@ -51,6 +54,20 @@ struct SettingsView: View {
                     }
                     Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
                     Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
+                }
+                if model.menuBarSource == .worst {
+                    Section {
+                        ForEach(model.menuBarCandidates, id: \.key) { candidate in
+                            Toggle(candidate.label, isOn: Binding(
+                                get: { !model.menuBarExcluded.contains(candidate.key) },
+                                set: { on in if on { model.menuBarExcluded.remove(candidate.key) } else { model.menuBarExcluded.insert(candidate.key) } }))
+                        }
+                    } header: {
+                        Text("Counted in “Highest usage”")
+                    } footer: {
+                        Text("Untick a window to leave it out of the menu bar number. New windows count by default.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
@@ -109,14 +126,15 @@ struct SettingsView: View {
                 Section("iCloud") {
                     Toggle("Sync to iCloud", isOn: $model.syncEnabled)
                     HStack {
-                        Button("Sync now") { Task { await model.publishToCloud() } }
-                            .disabled(!model.syncEnabled || model.isSyncing)
+                        Button(model.syncEnabled ? "Sync now" : "Retry removal") { Task { await model.publishToCloud() } }
+                            .disabled(model.isSyncing)
                         if model.isSyncing { ProgressView().controlSize(.small) }
                         Spacer()
                         if let attempt = model.lastSyncAttempt {
                             Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
                         }
                     }
+                    Text(SyncPrivacy.summary).font(.caption).foregroundStyle(.secondary)
                     Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                 }
                 Section("Updates") {

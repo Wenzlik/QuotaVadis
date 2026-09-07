@@ -59,30 +59,41 @@ public actor CloudSync {
         record[Self.nameField] = payload.deviceName as NSString
         try await save(record, policy: .allKeys)
         syncLog.info("publish: device record saved")
+        try Task.checkCancellation()
         try await updateIndex { ids in ids.contains(payload.deviceID) ? nil : ids + [payload.deviceID] }
         syncLog.info("publish: index updated")
     }
 
     /// Remove this device's record and index entry (sync switched off or app removed).
     public func unpublish(deviceID: String) async throws {
-        _ = try? await database.deleteRecord(withID: CKRecord.ID(recordName: deviceID))
+        do { try await modify(deleting: [CKRecord.ID(recordName: deviceID)]) }
+        catch let error as CKError where error.code == .unknownItem {}
         try await updateIndex { ids in ids.contains(deviceID) ? ids.filter { $0 != deviceID } : nil }
     }
 
-    /// All devices' latest payloads, newest first. Unreadable records (future schema) are skipped;
-    /// index entries whose record is gone are dropped.
+    /// Human-readable note about records skipped by the last `fetchAll` (e.g. a Mac on a newer app version).
+    public private(set) var lastReadWarning: String?
+
+    /// All devices newest first. A record that is missing, undecodable or from a newer schema is skipped and
+    /// reported through `lastReadWarning`; other Macs' data still arrives. Transport failures still throw.
     public func fetchAll() async throws -> [DevicePayload] {
         let ids = try await indexIDs()
-        guard !ids.isEmpty else { return [] }
-        let results = try await database.records(for: ids.map { CKRecord.ID(recordName: $0) })
+        guard !ids.isEmpty else { lastReadWarning = nil; return [] }
         var payloads: [DevicePayload] = []
-        for (_, result) in results {
-            guard case .success(let record) = result,
-                  let data = record[Self.payloadField] as? Data,
-                  let payload = try? DevicePayload.decode(data),
-                  payload.schemaVersion <= DevicePayload.schemaVersion else { continue }
+        var skipped: [String] = []
+        for id in ids {
+            let record: CKRecord
+            do { record = try await fetchRecord(CKRecord.ID(recordName: id)) }
+            catch let error as CKError where error.code == .unknownItem { continue }
+            guard let data = record[Self.payloadField] as? Data, let payload = try? DevicePayload.decode(data) else {
+                skipped.append(record[Self.nameField] as? String ?? id); continue
+            }
+            guard payload.schemaVersion <= DevicePayload.schemaVersion else {
+                skipped.append("\(payload.deviceName) (newer QuotaVadis)"); continue
+            }
             payloads.append(payload)
         }
+        lastReadWarning = skipped.isEmpty ? nil : "Could not read \(skipped.joined(separator: ", ")). Update QuotaVadis on this device."
         return payloads.sorted { $0.updatedAt > $1.updatedAt }
     }
 
@@ -90,7 +101,7 @@ public actor CloudSync {
 
     private func indexIDs() async throws -> [String] {
         do {
-            let record = try await database.record(for: CKRecord.ID(recordName: Self.indexRecordName))
+            let record = try await fetchRecord(CKRecord.ID(recordName: Self.indexRecordName))
             return record[Self.indexField] as? [String] ?? []
         } catch let error as CKError where error.code == .unknownItem {
             return []
@@ -102,7 +113,7 @@ public actor CloudSync {
         for attempt in 0..<2 {
             let recordID = CKRecord.ID(recordName: Self.indexRecordName)
             let record: CKRecord
-            do { record = try await database.record(for: recordID) }
+            do { record = try await fetchRecord(recordID) }
             catch let error as CKError where error.code == .unknownItem { record = CKRecord(recordType: Self.indexType, recordID: recordID) }
             let current = record[Self.indexField] as? [String] ?? []
             guard let next = transform(current) else { return }
@@ -116,20 +127,48 @@ public actor CloudSync {
         }
     }
 
+    private func fetchRecord(_ id: CKRecord.ID) async throws -> CKRecord {
+        let op = CKFetchRecordsOperation(recordIDs: [id])
+        let result = AsyncResult<CKRecord>()
+        op.perRecordResultBlock = { _, value in result.finish(value) }
+        op.fetchRecordsResultBlock = { value in
+            if case .failure(let error) = value { result.finish(.failure(error)) }
+        }
+        return try await execute(op, result: result)
+    }
+
     private func save(_ record: CKRecord, policy: CKModifyRecordsOperation.RecordSavePolicy) async throws {
-        let op = CKModifyRecordsOperation(recordsToSave: [record])
+        try await modify(saving: [record], policy: policy)
+    }
+
+    private func modify(saving: [CKRecord] = [], deleting: [CKRecord.ID] = [],
+                        policy: CKModifyRecordsOperation.RecordSavePolicy = .allKeys) async throws {
+        let op = CKModifyRecordsOperation(recordsToSave: saving, recordIDsToDelete: deleting)
         op.savePolicy = policy
-        // .utility/.background make CloudKit use a discretionary URL session that macOS may defer for a long
-        // time (seen: a record save queued for minutes). The payload is tiny; send it right away.
+        let result = AsyncResult<Void>()
+        // Wait for the terminal operation callback before the queue may start a removal.
+        op.modifyRecordsResultBlock = { value in
+            result.finish(value.mapError { error in
+                if let cloudError = error as? CKError,
+                   let failures = cloudError.partialErrorsByItemID, failures.count == 1,
+                   let recordError = failures.values.first { return recordError }
+                return error
+            })
+        }
+        try await execute(op, result: result)
+    }
+
+    private func execute<T: Sendable>(_ op: CKDatabaseOperation, result: AsyncResult<T>) async throws -> T {
         op.qualityOfService = .userInitiated
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            op.modifyRecordsResultBlock = { result in
-                switch result {
-                case .success: syncLog.info("save: ok"); c.resume()
-                case .failure(let error): syncLog.error("save: \(error.localizedDescription, privacy: .public)"); c.resume(throwing: error)
-                }
-            }
+        op.configuration.timeoutIntervalForRequest = 20
+        op.configuration.timeoutIntervalForResource = 60
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
             database.add(op)
+            return try await result.value()
+        } onCancel: {
+            op.cancel()
+            result.finish(.failure(CancellationError()))
         }
     }
 
@@ -141,6 +180,9 @@ public actor CloudSync {
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         sub.notificationInfo = info
-        _ = try await database.save(sub)
+        let op = CKModifySubscriptionsOperation(subscriptionsToSave: [sub])
+        let result = AsyncResult<Void>()
+        op.modifySubscriptionsResultBlock = { result.finish($0) }
+        try await execute(op, result: result)
     }
 }

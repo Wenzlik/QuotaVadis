@@ -9,6 +9,9 @@ import QuotaCore
 @MainActor
 @Observable
 final class DeviceStore {
+    static let shared = DeviceStore()
+    enum RefreshResult { case newData, noData, failed }
+    private var refreshTask: Task<RefreshResult, Never>?
     var devices: [DevicePayload] = []
     var status: CloudSync.Status = .unknown
     var lastRefresh: Date?
@@ -44,24 +47,24 @@ final class DeviceStore {
             QuotaAlert(kind: .extraUsageAtLimit, key: "test/extra-limit", title: "Claude Code: paying extra usage, reset in 30 min",
                        body: "Session is exhausted; further use is billed. Extra usage is at $3.59. Resets \(soon.resetLabel(now: now))."),
         ]
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
             for alert in samples {
                 let content = UNMutableNotificationContent()
                 content.title = alert.title; content.body = alert.body
                 content.sound = alert.kind == .reset ? nil : .default
-                center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content,
+                try? await center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content,
                                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)))
             }
         }
     }
 
-    private func evaluateAlerts() {
+    private func evaluateAlerts() async {
         guard notificationsEnabled, let device = selectedDevice else { return }
         var titles: [String: String] = [:]
         for s in device.snapshots { titles[s.instanceID] = s.displayTitle }
-        let due = alerts.evaluate(snapshots: device.snapshots, titles: titles)
+        let due = alerts.evaluate(snapshots: device.alertableSnapshots, titles: titles)
         UserDefaults.standard.set(alerts.warned.sorted(), forKey: "warnedKeys")
         UserDefaults.standard.set(alerts.creditBaseline, forKey: "creditBaseline")
         let center = UNUserNotificationCenter.current()
@@ -71,13 +74,13 @@ final class DeviceStore {
             content.body = alert.body
             content.sound = alert.kind == .reset ? nil : .default
             content.threadIdentifier = alert.key.split(separator: "/").first.map(String.init) ?? "quota"
-            center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
+            try? await center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
         }
     }
 
     private func updateWidgets() {
-        guard let device = selectedDevice else { return }
-        SharedStore.write(device)
+        if let device = selectedDevice { SharedStore.write(device) }
+        else { SharedStore.clear() }
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -112,21 +115,46 @@ final class DeviceStore {
         try? await cloud.ensureSubscription()
     }
 
-    func refresh() async {
-        guard !isRefreshing else { return }
+    @discardableResult
+    func refresh() async -> RefreshResult {
+        // A push joining an ongoing foreground refresh must wait for its writes as well.
+        if let refreshTask { return await refreshTask.value }
+        let task = Task { await performRefresh() }
+        refreshTask = task
+        let result = await task.value
+        refreshTask = nil
+        return result
+    }
+
+    func refreshIfNeeded() async {
+        if lastRefresh.map({ Date.now.timeIntervalSince($0) < 60 }) != true { await refresh() }
+    }
+
+    private func performRefresh() async -> RefreshResult {
         isRefreshing = true
         defer { isRefreshing = false }
-        status = await cloud.accountStatus()
-        guard status == .available else { return }
         do {
-            devices = try await cloud.fetchAll()
-            lastRefresh = .now
-            lastError = nil
-            if let data = try? JSONEncoder.iso.encode(devices) { try? data.write(to: Self.cacheURL, options: .atomic) }
+            status = try await withTimeout(seconds: 10) { await self.cloud.accountStatus() }
+            guard status == .available else {
+                lastError = "iCloud is unavailable. Check your account and connection, then refresh."
+                return .failed
+            }
+            let fetched = try await withTimeout(seconds: 15) { try await self.cloud.fetchAll() }
+            let changed = devices != fetched
+            // A successful empty response clears the cache; a read failure keeps the last good devices.
+            let data = try JSONEncoder.iso.encode(fetched)
+            try data.write(to: Self.cacheURL, options: .atomic)
+            devices = fetched
             updateWidgets()
-            evaluateAlerts()
+            await evaluateAlerts()
+            lastRefresh = .now
+            // Data arrived; a widget-file problem or a skipped Mac record is shown as a note, not as a failed refresh.
+            let readWarning = await cloud.lastReadWarning
+            lastError = SharedStore.lastError.map { "Widgets could not be updated: \($0)" } ?? readWarning
+            return changed ? .newData : .noData
         } catch {
             lastError = error.localizedDescription
+            return .failed
         }
     }
 }

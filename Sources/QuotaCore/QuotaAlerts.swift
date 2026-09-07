@@ -51,7 +51,7 @@ public struct QuotaAlertEngine: Sendable {
         snoozed = snoozed.filter { $0.value > now }
         for snapshot in snapshots {
             let title = titles[snapshot.instanceID] ?? snapshot.provider.displayName
-            for window in snapshot.windows where window.prominent {
+            for window in snapshot.alertWindows {
                 let key = "\(snapshot.instanceID)/\(window.id)"
                 let above = window.usedPercent >= Double(warnAtPercent)
                 if above {
@@ -61,7 +61,8 @@ public struct QuotaAlertEngine: Sendable {
                             let reset = window.resetsAt.map { " · resets \($0.formatted(.relative(presentation: .named)))" } ?? ""
                             alerts.append(QuotaAlert(kind: .threshold, key: key,
                                                      title: "\(title): \(window.title) at \(Int(window.usedPercent.rounded()))%",
-                                                     body: "\(Int(window.remainingPercent.rounded()))% left\(reset)"))
+                                                     body: "\(Int(window.remainingPercent.rounded()))% left\(reset)" +
+                                                        (snapshot.provider == .codex && window.kind == .model ? ". Applies to this model limit only." : "")))
                         }
                     }
                 } else if warned.contains(key) {

@@ -36,6 +36,7 @@ enum MenuBarSource: Hashable, Codable {
 final class AppModel {
     /// Keyed by instance id: "claude", "claude:<suffix>", "codex", "cursor".
     var states: [String: ProviderState] = [:]
+    var lastAttempts: [String: Date] = [:]
     var costs: [ProviderID: CostReport] = [:]
     var lastRefresh: Date?
     var isRefreshing = false
@@ -50,7 +51,16 @@ final class AppModel {
 
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
-        didSet { defaults.set(enabledProviders.map(\.rawValue).sorted(), forKey: "enabledProviders"); scheduleRefresh() }
+        didSet {
+            defaults.set(enabledProviders.map(\.rawValue).sorted(), forKey: "enabledProviders")
+            if case .provider(let id, _) = menuBarSource,
+               !enabledProviders.contains(where: { id == $0.rawValue || id.hasPrefix($0.rawValue + ":") }) {
+                menuBarSource = .worst
+            }
+            updateWidgets()
+            schedulePublish()
+            Task { await refresh() }
+        }
     }
     /// Seconds between limit refreshes. Default one minute; 30 s is the floor so the provider APIs are not hammered.
     var refreshIntervalSeconds: Int {
@@ -74,6 +84,10 @@ final class AppModel {
     var showPercentInMenuBar: Bool {
         didSet { defaults.set(showPercentInMenuBar, forKey: "showPercentInMenuBar") }
     }
+    /// Windows left out of the "Highest usage" menu bar number, as "<instanceID>/<windowID>". New windows count by default.
+    var menuBarExcluded: Set<String> {
+        didSet { defaults.set(menuBarExcluded.sorted(), forKey: "menuBarExcluded") }
+    }
     /// Colour app icon instead of the monochrome flame glyph.
     var useAppIconInMenuBar: Bool {
         didSet { defaults.set(useAppIconInMenuBar, forKey: "useAppIconInMenuBar") }
@@ -86,7 +100,9 @@ final class AppModel {
     var syncEnabled: Bool {
         didSet {
             defaults.set(syncEnabled, forKey: "syncEnabled")
-            Task { syncEnabled ? await publishToCloud() : await unpublishFromCloud() }
+            syncGeneration += 1
+            defaults.set(!syncEnabled, forKey: "pendingCloudRemoval")
+            requestSync()
         }
     }
     /// Instances whose row is expanded to the full detail. Remembered across launches.
@@ -113,6 +129,9 @@ final class AppModel {
     private let service: UsageService
     private let costService = CostService()
     private let cloud = CloudSync()
+    private let syncQueue = SerialOperationQueue()
+    private var syncGeneration = 0
+    private var refreshAgain = false
     private var publishTask: Task<Void, Never>?
     private var lastCostRefresh: Date?
     /// Cost scanning reads hundreds of MB of logs on a cold start and pages Cursor's dashboard; 15 min is plenty.
@@ -143,6 +162,7 @@ final class AppModel {
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
         useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
+        menuBarExcluded = Set(defaults.stringArray(forKey: "menuBarExcluded") ?? [])
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
         lastSyncPush = defaults.object(forKey: "lastSyncPush") as? Date
@@ -152,6 +172,7 @@ final class AppModel {
         service = UsageService(fetchers: UsageService.defaultFetchers(extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? []))
         hasOnboarded = defaults.bool(forKey: "hasOnboarded")
         scheduleRefresh()
+        if !syncEnabled && defaults.bool(forKey: "pendingCloudRemoval") { requestSync() }
         // First launch waits for the welcome window so the Keychain prompt is explained before it appears.
         if hasOnboarded { Task { await refresh() } }
     }
@@ -175,12 +196,12 @@ final class AppModel {
         let provider: ProviderID
     }
 
-    /// Instances in display order: primary Claude, extra Claude logins, Codex, Cursor; only enabled + present.
+    /// Instances in display order: primary Claude, extra Claude logins, Codex, Cursor; including enabled tools that need setup.
     var visibleInstances: [Instance] {
         var out: [Instance] = []
         for provider in ProviderID.allCases where enabledProviders.contains(provider) {
-            let ids = states.keys.filter { $0 == provider.rawValue || $0.hasPrefix(provider.rawValue + ":") }.sorted()
-            for id in ids where states[id] != .unavailable { out.append(Instance(id: id, provider: provider)) }
+            let ids = [provider.rawValue] + (provider == .claude ? extraClaudeServices.map { "claude:" + Self.suffix($0) } : [])
+            for id in ids { out.append(Instance(id: id, provider: provider)) }
         }
         return out
     }
@@ -190,14 +211,36 @@ final class AppModel {
     }
 
     /// The number shown in the menu bar, per the user's `menuBarSource` choice.
-    var menuBarPercent: Double? {
+    var menuBarPercent: Double? { menuBarMeasurement?.window.usedPercent }
+
+    var menuBarMeasurement: (snapshot: UsageSnapshot, window: UsageWindow)? {
         switch menuBarSource {
         case .worst:
-            return worstPercent
+            return visibleInstances.compactMap { instance -> (snapshot: UsageSnapshot, window: UsageWindow)? in
+                guard let snapshot = states[instance.id]?.snapshot else { return nil }
+                let candidates = (snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows)
+                    .filter { !menuBarExcluded.contains("\(instance.id)/\($0.id)") }
+                guard let window = candidates.max(by: { $0.usedPercent < $1.usedPercent }) else { return nil }
+                return (snapshot, window)
+            }.max { $0.window.usedPercent < $1.window.usedPercent }
         case .provider(let id, let secondary):
-            guard let snapshot = states[id]?.snapshot else { return nil }
-            return (secondary ? snapshot.secondaryWindow : snapshot.primaryWindow)?.usedPercent ?? snapshot.worstWindow?.usedPercent
+            guard visibleInstances.contains(where: { $0.id == id }), let snapshot = states[id]?.snapshot,
+                  let window = (secondary ? snapshot.secondaryWindow : snapshot.primaryWindow) ?? snapshot.worstWindow else { return nil }
+            return (snapshot, window)
         }
+    }
+
+    var menuBarIsStale: Bool {
+        guard let measurement = menuBarMeasurement else { return false }
+        let snapshot = measurement.snapshot
+        return ProviderSyncStatus(instanceID: snapshot.instanceID, provider: snapshot.provider,
+                                  state: states[snapshot.instanceID] ?? .unavailable, lastAttemptAt: nil,
+                                  refreshInterval: TimeInterval(refreshIntervalSeconds)).freshness() != .fresh
+    }
+
+    var menuBarAccessibilityLabel: String {
+        guard let measurement = menuBarMeasurement else { return "QuotaVadis, no usage data. Open to set up tools." }
+        return "\(measurement.snapshot.provider.displayName), \(measurement.window.title), \(Int(measurement.window.usedPercent.rounded())) percent used, \(menuBarIsStale ? "stale measurement" : "fresh measurement")"
     }
 
     func title(for instance: Instance) -> String {
@@ -205,6 +248,15 @@ final class AppModel {
             return instance.provider.displayName
         }
         return "\(instance.provider.displayName) · \(org)"
+    }
+
+    /// Every window that can feed "Highest usage", for the Settings checklist.
+    var menuBarCandidates: [(key: String, label: String)] {
+        visibleInstances.flatMap { instance -> [(key: String, label: String)] in
+            guard let snapshot = states[instance.id]?.snapshot else { return [] }
+            let windows = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
+            return windows.map { ("\(instance.id)/\($0.id)", "\(title(for: instance)) · \($0.title)") }
+        }
     }
 
     /// Menu bar choices that make sense right now: only windows the providers actually report.
@@ -222,17 +274,28 @@ final class AppModel {
     }
 
     func refresh() async {
-        guard !isRefreshing else { return }
+        guard !isRefreshing else { refreshAgain = true; return }
         isRefreshing = true
-        defer { isRefreshing = false }
-        let result = await service.refresh(enabled: enabledProviders)
-        states.merge(result) { _, new in new }
+        defer {
+            isRefreshing = false
+            if refreshAgain { refreshAgain = false; Task { await refresh() } }
+        }
+        for instance in visibleInstances { lastAttempts[instance.id] = .now }
+        _ = await service.refresh(enabled: enabledProviders) { [weak self] id, state in
+            await self?.received(id: id, state: state)
+        }
         lastRefresh = .now
         notifyIfNeeded()
         schedulePublish()
-        if lastCostRefresh.map({ Date.now.timeIntervalSince($0) > costInterval }) ?? true {
+        if lastCostRefresh.map({ !Calendar.current.isDateInToday($0) || Date.now.timeIntervalSince($0) > costInterval }) ?? true {
             Task { await refreshCosts() }
         }
+    }
+
+    private func received(id: String, state: ProviderState) {
+        states[id] = state
+        updateWidgets()
+        schedulePublish()
     }
 
     func refreshCosts() async {
@@ -260,7 +323,12 @@ final class AppModel {
     private var currentPayload: DevicePayload {
         DevicePayload(deviceID: DeviceIdentity.id, deviceName: DeviceInfo.name,
                       snapshots: visibleInstances.compactMap { states[$0.id]?.snapshot },
-                      costs: ProviderID.allCases.compactMap { costs[$0] })
+                      costs: ProviderID.allCases.filter { enabledProviders.contains($0) }.compactMap { costs[$0] },
+                      providerStatuses: visibleInstances.map {
+                          ProviderSyncStatus(instanceID: $0.id, provider: $0.provider,
+                                             state: states[$0.id] ?? .unavailable, lastAttemptAt: lastAttempts[$0.id],
+                                             refreshInterval: TimeInterval(refreshIntervalSeconds))
+                      })
     }
 
     /// Widgets on this Mac read the App Group file; no iCloud round trip.
@@ -269,40 +337,45 @@ final class AppModel {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    func publishToCloud() async {
+    @discardableResult
+    private func requestSync() -> Task<Void, Never> {
         updateWidgets()
-        guard syncEnabled, !isSyncing else { return }
+        let generation = syncGeneration
+        let enabled = syncEnabled
+        return syncQueue.enqueue { [weak self] in
+            await self?.performSync(enabled: enabled, generation: generation)
+        }
+    }
+
+    func publishToCloud() async { await requestSync().value }
+
+    private func performSync(enabled: Bool, generation: Int) async {
+        guard generation == syncGeneration else { return }
         isSyncing = true
         defer { isSyncing = false }
         lastSyncAttempt = .now
         do {
-            syncStatus = try await withTimeout(seconds: 20) { await self.cloud.accountStatus() }
+            if !enabled {
+                // A queued removal runs after every older write, even if disabled during accountStatus.
+                try await withTimeout(seconds: 60) { try await self.cloud.unpublish(deviceID: DeviceIdentity.id) }
+                defaults.set(false, forKey: "pendingCloudRemoval")
+                lastSyncPush = nil
+                lastSyncError = nil
+            } else {
+                syncStatus = try await withTimeout(seconds: 20) { await self.cloud.accountStatus() }
+                guard generation == syncGeneration, syncEnabled else { return }
+                guard syncStatus == .available else { throw ProviderError.network("iCloud not available: \(syncStatus)") }
+                let payload = currentPayload
+                try await withTimeout(seconds: 60) { try await self.cloud.publish(payload) }
+                lastSyncPush = .now
+                lastSyncError = nil
+            }
         } catch {
-            syncStatus = .unavailable("iCloud account check did not answer within 20 s")
+            lastSyncError = (enabled ? "Sync failed: " : "Removal failed; will retry: ") +
+                (error is TimeoutError ? "iCloud timed out" : error.localizedDescription)
         }
-        guard syncStatus == .available else {
-            lastSyncError = "iCloud not available: \(syncStatus)"
-            defaults.set(lastSyncError, forKey: "lastSyncError")
-            return
-        }
-        let payload = currentPayload
-        do {
-            try await withTimeout(seconds: 60) { try await self.cloud.publish(payload) }
-            lastSyncPush = .now
-            lastSyncError = nil
-        } catch is TimeoutError {
-            lastSyncError = "CloudKit did not answer within 60 s"
-        } catch {
-            lastSyncError = error.localizedDescription
-        }
-        // Persisted so the status survives relaunch and can be inspected with `defaults read`.
         defaults.set(lastSyncPush, forKey: "lastSyncPush")
         defaults.set(lastSyncError, forKey: "lastSyncError")
-    }
-
-    private func unpublishFromCloud() async {
-        try? await cloud.unpublish(deviceID: DeviceIdentity.id)
-        lastSyncPush = nil
     }
 
     private func scheduleRefresh() {
@@ -342,7 +415,9 @@ final class AppModel {
     private func notifyIfNeeded() {
         var titles: [String: String] = [:]
         for instance in visibleInstances { titles[instance.id] = title(for: instance) }
-        let snapshots = visibleInstances.compactMap { states[$0.id]?.snapshot }
+        let snapshots = visibleInstances.compactMap { instance -> UsageSnapshot? in
+            if case .fresh(let snapshot) = states[instance.id] { return snapshot }; return nil
+        }
         let due = alerts.evaluate(snapshots: snapshots, titles: titles)
         defaults.set(alerts.warned.sorted(), forKey: "warnedKeys")
         defaults.set(alerts.creditBaseline, forKey: "creditBaseline")

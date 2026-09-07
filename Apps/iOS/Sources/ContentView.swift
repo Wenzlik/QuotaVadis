@@ -1,5 +1,6 @@
 import SwiftUI
 import QuotaCore
+import QuotaUI
 
 struct ContentView: View {
     @Bindable var store: DeviceStore
@@ -20,7 +21,7 @@ struct OverviewView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let device = store.selectedDevice, !device.snapshots.isEmpty {
+                if let device = store.selectedDevice {
                     ScrollView {
                         LazyVStack(spacing: 14) {
                             ForEach(device.snapshots) { snapshot in
@@ -29,9 +30,24 @@ struct OverviewView: View {
                                                        cost: snapshot.instanceID == snapshot.provider.rawValue ? device.cost(for: snapshot.provider) : nil,
                                                        deviceName: device.deviceName)
                                 } label: {
-                                    ProviderCard(snapshot: snapshot)
+                                    ProviderCard(snapshot: snapshot, status: device.status(for: snapshot))
                                 }
                                 .buttonStyle(.plain)
+                            }
+                            // Tools the Mac tracks but could not read. Tools not installed on the Mac are not the phone's problem.
+                            ForEach((device.providerStatuses ?? []).filter { status in
+                                !device.snapshots.contains { $0.instanceID == status.instanceID } && status.freshness() != .unavailable
+                            }) { status in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(status.provider.displayName).font(.headline)
+                                    MeasurementStatusView(status: status)
+                                    Text(status.errorCode?.nextStep ?? "Open the tool on your Mac, sign in, then refresh.")
+                                        .font(.callout).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                            }
+                            if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
+                                Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
+                                    .font(.callout).padding()
                             }
                             footer(device)
                         }
@@ -47,7 +63,7 @@ struct OverviewView: View {
             }
             .navigationTitle("QuotaVadis")
             .toolbar {
-                if store.devices.count > 1 {
+                if !store.devices.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) { devicePicker }
                 }
             }
@@ -57,7 +73,7 @@ struct OverviewView: View {
 
     private func footer(_ device: DevicePayload) -> some View {
         VStack(spacing: 4) {
-            Label("\(device.deviceName) · \(device.updatedAt, style: .relative) ago", systemImage: "desktopcomputer")
+            Label("\(device.deviceName) · transferred \(device.updatedAt, style: .relative) ago", systemImage: "desktopcomputer")
             if store.isRefreshing { ProgressView().controlSize(.small) }
             else if let error = store.lastError { Text(error).foregroundStyle(.orange).multilineTextAlignment(.center) }
         }

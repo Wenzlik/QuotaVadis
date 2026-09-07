@@ -23,6 +23,7 @@ public actor UsageService {
     }
 
     private var fetchers: [any UsageFetcher]
+    private var pending: [String: Task<UsageSnapshot?, Error>] = [:]
     private var last: [String: UsageSnapshot] = [:]
 
     public init(fetchers: [any UsageFetcher] = UsageService.defaultFetchers()) {
@@ -31,18 +32,35 @@ public actor UsageService {
 
     public func setFetchers(_ fetchers: [any UsageFetcher]) { self.fetchers = fetchers }
 
-    public func refresh(enabled: Set<ProviderID> = Set(ProviderID.allCases)) async -> [String: ProviderState] {
+    public func refresh(enabled: Set<ProviderID> = Set(ProviderID.allCases), timeout: Double = 45,
+                        onResult: @escaping @Sendable (String, ProviderState) async -> Void = { _, _ in }) async -> [String: ProviderState] {
         await withTaskGroup(of: (String, ProviderState).self) { group in
             for fetcher in fetchers where enabled.contains(fetcher.provider) {
+                let id = fetcher.instanceID
+                // Reuse a still-blocked system call rather than accumulate Keychain readers on each retry.
+                let work: Task<UsageSnapshot?, Error>
+                if let existing = pending[id] { work = existing }
+                else {
+                    work = Task.detached {
+                        guard fetcher.isAvailable() else { return nil }
+                        try Task.checkCancellation()
+                        return try await fetcher.fetch()
+                    }
+                    pending[id] = work
+                    Task {
+                        _ = await work.result
+                        pending[id] = nil
+                    }
+                }
                 group.addTask { [last] in
-                    let id = fetcher.instanceID
-                    guard fetcher.isAvailable() else { return (id, .unavailable) }
                     do {
                         // One stuck provider (Keychain prompt, hung local server) must not block the others or the sync.
-                        let snapshot = try await withTimeout(seconds: 45) { try await fetcher.fetch() }
-                        return (id, .fresh(snapshot))
+                        // A timed-out waiter stops waiting; the shared fetch keeps running so the next refresh can
+                        // pick up its result (a Keychain prompt answered late must not be thrown away).
+                        let snapshot = try await withTimeout(seconds: timeout) { try await work.value }
+                        return (id, snapshot.map(ProviderState.fresh) ?? .unavailable)
                     } catch is TimeoutError {
-                        return (id, .failed(.network("Timed out after 45 s"), last: last[id]))
+                        return (id, .failed(.network("Timed out after \(Int(timeout)) s"), last: last[id]))
                     } catch let error as ProviderError {
                         return (id, .failed(error, last: last[id]))
                     } catch {
@@ -52,25 +70,11 @@ public actor UsageService {
             }
             var result: [String: ProviderState] = [:]
             for await (id, state) in group {
+                await onResult(id, state)
                 result[id] = state
                 if case .fresh(let s) = state { last[id] = s }
             }
             return result
         }
-    }
-}
-
-public struct TimeoutError: Error {}
-
-public func withTimeout<T: Sendable>(seconds: Double, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await body() }
-        group.addTask {
-            try await Task.sleep(for: .seconds(seconds))
-            throw TimeoutError()
-        }
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
     }
 }

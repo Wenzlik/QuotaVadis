@@ -22,9 +22,10 @@ struct MenuPanel: View {
                 // A bare ScrollView inside a MenuBarExtra window gets no height proposal and collapses to zero.
                 // fixedSize makes it report its content height; the frame then caps it so long lists scroll.
                 ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 8) {
                         providerRows
                     }
+                    .padding(10)
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: maxListHeight)
@@ -33,8 +34,7 @@ struct MenuPanel: View {
             Divider()
             footer
         }
-        .frame(width: 300)
-        .background(.regularMaterial)
+        .frame(width: 320)
     }
 
     /// Leave room for the menu bar and the footer on the smallest common display.
@@ -54,9 +54,8 @@ struct MenuPanel: View {
                             if model.expanded.contains(instance.id) { model.expanded.remove(instance.id) } else { model.expanded.insert(instance.id) }
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    if instance != model.visibleInstances.last { Divider().padding(.horizontal, 14) }
+                    .padding(14)
+                    .glassCard(cornerRadius: 16)
                 }
     }
 

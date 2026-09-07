@@ -12,7 +12,7 @@ struct FixedProviderTimelineProvider: TimelineProvider {
         completion(QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: provider))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        completion(Timeline(entries: [QuotaEntry(date: .now, payload: SharedStore.read(), provider: provider)],
+        completion(Timeline(entries: QuotaEntry.entries(payload: SharedStore.read(), provider: provider),
                             policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
@@ -82,7 +82,7 @@ struct SwitcherTimelineProvider: TimelineProvider {
         completion(QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: SwitcherSelection.current))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        completion(Timeline(entries: [QuotaEntry(date: .now, payload: SharedStore.read(), provider: SwitcherSelection.current)],
+        completion(Timeline(entries: QuotaEntry.entries(payload: SharedStore.read(), provider: SwitcherSelection.current),
                             policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
@@ -119,9 +119,11 @@ struct SwitcherWidgetView: View {
                 if family == .systemSmall {
                     compact(snapshot)
                 } else {
-                    ForEach(snapshot.windows.filter(\.prominent).prefix(3)) { w in
+                    ForEach(snapshot.compactWindows.prefix(3)) { w in
                         BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
                     }
+                    Text(entry.payload?.status(for: snapshot).label(now: entry.date) ?? "Stale")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
                 }
             } else {
@@ -154,9 +156,10 @@ struct SwitcherWidgetView: View {
 
     private func compact(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(s.windows.filter(\.prominent).prefix(2)) { w in
+            ForEach(s.compactWindows.prefix(2)) { w in
                 BarLine(title: w.title, percent: w.usedPercent, resetsAt: nil)
             }
+            Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             Spacer(minLength: 0)
             if let w = s.worstWindow, let reset = w.resetsAt {
                 Text("resets \(reset, style: .relative)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)

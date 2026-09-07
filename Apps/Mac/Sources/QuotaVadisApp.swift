@@ -47,11 +47,14 @@ struct MenuBarLabel: View {
         // MenuBarExtra labels support Text + Image only; keep it to that.
         HStack(spacing: 3) {
             Image(model.useAppIconInMenuBar ? "MenuBarColor" : "MenuBarMono")
+            if model.menuBarIsStale { Image(systemName: "exclamationmark.circle") }
             if model.showPercentInMenuBar, let percent = model.menuBarPercent {
                 Text("\(Int(percent.rounded()))%")
                     .monospacedDigit()
             }
         }
+        .accessibilityLabel(model.menuBarAccessibilityLabel)
+        .help(model.menuBarAccessibilityLabel)
     }
 
 }

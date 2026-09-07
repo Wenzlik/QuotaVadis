@@ -26,11 +26,6 @@ public struct ProviderRow: View {
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
-                    if case .failed(let error, _) = state {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .help(error.localizedDescription)
-                    }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
@@ -39,8 +34,20 @@ public struct ProviderRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(isExpanded ? "hide details" : "show details")")
+            // Only speak up when something is wrong: a fresh row stays quiet.
+            let status = ProviderSyncStatus(instanceID: state.snapshot?.instanceID ?? provider.rawValue, provider: provider, state: state, lastAttemptAt: nil)
+            if status.freshness() != .fresh, state.snapshot != nil || status.errorCode != .unavailable {
+                MeasurementStatusView(status: status)
+            }
+            if case .failed(let error, _) = state {
+                Text(ProviderFailureCode(error).nextStep).font(.caption).foregroundStyle(.orange)
+            }
 
             if let snapshot = state.snapshot {
+                if let notice = snapshot.modelLimitNotice {
+                    Text(notice).font(.caption).foregroundStyle(.orange)
+                }
                 ForEach(mainWindows(snapshot)) { window in
                     UsageBar(window: window)
                 }
@@ -52,7 +59,7 @@ public struct ProviderRow: View {
                     ForEach(snapshot.credits.filter { $0.used == 0 }) { credits in
                         CreditsLine(credits: credits)
                     }
-                    ForEach(snapshot.windows.filter { !$0.prominent }) { window in
+                    ForEach(snapshot.windows.filter { w in !mainWindows(snapshot).contains { $0.id == w.id } }) { window in
                         UsageBar(window: window, compact: true)
                     }
                     if let resets = snapshot.resetCreditsAvailable {
@@ -84,15 +91,16 @@ public struct ProviderRow: View {
                         CostSection(report: cost)
                     }
                 }
-            } else if case .failed(let error, _) = state {
-                Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
+            } else if case .unavailable = state {
+                Text("Open \(provider.displayName) on this Mac and sign in, then use Refresh above.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
 
-    /// Collapsed rows show the prominent windows (Claude's per-model weekly limits included).
+    /// Keep the overview compact while retaining every binding exception.
     private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
-        snapshot.windows.filter(\.prominent)
+        snapshot.overviewWindows
     }
 }
 
@@ -106,14 +114,20 @@ public struct CostSection: View {
     enum ChartMetric: String, CaseIterable { case cost, tokens }
 
     public var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    stat("Today", money(report.today?.costUSD ?? 0))
+                    stat("Today", report.day(at: now).map { money($0.costUSD) } ?? "Unavailable")
                     stat("30d cost", money(report.totalCostUSD))
                 }
                 GridRow {
-                    stat("Today tokens", tokens(report.today?.tokens.total ?? 0))
+                    stat("Today tokens", report.day(at: now).map { tokens($0.tokens.total) } ?? "Unavailable")
                     stat("30d tokens", tokens(report.totalTokens))
                 }
             }
@@ -128,8 +142,10 @@ public struct CostSection: View {
             }
             Chart(report.days) { day in
                 BarMark(x: .value("Day", day.id), y: .value(metric == .cost ? "USD" : "Tokens", value(day)))
-                    .foregroundStyle(day.id == report.days.last?.id ? Color.accentColor : Color.secondary.opacity(0.45))
-                    .cornerRadius(1.5)
+                    .foregroundStyle(day.id == report.days.last?.id
+                        ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .bottom, endPoint: .top))
+                        : AnyShapeStyle(Color.secondary.opacity(0.35)))
+                    .cornerRadius(3)
             }
             .chartXAxis(.hidden)
             .chartYAxis {
@@ -137,7 +153,7 @@ public struct CostSection: View {
                     AxisValueLabel { if let d = v.as(Double.self) { Text(axisLabel(d)).font(.caption2) } }
                 }
             }
-            .frame(height: 44)
+            .frame(height: 56)
 
             breakdown("By model", report.byModel)
             if !report.byProject.isEmpty { breakdown("By project", report.byProject) }
@@ -165,10 +181,10 @@ public struct CostSection: View {
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     GeometryReader { geo in
-                        Capsule().fill(Color.accentColor.opacity(0.7))
-                            .frame(width: max(2, geo.size.width * value(b) / maxValue))
+                        Capsule().fill(LinearGradient(colors: [Color.accentColor.opacity(0.45), Color.accentColor.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(3, geo.size.width * value(b) / maxValue))
                     }
-                    .frame(height: 3)
+                    .frame(height: 4)
                 }
             }
         }
@@ -239,24 +255,12 @@ public struct CreditsLine: View {
                     .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
             }
             if let percent = credits.usedPercent {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(tint).frame(width: geo.size.width * min(1, max(0, percent / 100)))
-                    }
-                }
-                .frame(height: 5)
+                GlowBar(percent: percent, height: 6)
             }
         }
     }
 
-    private var tint: Color {
-        switch credits.usedPercent ?? 0 {
-        case ..<50: .green
-        case ..<80: .yellow
-        default: .red
-        }
-    }
+    private var tint: Color { usageTint(credits.usedPercent ?? 0) }
 
     private func amount(_ value: Double) -> String {
         value.formatted(.currency(code: credits.currency).precision(.fractionLength(2)))
@@ -271,36 +275,22 @@ public struct UsageBar: View {
     public init(window: UsageWindow, compact: Bool = false) { self.window = window; self.compact = compact }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
                 if let reset = window.resetsAt {
-                    Text(reset.resetLabel())
+                    Text(reset <= .now ? "reset passed" : reset.resetLabel())
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(tint)
+                    .font(.caption.weight(.medium).monospacedDigit())
+                    .foregroundStyle(usageTint(window.usedPercent))
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(tint)
-                        .frame(width: geo.size.width * min(1, max(0, window.usedPercent / 100)))
-                }
-            }
-            .frame(height: compact ? 3 : 5)
+            GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
         }
         .padding(.leading, compact ? 12 : 0)
-    }
-
-    private var tint: Color {
-        switch window.usedPercent {
-        case ..<50: .green
-        case ..<80: .yellow
-        default: .red
-        }
+        .accessibilityElement(children: .combine)
     }
 }
 

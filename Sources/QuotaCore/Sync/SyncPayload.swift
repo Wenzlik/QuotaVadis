@@ -1,6 +1,6 @@
 import Foundation
 
-/// Everything one Mac publishes to iCloud: its latest snapshots and cost reports. Derived numbers only,
+/// Everything one Mac publishes to iCloud: its latest snapshots and cost reports. Usage, costs and account/project metadata,
 /// never credentials. One record per device, whole payload replaced on every publish.
 public struct DevicePayload: Codable, Sendable, Hashable, Identifiable {
     public static let schemaVersion = 1
@@ -10,21 +10,36 @@ public struct DevicePayload: Codable, Sendable, Hashable, Identifiable {
     public var deviceName: String
     public var snapshots: [UsageSnapshot]
     public var costs: [CostReport]
+    public var providerStatuses: [ProviderSyncStatus]?
+    /// Time of transfer, not the time of measurement.
     public var updatedAt: Date
 
     public var id: String { deviceID }
 
-    public init(deviceID: String, deviceName: String, snapshots: [UsageSnapshot], costs: [CostReport], updatedAt: Date = .now) {
+    public init(deviceID: String, deviceName: String, snapshots: [UsageSnapshot], costs: [CostReport], providerStatuses: [ProviderSyncStatus]? = nil, updatedAt: Date = .now) {
         self.schemaVersion = Self.schemaVersion
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.snapshots = snapshots
         self.costs = costs
+        self.providerStatuses = providerStatuses
         self.updatedAt = updatedAt
     }
 
     public func snapshot(for provider: ProviderID) -> UsageSnapshot? { snapshots.first { $0.provider == provider } }
     public func cost(for provider: ProviderID) -> CostReport? { costs.first { $0.provider == provider } }
+
+    /// Old payloads still use the original measurement date; publication never makes them fresh.
+    public func status(for snapshot: UsageSnapshot) -> ProviderSyncStatus {
+        providerStatuses?.first { $0.instanceID == snapshot.instanceID } ??
+            ProviderSyncStatus(instanceID: snapshot.instanceID, provider: snapshot.provider,
+                               state: .fresh(snapshot), lastAttemptAt: nil)
+    }
+
+    /// Snapshots worth alerting on: anything actually measured (fresh or merely older), not errors/unavailable.
+    public var alertableSnapshots: [UsageSnapshot] {
+        snapshots.filter { [.fresh, .stale].contains(status(for: $0).freshness()) }
+    }
 
     static let encoder: JSONEncoder = { let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; return e }()
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
@@ -42,4 +57,8 @@ public enum DeviceIdentity {
         UserDefaults.standard.set(fresh, forKey: key)
         return fresh
     }
+}
+
+public enum SyncPrivacy {
+    public static let summary = "Optional iCloud sync sends usage limits, reset times, cost estimates, account email, organization and plan, Mac name, and project names and full paths to your private iCloud database. Login credentials and raw logs are not synced."
 }

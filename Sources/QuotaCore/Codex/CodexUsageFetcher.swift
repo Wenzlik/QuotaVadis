@@ -27,7 +27,7 @@ public struct CodexUsageFetcher: UsageFetcher {
                 .sorted()
             snapshot.resetCreditsAvailable = resets.availableCount ?? snapshot.resetCreditsAvailable
         }
-        return snapshot
+        return try snapshot.validated(allowUnlimited: response.credits?.unlimited == true)
     }
 
     /// Let the Codex CLI refresh `auth.json` (it owns the refresh token), then re-read the file.
@@ -36,6 +36,9 @@ public struct CodexUsageFetcher: UsageFetcher {
             guard try await CodexCLI.readRateLimits() != nil else { throw ProviderError.tokenExpired }
         } catch let error as ProviderError {
             throw error == .tokenExpired ? error : ProviderError.tokenExpired
+        } catch is TimeoutError {
+            // A stalled app-server means the CLI could not refresh the login; same next step for the user.
+            throw ProviderError.tokenExpired
         }
         let fresh = try CodexCredentials.load()
         if let expiry = fresh.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
