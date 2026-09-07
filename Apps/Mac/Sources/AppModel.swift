@@ -341,8 +341,15 @@ final class AppModel {
             if refreshAgain { refreshAgain = false; Task { await refresh() } }
         }
         for instance in visibleInstances { lastAttempts[instance.id] = .now }
-        _ = await service.refresh(enabled: enabledProviders) { [weak self] id, state in
+        let result = await service.refresh(enabled: enabledProviders) { [weak self] id, state in
             await self?.received(id: id, state: state)
+        }
+        // Streaming results land before the service dedupes; drop web rows the service discarded (same
+        // organization as a Claude Code login) and any web rows that disappeared from this refresh.
+        for key in states.keys where key.hasPrefix("claude-web:") && result[key] == nil { states[key] = nil }
+        let covered = Set(states.filter { $0.key == "claude" || $0.key.hasPrefix("claude:") }.compactMap { $0.value.snapshot?.organization })
+        for (key, state) in states where key.hasPrefix("claude-web:") {
+            if let org = state.snapshot?.organization, covered.contains(org) { states[key] = nil }
         }
         lastRefresh = .now
         notifyIfNeeded()
