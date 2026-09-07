@@ -52,8 +52,9 @@ final class AppModel {
     var enabledProviders: Set<ProviderID> {
         didSet { defaults.set(enabledProviders.map(\.rawValue).sorted(), forKey: "enabledProviders"); scheduleRefresh() }
     }
-    var refreshIntervalMinutes: Int {
-        didSet { defaults.set(refreshIntervalMinutes, forKey: "refreshIntervalMinutes"); scheduleRefresh() }
+    /// Seconds between limit refreshes. Default one minute; 30 s is the floor so the provider APIs are not hammered.
+    var refreshIntervalSeconds: Int {
+        didSet { defaults.set(refreshIntervalSeconds, forKey: "refreshIntervalSeconds"); scheduleRefresh() }
     }
     var warnAtPercent: Int {
         didSet { defaults.set(warnAtPercent, forKey: "warnAtPercent"); alerts.warnAtPercent = warnAtPercent }
@@ -123,7 +124,13 @@ final class AppModel {
     init() {
         let stored = defaults.stringArray(forKey: "enabledProviders")?.compactMap(ProviderID.init(rawValue:))
         enabledProviders = stored.map(Set.init) ?? Set(ProviderID.allCases)
-        refreshIntervalMinutes = max(1, defaults.object(forKey: "refreshIntervalMinutes") as? Int ?? 5)
+        if let seconds = defaults.object(forKey: "refreshIntervalSeconds") as? Int {
+            refreshIntervalSeconds = max(30, seconds)
+        } else if let legacyMinutes = defaults.object(forKey: "refreshIntervalMinutes") as? Int {
+            refreshIntervalSeconds = max(30, legacyMinutes * 60)   // migrate the pre-0.2 setting
+        } else {
+            refreshIntervalSeconds = 60
+        }
         warnAtPercent = defaults.object(forKey: "warnAtPercent") as? Int ?? 80
         notifyOnReset = defaults.object(forKey: "notifyOnReset") as? Bool ?? true
         notifyExtraUsage = defaults.object(forKey: "notifyExtraUsage") as? Bool ?? true
@@ -300,10 +307,10 @@ final class AppModel {
 
     private func scheduleRefresh() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(refreshIntervalMinutes * 60), repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(refreshIntervalSeconds), repeats: true) { _ in
             Task { @MainActor in await self.refresh() }
         }
-        timer?.tolerance = 30
+        timer?.tolerance = min(30, TimeInterval(refreshIntervalSeconds) / 6)
     }
 
     private func applyLaunchAtLogin() {
