@@ -209,3 +209,16 @@ private func fixture(_ name: String) throws -> Data {
     var off = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: false, notifyExtraUsage: false, creditBaseline: ["claude/credit/extra": 1])
     #expect(off.evaluate(snapshots: [snap(5, weekly: 40)]).isEmpty)
 }
+
+@Test func rateLimitGateBacksOff() async {
+    let gate = RateLimitGate()
+    let now = Date()
+    #expect(await gate.isBlocked("api.example.com", now: now) == false)
+    await gate.recordLimit("api.example.com", retryAfter: nil, now: now)
+    #expect(await gate.isBlocked("api.example.com", now: now.addingTimeInterval(299)) == true)
+    #expect(await gate.isBlocked("api.example.com", now: now.addingTimeInterval(301)) == false)
+    await gate.recordLimit("api.example.com", retryAfter: "900", now: now)
+    #expect(await gate.isBlocked("api.example.com", now: now.addingTimeInterval(899)) == true)
+    await gate.recordSuccess("api.example.com")
+    #expect(await gate.isBlocked("api.example.com", now: now) == false)
+}

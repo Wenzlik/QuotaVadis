@@ -196,7 +196,7 @@ public enum ProviderError: Error, LocalizedError, Sendable, Hashable {
         case .notLoggedIn: "Not logged in"
         case .tokenExpired: "Session expired. Open the tool once so it refreshes its login"
         case .unauthorized: "Token rejected, log in again"
-        case .rateLimited: "Usage API is rate limited, retrying later"
+        case .rateLimited: "Usage API is rate limited; backing off, last values kept"
         case .http(let code): "HTTP \(code)"
         case .decoding(let why): "Unexpected response: \(why)"
         case .network(let why): "Network: \(why)"

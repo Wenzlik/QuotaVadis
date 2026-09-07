@@ -17,6 +17,8 @@ enum HTTP {
     }
 
     private static func send(_ url: URL, method: String, body: Data?, headers: [String: String]) async throws -> Data {
+        // While a host is backing off after a 429, fail fast: the caller keeps its last snapshot.
+        if let host = url.host(), await RateLimitGate.shared.isBlocked(host) { throw ProviderError.rateLimited }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
@@ -29,12 +31,17 @@ enum HTTP {
         } catch {
             throw ProviderError.network(error.localizedDescription)
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
         switch status {
-        case 200...299: return data
+        case 200...299:
+            if let host = url.host() { await RateLimitGate.shared.recordSuccess(host) }
+            return data
         case 401: throw ProviderError.unauthorized
         case 403: throw ProviderError.unauthorized
-        case 429: throw ProviderError.rateLimited
+        case 429:
+            if let host = url.host() { await RateLimitGate.shared.recordLimit(host, retryAfter: http?.value(forHTTPHeaderField: "Retry-After")) }
+            throw ProviderError.rateLimited
         default: throw ProviderError.http(status)
         }
     }
@@ -82,4 +89,38 @@ extension ISO8601DateFormatter {
 extension FileManager {
     /// `homeDirectoryForCurrentUser` is macOS-only; iOS never reaches these paths but the code must compile there.
     var userHome: URL { URL(fileURLWithPath: NSHomeDirectory()) }
+}
+
+/// Per-host backoff after HTTP 429. Honours Retry-After; otherwise 5 min, doubling on repeats up to 30 min.
+public actor RateLimitGate {
+    public static let shared = RateLimitGate()
+    private var blockedUntil: [String: Date] = [:]
+    private var strikes: [String: Int] = [:]
+
+    public func isBlocked(_ host: String, now: Date = .now) -> Bool {
+        guard let until = blockedUntil[host] else { return false }
+        if until <= now { blockedUntil[host] = nil; return false }
+        return true
+    }
+
+    public func blockedUntil(_ host: String) -> Date? { blockedUntil[host] }
+
+    public func recordLimit(_ host: String, retryAfter: String?, now: Date = .now) {
+        let strike = (strikes[host] ?? 0) + 1
+        strikes[host] = strike
+        var delay = min(1800, 300 * pow(2, Double(strike - 1)))
+        if let retryAfter {
+            if let seconds = Double(retryAfter.trimmingCharacters(in: .whitespaces)) { delay = max(delay, seconds) }
+            else if let date = Self.httpDate(retryAfter) { delay = max(delay, date.timeIntervalSince(now)) }
+        }
+        blockedUntil[host] = now.addingTimeInterval(min(3600, max(30, delay)))
+    }
+
+    public func recordSuccess(_ host: String) { strikes[host] = nil; blockedUntil[host] = nil }
+
+    private static func httpDate(_ text: String) -> Date? {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f.date(from: text)
+    }
 }
