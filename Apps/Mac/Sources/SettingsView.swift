@@ -67,6 +67,11 @@ struct SettingsView: View {
                     Text("One alert per window when it crosses the threshold, with a “Snooze 1 hour” action. Reset alerts fire when a nearly used-up window is available again.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Section("Extra usage") {
+                    Toggle("Alert when paid extra usage grows", isOn: $model.notifyExtraUsage)
+                    Text("Two cases: extra usage grows while your limits are not exhausted (a model outside your seat, e.g. Fable on a Standard seat, is billed separately), and extra usage starts after a window hit 100%. At most once per hour per account.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .tabItem { Label("Notifications", systemImage: "bell") }
 

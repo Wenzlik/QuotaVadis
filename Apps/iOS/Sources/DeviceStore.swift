@@ -25,6 +25,7 @@ final class DeviceStore {
     }
     var warnAtPercent: Int { didSet { UserDefaults.standard.set(warnAtPercent, forKey: "warnAtPercent"); alerts.warnAtPercent = warnAtPercent } }
     var notifyOnReset: Bool { didSet { UserDefaults.standard.set(notifyOnReset, forKey: "notifyOnReset"); alerts.notifyOnReset = notifyOnReset } }
+    var notifyExtraUsage: Bool { didSet { UserDefaults.standard.set(notifyExtraUsage, forKey: "notifyExtraUsage"); alerts.notifyExtraUsage = notifyExtraUsage } }
     private var alerts: QuotaAlertEngine
 
     /// Remembered device choice; falls back to the most recently updated Mac.
@@ -38,12 +39,13 @@ final class DeviceStore {
         for s in device.snapshots { titles[s.instanceID] = s.displayTitle }
         let due = alerts.evaluate(snapshots: device.snapshots, titles: titles)
         UserDefaults.standard.set(alerts.warned.sorted(), forKey: "warnedKeys")
+        UserDefaults.standard.set(alerts.creditBaseline, forKey: "creditBaseline")
         let center = UNUserNotificationCenter.current()
         for alert in due {
             let content = UNMutableNotificationContent()
             content.title = alert.title
             content.body = alert.body
-            content.sound = alert.kind == .threshold ? .default : nil
+            content.sound = alert.kind == .reset ? nil : .default
             content.threadIdentifier = alert.key.split(separator: "/").first.map(String.init) ?? "quota"
             center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
         }
@@ -63,9 +65,12 @@ final class DeviceStore {
         notificationsEnabled = d.object(forKey: "notificationsEnabled") as? Bool ?? false
         warnAtPercent = d.object(forKey: "warnAtPercent") as? Int ?? 80
         notifyOnReset = d.object(forKey: "notifyOnReset") as? Bool ?? true
+        notifyExtraUsage = d.object(forKey: "notifyExtraUsage") as? Bool ?? true
         alerts = QuotaAlertEngine(warnAtPercent: d.object(forKey: "warnAtPercent") as? Int ?? 80,
                                   notifyOnReset: d.object(forKey: "notifyOnReset") as? Bool ?? true,
-                                  warned: Set(d.stringArray(forKey: "warnedKeys") ?? []))
+                                  notifyExtraUsage: d.object(forKey: "notifyExtraUsage") as? Bool ?? true,
+                                  warned: Set(d.stringArray(forKey: "warnedKeys") ?? []),
+                                  creditBaseline: d.dictionary(forKey: "creditBaseline") as? [String: Double] ?? [:])
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
         // Last known payloads so the app opens with content offline.
         if let data = try? Data(contentsOf: Self.cacheURL),

@@ -183,3 +183,29 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.windows.first { $0.id == "auto" }?.prominent == false)
     #expect(s.worstWindow?.id == "api")
 }
+
+@Test func extraUsageAlerts() {
+    var engine = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: false)
+    func snap(_ used: Double, weekly: Double) -> UsageSnapshot {
+        UsageSnapshot(provider: .claude, account: nil, plan: "Team",
+                      windows: [UsageWindow(id: "weekly", kind: .weekly, title: "Weekly", usedPercent: weekly, resetsAt: nil)],
+                      credits: [UsageCredits(id: "extra", title: "Extra usage", used: used, limit: 20)])
+    }
+    #expect(engine.evaluate(snapshots: [snap(1.00, weekly: 40)]).isEmpty)          // baseline only
+    let a = engine.evaluate(snapshots: [snap(1.50, weekly: 40)])
+    #expect(a.count == 1 && a[0].kind == .extraUsageUnexpected)
+    #expect(engine.evaluate(snapshots: [snap(1.80, weekly: 40)]).isEmpty)          // cooldown
+    var later = engine; later.snoozed = [:]
+    let b = later.evaluate(snapshots: [snap(2.50, weekly: 100)])
+    #expect(b.contains { $0.kind == .extraUsageAtLimit })     // plus the threshold alert for 100%
+    // Reset in 30 minutes: the title says so.
+    var soon = QuotaAlertEngine(warnAtPercent: 101, notifyOnReset: false, creditBaseline: ["claude/credit/extra": 1])
+    let now = Date()
+    let s = UsageSnapshot(provider: .claude, account: nil, plan: nil,
+                          windows: [UsageWindow(id: "session", kind: .session, title: "Session", usedPercent: 100, resetsAt: now.addingTimeInterval(1800))],
+                          credits: [UsageCredits(id: "extra", title: "Extra usage", used: 1.4, limit: nil)])
+    let c = soon.evaluate(snapshots: [s], now: now)
+    #expect(c.count == 1 && c[0].title.contains("reset in 30 min"))
+    var off = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: false, notifyExtraUsage: false, creditBaseline: ["claude/credit/extra": 1])
+    #expect(off.evaluate(snapshots: [snap(5, weekly: 40)]).isEmpty)
+}

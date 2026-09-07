@@ -61,6 +61,9 @@ final class AppModel {
     var notifyOnReset: Bool {
         didSet { defaults.set(notifyOnReset, forKey: "notifyOnReset"); alerts.notifyOnReset = notifyOnReset }
     }
+    var notifyExtraUsage: Bool {
+        didSet { defaults.set(notifyExtraUsage, forKey: "notifyExtraUsage"); alerts.notifyExtraUsage = notifyExtraUsage }
+    }
     var launchAtLogin: Bool {
         didSet { applyLaunchAtLogin() }
     }
@@ -123,9 +126,12 @@ final class AppModel {
         refreshIntervalMinutes = max(1, defaults.object(forKey: "refreshIntervalMinutes") as? Int ?? 5)
         warnAtPercent = defaults.object(forKey: "warnAtPercent") as? Int ?? 80
         notifyOnReset = defaults.object(forKey: "notifyOnReset") as? Bool ?? true
+        notifyExtraUsage = defaults.object(forKey: "notifyExtraUsage") as? Bool ?? true
         alerts = QuotaAlertEngine(warnAtPercent: defaults.object(forKey: "warnAtPercent") as? Int ?? 80,
                                   notifyOnReset: defaults.object(forKey: "notifyOnReset") as? Bool ?? true,
-                                  warned: Set(defaults.stringArray(forKey: "warnedKeys") ?? []))
+                                  notifyExtraUsage: defaults.object(forKey: "notifyExtraUsage") as? Bool ?? true,
+                                  warned: Set(defaults.stringArray(forKey: "warnedKeys") ?? []),
+                                  creditBaseline: defaults.dictionary(forKey: "creditBaseline") as? [String: Double] ?? [:])
         launchAtLogin = SMAppService.mainApp.status == .enabled
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
@@ -315,9 +321,12 @@ final class AppModel {
         let snapshots = visibleInstances.compactMap { states[$0.id]?.snapshot }
         let due = alerts.evaluate(snapshots: snapshots, titles: titles)
         defaults.set(alerts.warned.sorted(), forKey: "warnedKeys")
-        guard !due.isEmpty, warnAtPercent <= 100 else { return }
+        defaults.set(alerts.creditBaseline, forKey: "creditBaseline")
+        // Threshold/reset alerts respect "Never"; extra-usage alerts have their own switch.
+        let filtered = due.filter { $0.kind == .extraUsageUnexpected || $0.kind == .extraUsageAtLimit || warnAtPercent <= 100 }
+        guard !filtered.isEmpty else { return }
         notifications.onSnooze = { [weak self] key in self?.alerts.snooze(key: key) }
-        notifications.deliver(due)
+        notifications.deliver(filtered)
     }
 
 }

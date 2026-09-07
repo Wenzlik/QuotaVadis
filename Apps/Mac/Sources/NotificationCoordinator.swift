@@ -28,7 +28,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 content.body = alert.body
                 content.categoryIdentifier = Self.category
                 content.userInfo = ["key": alert.key]
-                content.sound = alert.kind == .threshold ? .default : nil
+                content.sound = alert.kind == .reset ? nil : .default
                 content.threadIdentifier = alert.key.split(separator: "/").first.map(String.init) ?? "quota"
                 center.add(UNNotificationRequest(identifier: alert.id + "/" + UUID().uuidString, content: content, trigger: nil))
             }

@@ -144,8 +144,9 @@ struct IOSSettingsView: View {
                     }
                     .disabled(!store.notificationsEnabled)
                     Toggle("Also when a window resets", isOn: $store.notifyOnReset).disabled(!store.notificationsEnabled)
+                    Toggle("Paid extra usage grows", isOn: $store.notifyExtraUsage).disabled(!store.notificationsEnabled)
                 } header: { Text("Notifications") } footer: {
-                    Text("Evaluated on this phone whenever new numbers arrive from the Mac, including in the background.")
+                    Text("Evaluated on this phone whenever new numbers arrive from the Mac, including in the background. Extra-usage alerts catch paying while limits remain (e.g. Fable on a Standard seat) and spending after a window hit 100%.")
                 }
 
                 Section("About") {
