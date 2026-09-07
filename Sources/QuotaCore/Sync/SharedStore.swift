@@ -25,6 +25,17 @@ public enum SharedStore {
         }
     }
 
+    public static func clear() {
+        guard let url else { lastError = "No App Group container for \(appGroup)"; return }
+        do { try clear(at: url); lastError = nil }
+        catch { lastError = error.localizedDescription }
+    }
+
+    static func clear(at url: URL) throws {
+        do { try FileManager.default.removeItem(at: url) }
+        catch CocoaError.fileNoSuchFile {} // Already empty is a successful clear.
+    }
+
     public static func read() -> DevicePayload? {
         guard let url, let data = try? Data(contentsOf: url) else { return nil }
         return try? DevicePayload.decode(data)
