@@ -135,7 +135,7 @@ final class AppModel {
             await service.setFetchers(UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource,
                                                                    coveredOrganizations: coveredOrganizations))
             states = states.filter { key, _ in !key.hasPrefix("claude") }
-            await refresh()
+            await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() }
         }
     }
 
@@ -165,6 +165,9 @@ final class AppModel {
     private var timer: Timer?
     private var alerts: QuotaAlertEngine
     private let notifications = NotificationCoordinator()
+    /// True while the screen is locked: a background refresh here would hit a locked login Keychain and pop
+    /// a password prompt with nobody at the machine to answer it, so refreshes are skipped until unlock.
+    private var isScreenLocked = false
 
     init() {
         let stored = defaults.stringArray(forKey: "enabledProviders")?.compactMap(ProviderID.init(rawValue:))
@@ -201,6 +204,7 @@ final class AppModel {
             extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? [],
             claudeSource: UsageService.ClaudeSource(rawValue: defaults.string(forKey: "claudeSource") ?? "") ?? .automatic))
         hasOnboarded = defaults.bool(forKey: "hasOnboarded")
+        observeScreenLock()
         scheduleRefresh()
         if !syncEnabled && defaults.bool(forKey: "pendingCloudRemoval") { requestSync() }
         // First launch waits for the welcome window so the Keychain prompt is explained before it appears.
@@ -212,7 +216,7 @@ final class AppModel {
     func completeOnboarding() {
         hasOnboarded = true
         defaults.set(true, forKey: "hasOnboarded")
-        Task { await refresh() }
+        Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
     }
 
     // MARK: - Command line tool
@@ -333,7 +337,21 @@ final class AppModel {
         return options
     }
 
+    /// com.apple.screenIsLocked/Unlocked fire for both the screensaver lock and the login window after sleep.
+    private func observeScreenLock() {
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            self?.isScreenLocked = true
+        }
+        dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.isScreenLocked else { return }
+            self.isScreenLocked = false
+            Task { @MainActor in await self.refresh() }
+        }
+    }
+
     func refresh() async {
+        guard !isScreenLocked else { return }
         guard !isRefreshing else { refreshAgain = true; return }
         isRefreshing = true
         defer {
@@ -475,7 +493,9 @@ final class AppModel {
     func panelOpened() {
         lastPanelOpen = .now
         if isAdaptiveRefresh { scheduleRefresh() }
-        if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { Task { await refresh() } }
+        if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true {
+            Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
+        }
     }
 
     private func applyLaunchAtLogin() {

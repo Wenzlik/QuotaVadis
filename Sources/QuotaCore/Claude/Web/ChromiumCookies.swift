@@ -67,13 +67,14 @@ public struct ChromiumCookieStore: Sendable {
 
     #if os(macOS)
     func safeStoragePassword() throws -> String {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        ProviderInteractionContext.suppressUIIfBackground(&query)
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data, let password = String(data: data, encoding: .utf8) else {
