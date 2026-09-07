@@ -72,6 +72,11 @@ struct SettingsView: View {
                     Text("Two cases: extra usage grows while your limits are not exhausted (a model outside your seat, e.g. Fable on a Standard seat, is billed separately), and extra usage starts after a window hit 100%. At most once per hour per account.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Section {
+                    Button("Send test notifications") { model.sendTestNotifications() }
+                    Text("Delivers one sample of each kind so you can see the wording, the sound and the Snooze action. If nothing appears, allow QuotaVadis in System Settings ▸ Notifications.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .tabItem { Label("Notifications", systemImage: "bell") }
 

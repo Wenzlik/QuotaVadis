@@ -94,10 +94,12 @@ ITEM="    <item>
       <enclosure url=\"https://zmrhal.cz/quotavadis/QuotaVadis-$VERSION.zip\" $SIG type=\"application/octet-stream\"/>
     </item>
   </channel>"
-python3 - "$APPCAST" "$ITEM" <<'PY'
-import sys
-path, item = sys.argv[1], sys.argv[2]
+python3 - "$APPCAST" "$ITEM" "$VERSION" <<'PY'
+import sys, re
+path, item, version = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path).read()
+# Re-releasing the same version (build number bumped) replaces the old entry instead of duplicating it.
+s = re.sub(r"    <item>\n(?:(?!    </item>).*\n)*?      <sparkle:shortVersionString>" + re.escape(version) + r"</sparkle:shortVersionString>\n(?:(?!    </item>).*\n)*?    </item>\n", "", s)
 s = s.replace("  </channel>", item, 1)
 open(path, "w").write(s)
 PY

@@ -314,6 +314,23 @@ final class AppModel {
         }
     }
 
+    /// Sends one sample of each alert kind so the user can see and hear what they look like.
+    func sendTestNotifications() {
+        let now = Date()
+        let soon = now.addingTimeInterval(30 * 60)
+        let samples = [
+            QuotaAlert(kind: .threshold, key: "test/threshold", title: "Claude Code: Session at 85%",
+                       body: "15% left · resets \(soon.resetLabel(now: now))"),
+            QuotaAlert(kind: .reset, key: "test/reset", title: "Codex: Weekly reset", body: "Back to 100% available."),
+            QuotaAlert(kind: .extraUsageUnexpected, key: "test/extra-unexpected", title: "Claude Code: paying extra usage while limits remain",
+                       body: "Extra usage grew by $0.42 to $3.17 although no window is exhausted. A model outside your seat (e.g. Fable on a Standard seat) is billed separately."),
+            QuotaAlert(kind: .extraUsageAtLimit, key: "test/extra-limit", title: "Claude Code: paying extra usage, reset in 30 min",
+                       body: "Session is exhausted; further use is billed. Extra usage is at $3.59. Resets \(soon.resetLabel(now: now))."),
+        ]
+        notifications.onSnooze = { _ in }
+        notifications.deliver(samples)
+    }
+
     /// Threshold crossings and resets, via the shared alert engine. Snooze comes back from the notification action.
     private func notifyIfNeeded() {
         var titles: [String: String] = [:]
