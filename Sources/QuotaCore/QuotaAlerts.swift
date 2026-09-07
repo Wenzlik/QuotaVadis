@@ -10,6 +10,10 @@ public struct QuotaAlert: Sendable, Hashable, Identifiable {
     public let key: String
     public let title: String
     public let body: String
+
+    public init(kind: Kind, key: String, title: String, body: String) {
+        self.kind = kind; self.key = key; self.title = title; self.body = body
+    }
 }
 
 public struct QuotaAlertEngine: Sendable {
