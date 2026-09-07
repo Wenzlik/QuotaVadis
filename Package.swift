@@ -7,13 +7,13 @@ let package = Package(
     products: [
         .library(name: "QuotaCore", targets: ["QuotaCore"]),
         .library(name: "QuotaUI", targets: ["QuotaUI"]),
-        .executable(name: "quotactl", targets: ["quotactl"]),
+        .executable(name: "quotavadis", targets: ["quotavadis"]),
     ],
     targets: [
         .target(
             name: "QuotaCore",
             linkerSettings: [.linkedLibrary("sqlite3", .when(platforms: [.macOS])), .linkedFramework("CloudKit")]),
         .target(name: "QuotaUI", dependencies: ["QuotaCore"]),
-        .executableTarget(name: "quotactl", dependencies: ["QuotaCore"]),
+        .executableTarget(name: "quotavadis", dependencies: ["QuotaCore"]),
         .testTarget(name: "QuotaCoreTests", dependencies: ["QuotaCore"], resources: [.copy("Fixtures")]),
     ])

@@ -215,6 +215,29 @@ final class AppModel {
         Task { await refresh() }
     }
 
+    // MARK: - Command line tool
+
+    static let cliLinkPath = "/usr/local/bin/quotavadis"
+    var cliBundledURL: URL? {
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/quotavadis-cli")
+        return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+    }
+    var cliInstalled: Bool {
+        guard let target = cliBundledURL, let link = try? FileManager.default.destinationOfSymbolicLink(atPath: Self.cliLinkPath) else { return false }
+        return link == target.path
+    }
+    var cliInstallMessage: String?
+
+    /// Symlinks the bundled CLI into /usr/local/bin (asks for an administrator password once).
+    func installCLI() {
+        guard let target = cliBundledURL else { cliInstallMessage = "This build does not bundle the command line tool."; return }
+        let script = "mkdir -p /usr/local/bin && ln -sf '\(target.path)' '\(Self.cliLinkPath)'"
+        let apple = "do shell script \"\(script.replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: apple)?.executeAndReturnError(&error)
+        cliInstallMessage = error == nil ? "Installed: run `quotavadis` in Terminal." : "Not installed: \(error?[NSAppleScript.errorMessage] ?? "cancelled")"
+    }
+
     /// Per-provider login source and validity for Settings; refreshed on demand.
     var credentialStatuses: [ProviderID: CredentialStatus] = [:]
     func refreshCredentialStatuses() {

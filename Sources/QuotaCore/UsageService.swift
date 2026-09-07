@@ -121,6 +121,11 @@ public actor UsageService {
                     }
                 }
             }
+            // Automatic mode: an organization already served by a Claude Code login is not shown twice via the web.
+            let covered = Set(result.filter { $0.key == "claude" || $0.key.hasPrefix("claude:") }.compactMap { $0.value.snapshot?.organization })
+            for (key, state) in result where key.hasPrefix("claude-web:") {
+                if let org = state.snapshot?.organization, covered.contains(org) { result[key] = nil; last[key] = nil }
+            }
             return result
         }
     }

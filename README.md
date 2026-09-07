@@ -27,6 +27,25 @@ QuotaVadis never asks you to log in. It reuses the sessions the tools already ke
 Cost figures for Claude and Codex are estimates at API list prices (models.dev catalog, cached daily);
 subscriptions are not billed per token. Cursor cost is what Cursor itself metered.
 
+## Command line
+
+The app bundles `quotavadis`; install the symlink from Settings ▸ General, or run it directly from
+`/Applications/QuotaVadis.app/Contents/MacOS/quotavadis-cli`. Homebrew users can also `swift build -c release --product quotavadis` from a checkout.
+
+```
+quotavadis                  table of every tool
+quotavadis --json           snapshots as JSON
+quotavadis --watch 60       refresh in place
+quotavadis --provider codex
+quotavadis cost             30-day cost & token estimates
+```
+
+## No Claude Code? No problem
+
+Claude limits can also come from a claude.ai web session: the Claude desktop app or Chrome are read automatically
+(decrypting their cookie store with the app's Safe Storage key from your Keychain), or paste the `sessionKey` cookie in
+Settings ▸ Claude. Every organization with limits shows up as its own row.
+
 ## Build
 
 Requires Xcode 26 and [xcodegen](https://github.com/yonaskolb/XcodeGen).

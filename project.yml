@@ -36,6 +36,11 @@ targets:
         product: Sparkle
       - target: QuotaWidgets-Mac
         embed: true
+      - target: quotavadis-cli
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
     info:
       path: Apps/Mac/Info.plist
       properties:
@@ -101,6 +106,22 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_IDENTITY: "Apple Development"
+  quotavadis-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/quotavadis
+    dependencies:
+      - package: QuotaCore
+        product: QuotaCore
+    settings:
+      base:
+        # Not "quotavadis": on a case-insensitive disk it would collide with the app executable "QuotaVadis".
+        PRODUCT_NAME: quotavadis-cli
+        PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis.cli
+        CODE_SIGN_IDENTITY: "Apple Development"
+        ENABLE_HARDENED_RUNTIME: true
+        SKIP_INSTALL: true
   QuotaWidgets-Mac:
     type: app-extension
     platform: macOS

@@ -55,6 +55,16 @@ struct SettingsView: View {
                     Toggle("Launch at login", isOn: $model.launchAtLogin)
                     Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
                 }
+                Section {
+                    HStack {
+                        Button(model.cliInstalled ? "Reinstall command line tool" : "Install command line tool") { model.installCLI() }
+                        Spacer()
+                        Text(model.cliInstalled ? "installed at /usr/local/bin/quotavadis" : "").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let message = model.cliInstallMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
+                    Text("`quotavadis` prints the same limits in Terminal: a table, `--json`, `--watch 60`, `--provider codex`, `cost`. Uses the same logins as the app.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } header: { Text("Command line") }
             }
             .tabItem { Label("General", systemImage: "gearshape") }
 
