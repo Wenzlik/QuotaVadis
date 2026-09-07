@@ -34,8 +34,9 @@ struct OverviewView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                            // Tools the Mac tracks but could not read. Tools not installed on the Mac are not the phone's problem.
                             ForEach((device.providerStatuses ?? []).filter { status in
-                                !device.snapshots.contains { $0.instanceID == status.instanceID }
+                                !device.snapshots.contains { $0.instanceID == status.instanceID } && status.freshness() != .unavailable
                             }) { status in
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text(status.provider.displayName).font(.headline)

@@ -36,8 +36,9 @@ public struct DevicePayload: Codable, Sendable, Hashable, Identifiable {
                                state: .fresh(snapshot), lastAttemptAt: nil)
     }
 
-    public var freshSnapshots: [UsageSnapshot] {
-        snapshots.filter { status(for: $0).freshness() == .fresh }
+    /// Snapshots worth alerting on: anything actually measured (fresh or merely older), not errors/unavailable.
+    public var alertableSnapshots: [UsageSnapshot] {
+        snapshots.filter { [.fresh, .stale].contains(status(for: $0).freshness()) }
     }
 
     static let encoder: JSONEncoder = { let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; return e }()

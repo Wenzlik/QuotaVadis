@@ -71,24 +71,29 @@ public actor CloudSync {
         try await updateIndex { ids in ids.contains(deviceID) ? ids.filter { $0 != deviceID } : nil }
     }
 
-    /// All devices newest first. Only confirmed missing records are dropped; partial failures preserve the reader cache.
+    /// Human-readable note about records skipped by the last `fetchAll` (e.g. a Mac on a newer app version).
+    public private(set) var lastReadWarning: String?
+
+    /// All devices newest first. A record that is missing, undecodable or from a newer schema is skipped and
+    /// reported through `lastReadWarning`; other Macs' data still arrives. Transport failures still throw.
     public func fetchAll() async throws -> [DevicePayload] {
         let ids = try await indexIDs()
-        guard !ids.isEmpty else { return [] }
+        guard !ids.isEmpty else { lastReadWarning = nil; return [] }
         var payloads: [DevicePayload] = []
+        var skipped: [String] = []
         for id in ids {
             let record: CKRecord
             do { record = try await fetchRecord(CKRecord.ID(recordName: id)) }
             catch let error as CKError where error.code == .unknownItem { continue }
-            guard let data = record[Self.payloadField] as? Data else {
-                throw ProviderError.decoding("Missing iCloud payload")
+            guard let data = record[Self.payloadField] as? Data, let payload = try? DevicePayload.decode(data) else {
+                skipped.append(record[Self.nameField] as? String ?? id); continue
             }
-            let payload = try DevicePayload.decode(data)
             guard payload.schemaVersion <= DevicePayload.schemaVersion else {
-                throw ProviderError.decoding("Update QuotaVadis to read this Mac's data")
+                skipped.append("\(payload.deviceName) (newer QuotaVadis)"); continue
             }
             payloads.append(payload)
         }
+        lastReadWarning = skipped.isEmpty ? nil : "Could not read \(skipped.joined(separator: ", ")). Update QuotaVadis on this device."
         return payloads.sorted { $0.updatedAt > $1.updatedAt }
     }
 

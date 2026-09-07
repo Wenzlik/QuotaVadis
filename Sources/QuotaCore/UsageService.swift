@@ -55,12 +55,12 @@ public actor UsageService {
                 group.addTask { [last] in
                     do {
                         // One stuck provider (Keychain prompt, hung local server) must not block the others or the sync.
-                        let snapshot = try await withTimeout(seconds: timeout) {
-                            try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-                        }
+                        // A timed-out waiter stops waiting; the shared fetch keeps running so the next refresh can
+                        // pick up its result (a Keychain prompt answered late must not be thrown away).
+                        let snapshot = try await withTimeout(seconds: timeout) { try await work.value }
                         return (id, snapshot.map(ProviderState.fresh) ?? .unavailable)
                     } catch is TimeoutError {
-                        return (id, .failed(.network("Timed out after 45 s"), last: last[id]))
+                        return (id, .failed(.network("Timed out after \(Int(timeout)) s"), last: last[id]))
                     } catch let error as ProviderError {
                         return (id, .failed(error, last: last[id]))
                     } catch {

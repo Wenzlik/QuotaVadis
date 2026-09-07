@@ -64,7 +64,7 @@ final class DeviceStore {
         guard notificationsEnabled, let device = selectedDevice else { return }
         var titles: [String: String] = [:]
         for s in device.snapshots { titles[s.instanceID] = s.displayTitle }
-        let due = alerts.evaluate(snapshots: device.freshSnapshots, titles: titles)
+        let due = alerts.evaluate(snapshots: device.alertableSnapshots, titles: titles)
         UserDefaults.standard.set(alerts.warned.sorted(), forKey: "warnedKeys")
         UserDefaults.standard.set(alerts.creditBaseline, forKey: "creditBaseline")
         let center = UNUserNotificationCenter.current()
@@ -146,10 +146,11 @@ final class DeviceStore {
             try data.write(to: Self.cacheURL, options: .atomic)
             devices = fetched
             updateWidgets()
-            if let error = SharedStore.lastError { throw ProviderError.network(error) }
             await evaluateAlerts()
             lastRefresh = .now
-            lastError = nil
+            // Data arrived; a widget-file problem or a skipped Mac record is shown as a note, not as a failed refresh.
+            let readWarning = await cloud.lastReadWarning
+            lastError = SharedStore.lastError.map { "Widgets could not be updated: \($0)" } ?? readWarning
             return changed ? .newData : .noData
         } catch {
             lastError = error.localizedDescription

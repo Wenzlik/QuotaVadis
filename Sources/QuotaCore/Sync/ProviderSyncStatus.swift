@@ -37,22 +37,27 @@ public struct ProviderSyncStatus: Codable, Sendable, Hashable, Identifiable {
     public var lastAttemptAt: Date?
     public var lastSuccessAt: Date?
     public var errorCode: ProviderFailureCode?
+    /// The publishing Mac's refresh interval; "stale" means two missed refreshes (never less than 15 min).
+    public var refreshInterval: TimeInterval?
     public var id: String { instanceID }
-    public static let staleAfter: TimeInterval = 15 * 60
+    public static let minimumStaleAfter: TimeInterval = 15 * 60
+    public var staleAfter: TimeInterval { max(Self.minimumStaleAfter, (refreshInterval ?? 0) * 2 + 60) }
 
-    public init(instanceID: String, provider: ProviderID, state: ProviderState, lastAttemptAt: Date?) {
+    public init(instanceID: String, provider: ProviderID, state: ProviderState, lastAttemptAt: Date?, refreshInterval: TimeInterval? = nil) {
         self.instanceID = instanceID
         self.provider = provider
         self.lastAttemptAt = lastAttemptAt
+        self.refreshInterval = refreshInterval
         lastSuccessAt = state.snapshot?.fetchedAt
         if case .failed(let error, _) = state { errorCode = ProviderFailureCode(error) }
         else if case .unavailable = state { errorCode = .unavailable }
     }
 
     public func freshness(now: Date = .now) -> MeasurementFreshness {
+        if errorCode == .unavailable, lastSuccessAt == nil { return .unavailable }
         if errorCode != nil { return lastSuccessAt == nil ? .error : .stale }
         guard let lastSuccessAt else { return .unavailable }
-        return now.timeIntervalSince(lastSuccessAt) > Self.staleAfter ? .stale : .fresh
+        return now.timeIntervalSince(lastSuccessAt) > staleAfter ? .stale : .fresh
     }
 
     public func label(now: Date = .now) -> String {

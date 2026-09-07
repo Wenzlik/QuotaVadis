@@ -68,10 +68,17 @@ struct CostAccumulator {
     private var days: [String: CostBucket] = [:]
     private var models: [String: CostBucket] = [:]
     private var projects: [String: CostBucket] = [:]
-    private let calendar = Calendar.current
+    private let calendar = CostAccumulator.bucketCalendar
     private static let dayFormat: Date.FormatStyle = .init().year().month(.twoDigits).day(.twoDigits)
 
-    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
+    /// Day buckets always use the Gregorian calendar in the local time zone, matching `CostReport.day(at:)`.
+    static var bucketCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
+    static func dayKey(_ date: Date, calendar: Calendar = CostAccumulator.bucketCalendar) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }

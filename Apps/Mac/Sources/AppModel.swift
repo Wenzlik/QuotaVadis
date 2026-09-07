@@ -234,7 +234,8 @@ final class AppModel {
         guard let measurement = menuBarMeasurement else { return false }
         let snapshot = measurement.snapshot
         return ProviderSyncStatus(instanceID: snapshot.instanceID, provider: snapshot.provider,
-                                  state: states[snapshot.instanceID] ?? .unavailable, lastAttemptAt: nil).freshness() != .fresh
+                                  state: states[snapshot.instanceID] ?? .unavailable, lastAttemptAt: nil,
+                                  refreshInterval: TimeInterval(refreshIntervalSeconds)).freshness() != .fresh
     }
 
     var menuBarAccessibilityLabel: String {
@@ -325,7 +326,8 @@ final class AppModel {
                       costs: ProviderID.allCases.filter { enabledProviders.contains($0) }.compactMap { costs[$0] },
                       providerStatuses: visibleInstances.map {
                           ProviderSyncStatus(instanceID: $0.id, provider: $0.provider,
-                                             state: states[$0.id] ?? .unavailable, lastAttemptAt: lastAttempts[$0.id])
+                                             state: states[$0.id] ?? .unavailable, lastAttemptAt: lastAttempts[$0.id],
+                                             refreshInterval: TimeInterval(refreshIntervalSeconds))
                       })
     }
 

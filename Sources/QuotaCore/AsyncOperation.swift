@@ -45,8 +45,8 @@ public func withTimeout<T: Sendable>(seconds: Double, _ body: @escaping @Sendabl
     let deadline = Task.detached {
         do {
             try await Task.sleep(for: .seconds(seconds))
+            result.finish(.failure(TimeoutError()))   // before cancel, so the body's CancellationError cannot win
             work.cancel()
-            result.finish(.failure(TimeoutError()))
         } catch {}
     }
     defer { work.cancel(); deadline.cancel() }

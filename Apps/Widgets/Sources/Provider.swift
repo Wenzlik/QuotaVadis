@@ -32,7 +32,7 @@ struct QuotaEntry: TimelineEntry {
         let snapshots = payload?.snapshots ?? []
         let nextReload = now.addingTimeInterval(30 * 60)
         let boundaries = snapshots.flatMap { snapshot in
-            [snapshot.fetchedAt.addingTimeInterval(ProviderSyncStatus.staleAfter + 1)] + snapshot.windows.compactMap(\.resetsAt)
+            [snapshot.fetchedAt.addingTimeInterval((payload?.status(for: snapshot).staleAfter ?? ProviderSyncStatus.minimumStaleAfter) + 1)] + snapshot.windows.compactMap(\.resetsAt)
         }.filter { $0 > now && $0 < nextReload }
         return ([now] + Set(boundaries).sorted()).map { QuotaEntry(date: $0, payload: payload, provider: provider) }
     }
