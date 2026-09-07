@@ -242,3 +242,14 @@ private actor Counter { var n = 0; func bump() { n += 1 } }
     #expect(await claude.n == 1)
     #expect(await codex.n == 3)
 }
+
+@Test func adaptivePolicyTable() {
+    let now = Date()
+    func d(_ i: AdaptiveRefreshPolicy.Input) -> (TimeInterval, AdaptiveRefreshPolicy.Reason) { AdaptiveRefreshPolicy.next(i) }
+    #expect(d(.init(now: now, lowPowerOrHot: true)) == (1800, .constrained))
+    #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-60))) == (120, .recentInteraction))
+    #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-1800))) == (300, .warm))
+    #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-7200), lastCodingActivity: now.addingTimeInterval(-60))) == (300, .codingActivity))
+    #expect(d(.init(now: now, lastPanelOpen: now.addingTimeInterval(-7200))) == (900, .idle))
+    #expect(d(.init(now: now)) == (1800, .longIdle))
+}

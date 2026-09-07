@@ -35,6 +35,7 @@ struct MenuPanel: View {
             footer
         }
         .frame(width: 320)
+        .onAppear { model.panelOpened() }
     }
 
     /// Leave room for the menu bar and the footer on the smallest common display.

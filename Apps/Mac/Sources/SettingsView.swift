@@ -6,6 +6,17 @@ struct SettingsView: View {
     @Bindable var updater: Updater
     @State private var showKeychainPicker = false
 
+    private var refreshDescription: String {
+        var text = model.isAdaptiveRefresh
+            ? "Adaptive: every 2 min right after you open the panel, 5 min while you work with the tools or looked within the hour, 15–30 min when idle, 30 min on Low Power. Opening the panel always refreshes."
+            : "Fixed interval. Claude Code is still read at most every 5 minutes: Anthropic's usage API throttles faster polling."
+        if let reason = model.adaptiveReason, let next = model.nextRefreshAt {
+            text += " Now: \(reason.rawValue), next check \(next.formatted(.relative(presentation: .named)))."
+        }
+        text += " After an HTTP 429 the app backs off and keeps the last values."
+        return text
+    }
+
     private var syncDescription: String {
         if let error = model.lastSyncError { return error }
         guard model.syncEnabled else {
@@ -33,7 +44,8 @@ struct SettingsView: View {
                 }
                 .onAppear { model.refreshCredentialStatuses() }
                 Section {
-                    Picker("Refresh every", selection: $model.refreshIntervalSeconds) {
+                    Picker("Refresh", selection: $model.refreshIntervalSeconds) {
+                        Text("Adaptive (2–30 min)").tag(0)
                         Text("30 seconds").tag(30)
                         Text("1 minute").tag(60)
                         Text("5 minutes").tag(300)
@@ -41,8 +53,7 @@ struct SettingsView: View {
                         Text("30 minutes").tag(1800)
                     }
                     Toggle("Launch at login", isOn: $model.launchAtLogin)
-                    Text("Claude Code is read at most every 5 minutes whatever you pick here: Anthropic's usage API throttles faster polling. Other tools follow the interval. After an HTTP 429 the app backs off and keeps the last values.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
                 }
             }
             .tabItem { Label("General", systemImage: "gearshape") }

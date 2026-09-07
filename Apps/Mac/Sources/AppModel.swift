@@ -62,10 +62,15 @@ final class AppModel {
             Task { await refresh() }
         }
     }
-    /// Seconds between limit refreshes. Default one minute; 30 s is the floor so the provider APIs are not hammered.
+    /// Seconds between limit refreshes for the fixed cadence; 0 = adaptive (2–30 min by interaction and activity).
     var refreshIntervalSeconds: Int {
         didSet { defaults.set(refreshIntervalSeconds, forKey: "refreshIntervalSeconds"); scheduleRefresh() }
     }
+    var isAdaptiveRefresh: Bool { refreshIntervalSeconds == 0 }
+    /// Why the current adaptive delay was chosen, for Settings.
+    private(set) var adaptiveReason: AdaptiveRefreshPolicy.Reason?
+    private(set) var nextRefreshAt: Date?
+    private var lastPanelOpen: Date?
     var warnAtPercent: Int {
         didSet { defaults.set(warnAtPercent, forKey: "warnAtPercent"); alerts.warnAtPercent = warnAtPercent }
     }
@@ -144,11 +149,11 @@ final class AppModel {
         let stored = defaults.stringArray(forKey: "enabledProviders")?.compactMap(ProviderID.init(rawValue:))
         enabledProviders = stored.map(Set.init) ?? Set(ProviderID.allCases)
         if let seconds = defaults.object(forKey: "refreshIntervalSeconds") as? Int {
-            refreshIntervalSeconds = max(30, seconds)
+            refreshIntervalSeconds = seconds == 0 ? 0 : max(30, seconds)
         } else if let legacyMinutes = defaults.object(forKey: "refreshIntervalMinutes") as? Int {
             refreshIntervalSeconds = max(30, legacyMinutes * 60)   // migrate the pre-0.2 setting
         } else {
-            refreshIntervalSeconds = 60
+            refreshIntervalSeconds = 0   // adaptive by default
         }
         warnAtPercent = defaults.object(forKey: "warnAtPercent") as? Int ?? 80
         notifyOnReset = defaults.object(forKey: "notifyOnReset") as? Bool ?? true
@@ -287,6 +292,7 @@ final class AppModel {
         lastRefresh = .now
         notifyIfNeeded()
         schedulePublish()
+        if isAdaptiveRefresh { scheduleRefresh() }
         if lastCostRefresh.map({ !Calendar.current.isDateInToday($0) || Date.now.timeIntervalSince($0) > costInterval }) ?? true {
             Task { await refreshCosts() }
         }
@@ -378,12 +384,36 @@ final class AppModel {
         defaults.set(lastSyncError, forKey: "lastSyncError")
     }
 
+    /// Fixed cadence: repeating timer. Adaptive: one-shot timer re-armed after every tick with the policy's delay.
     private func scheduleRefresh() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(refreshIntervalSeconds), repeats: true) { _ in
-            Task { @MainActor in await self.refresh() }
+        if isAdaptiveRefresh {
+            let input = AdaptiveRefreshPolicy.Input(
+                lastPanelOpen: lastPanelOpen,
+                lastCodingActivity: ActivityProbe.lastCodingActivity(),
+                lowPowerOrHot: ProcessInfo.processInfo.isLowPowerModeEnabled || [.serious, .critical].contains(ProcessInfo.processInfo.thermalState))
+            let (delay, reason) = AdaptiveRefreshPolicy.next(input)
+            adaptiveReason = reason
+            nextRefreshAt = .now.addingTimeInterval(delay)
+            timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+                Task { @MainActor in await self.refresh() }
+            }
+            timer?.tolerance = min(60, delay / 10)
+        } else {
+            adaptiveReason = nil
+            nextRefreshAt = .now.addingTimeInterval(TimeInterval(refreshIntervalSeconds))
+            timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(refreshIntervalSeconds), repeats: true) { _ in
+                Task { @MainActor in await self.refresh() }
+            }
+            timer?.tolerance = min(30, TimeInterval(refreshIntervalSeconds) / 6)
         }
-        timer?.tolerance = min(30, TimeInterval(refreshIntervalSeconds) / 6)
+    }
+
+    /// The panel was opened: remember it for the adaptive policy and refresh if the numbers are older than 30 s.
+    func panelOpened() {
+        lastPanelOpen = .now
+        if isAdaptiveRefresh { scheduleRefresh() }
+        if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { Task { await refresh() } }
     }
 
     private func applyLaunchAtLogin() {
