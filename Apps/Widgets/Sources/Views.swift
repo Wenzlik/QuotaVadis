@@ -3,7 +3,11 @@ import WidgetKit
 import QuotaCore
 
 func levelColor(_ percent: Double) -> Color {
-    switch percent { case ..<50: .green; case ..<80: .yellow; default: .red }
+    switch percent {
+    case ..<50: Color(red: 0.16, green: 0.62, blue: 0.36)
+    case ..<80: Color(red: 0.85, green: 0.55, blue: 0.05)
+    default: Color(red: 0.88, green: 0.22, blue: 0.22)
+    }
 }
 
 /// Single tool: ring on small, ring + bars on medium, Lock Screen accessories.

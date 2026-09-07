@@ -19,12 +19,29 @@ public extension View {
     func glassCard(cornerRadius: CGFloat = 16) -> some View { modifier(GlassCard(cornerRadius: cornerRadius)) }
 }
 
-/// Usage colour by level, shared by bars and charts.
+/// A colour with separate light/dark variants: bright on dark glass, deeper on light backgrounds so
+/// coloured text stays readable over a white desktop.
+public func adaptiveColor(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+    #if os(macOS)
+    Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let c = isDark ? dark : light
+        return NSColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+    })
+    #else
+    Color(uiColor: UIColor { traits in
+        let c = traits.userInterfaceStyle == .dark ? dark : light
+        return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+    })
+    #endif
+}
+
+/// Usage colour by level, shared by bars, labels and charts.
 public func usageTint(_ percent: Double) -> Color {
     switch percent {
-    case ..<50: Color(red: 0.30, green: 0.78, blue: 0.47)
-    case ..<80: Color(red: 0.98, green: 0.75, blue: 0.25)
-    default: Color(red: 0.96, green: 0.36, blue: 0.34)
+    case ..<50: adaptiveColor(light: (0.12, 0.55, 0.30), dark: (0.30, 0.78, 0.47))
+    case ..<80: adaptiveColor(light: (0.72, 0.45, 0.00), dark: (0.98, 0.75, 0.25))
+    default: adaptiveColor(light: (0.80, 0.16, 0.16), dark: (0.96, 0.36, 0.34))
     }
 }
 

@@ -251,7 +251,7 @@ public struct CreditsLine: View {
                     Text(reset.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
-                    .font(.caption.monospacedDigit())
+                    .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
             }
             if let percent = credits.usedPercent {
@@ -284,7 +284,7 @@ public struct UsageBar: View {
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
-                    .font(.caption.weight(.medium).monospacedDigit())
+                    .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(usageTint(window.usedPercent))
             }
             GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)

@@ -1,5 +1,6 @@
 import SwiftUI
 import QuotaCore
+import QuotaUI
 
 extension ProviderID {
     var tint: Color {
@@ -21,9 +22,7 @@ extension ProviderID {
     }
 }
 
-func levelColor(_ percent: Double) -> Color {
-    switch percent { case ..<50: .green; case ..<80: .yellow; default: .red }
-}
+func levelColor(_ percent: Double) -> Color { usageTint(percent) }
 
 extension UsageSnapshot {
     var displayTitle: String {
