@@ -71,9 +71,17 @@ public struct ClaudeCredentials: Sendable {
             return try parse(data)
         }
         #if os(macOS)
+        let keychainService = service ?? keychainService
+        // The UI-fail flags on the real query below are not reliable by themselves — confirmed: a background
+        // refresh still prompted with them set. Only attempt the (possibly prompting) real read in the
+        // background when the ACL preflight already proves it won't need to prompt.
+        if !ProviderInteractionContext.userInitiated,
+           KeychainAccessPreflight.checkGenericPassword(service: keychainService).requiresInteraction {
+            throw ProviderError.keychainDenied
+        }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service ?? keychainService,
+            kSecAttrService as String: keychainService,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]

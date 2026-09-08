@@ -67,6 +67,13 @@ public struct ChromiumCookieStore: Sendable {
 
     #if os(macOS)
     func safeStoragePassword() throws -> String {
+        // See the comment on the equivalent check in ClaudeCredentials.load(): the UI-fail flags on the real
+        // query below are not reliable by themselves, so a background call only proceeds once the ACL
+        // preflight proves it won't need to prompt.
+        if !ProviderInteractionContext.userInitiated,
+           KeychainAccessPreflight.checkGenericPassword(service: keychainService, account: keychainAccount).requiresInteraction {
+            throw ProviderError.keychainDenied
+        }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
