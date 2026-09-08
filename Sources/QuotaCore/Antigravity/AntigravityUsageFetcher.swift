@@ -4,7 +4,7 @@ import Foundation
 /// find the process, take its `--csrf_token`, find its listening port, call the Connect-RPC endpoints.
 /// Only works while Antigravity.app is running; the last good snapshot is kept otherwise.
 public struct AntigravityUsageFetcher: UsageFetcher {
-    public let provider: ProviderID = .antigravity
+    public let provider: ProviderID = .gemini
     public init() {}
 
     static let appPaths = ["/Applications/Antigravity.app", "\(NSHomeDirectory())/Applications/Antigravity.app"]
@@ -37,7 +37,7 @@ public struct AntigravityUsageFetcher: UsageFetcher {
         // `planInfo.planName` is legacy Windsurf/Codeium plan data ("Pro" even on a free Google account);
         // the Antigravity tier lives in `userTier`.
         let us = status?.userStatus
-        return UsageSnapshot(provider: .antigravity, account: us?.email, plan: Self.tierLabel(us?.userTier), seat: nil, windows: windows)
+        return UsageSnapshot(provider: .gemini, account: us?.email, plan: Self.tierLabel(us?.userTier), seat: nil, windows: windows)
     }
 
     static func tierLabel(_ tier: AntigravityUserStatus.Tier?) -> String? {

@@ -6,7 +6,7 @@ import QuotaCore
 //   quotavadis                 table of every tool
 //   quotavadis --json          snapshots as JSON
 //   quotavadis --watch [sec]   refresh in place (default 60 s)
-//   quotavadis --provider claude|codex|cursor|antigravity
+//   quotavadis --provider claude|codex|cursor|gemini
 //   quotavadis cost            30-day cost & tokens (--fast-2x prices Codex Fast mode at 2x)
 //   quotavadis raw | profile | keychain | claude-web | codex-cli   diagnostics
 //   --web forces the claude.ai web session, --no-color disables ANSI colours
@@ -25,17 +25,19 @@ func bar(_ pct: Double, width: Int = 20) -> String {
     return paint(String(repeating: "█", count: filled), tint(pct)) + paint(String(repeating: "░", count: width - filled), "90")
 }
 let source: UsageService.ClaudeSource = flag("--web") ? .web : .automatic
-let only: ProviderID? = value(after: "--provider").flatMap(ProviderID.init(rawValue:))
+// "gemini" is the name shown everywhere now; the raw value is still "antigravity" (see ProviderID), so
+// accept both spellings on the command line.
+let only: ProviderID? = value(after: "--provider").flatMap { ProviderID(rawValue: $0 == "gemini" ? "antigravity" : $0) }
 let enabled: Set<ProviderID> = only.map { [$0] } ?? Set(ProviderID.allCases)
 
 if flag("--help") || flag("-h") || args.first == "help" {
     print("""
-    quotavadis — Claude Code, Codex, Cursor and Antigravity limits in the terminal
+    quotavadis — Claude Code, Codex, Cursor and Gemini limits in the terminal
 
       quotavadis                  table of every tool
       quotavadis --json           snapshots as JSON
       quotavadis --watch [sec]    refresh in place (default 60 s)
-      quotavadis --provider NAME  claude | codex | cursor | antigravity
+      quotavadis --provider NAME  claude | codex | cursor | gemini
       quotavadis cost [--fast-2x] 30-day cost & token estimates
       quotavadis raw | profile | keychain | claude-web | codex-cli
       --web        use the claude.ai web session instead of the Claude Code login

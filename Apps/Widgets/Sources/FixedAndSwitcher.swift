@@ -46,7 +46,7 @@ struct FixedProviderWidget {
 struct ClaudeWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .claude).configuration } }
 struct CodexWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .codex).configuration } }
 struct CursorWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .cursor).configuration } }
-struct AntigravityWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .antigravity).configuration } }
+struct AntigravityWidget: Widget { var body: some WidgetConfiguration { FixedProviderWidget(provider: .gemini).configuration } }
 
 // MARK: - Switcher: every tool in one compact widget, tabs on top
 

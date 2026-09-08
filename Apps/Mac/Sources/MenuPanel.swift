@@ -16,7 +16,7 @@ struct MenuPanel: View {
                     .frame(height: 160)
             } else if model.visibleInstances.isEmpty {
                 ContentUnavailableView("Nothing to track", systemImage: "flame",
-                                       description: Text("Log in to Claude Code, Codex or Cursor on this Mac, then Refresh."))
+                                       description: Text("Log in to Claude Code, Codex, Cursor or Antigravity on this Mac, then Refresh."))
                     .frame(height: 160)
             } else {
                 // A bare ScrollView inside a MenuBarExtra window gets no height proposal and collapses to zero.

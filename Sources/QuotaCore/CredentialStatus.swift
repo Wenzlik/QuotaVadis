@@ -52,7 +52,7 @@ public struct CredentialStatus: Sendable, Hashable {
         case .claude: claude()
         case .codex: codex()
         case .cursor: cursor()
-        case .antigravity: antigravity()
+        case .gemini: antigravity()
         }
     }
 

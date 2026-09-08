@@ -1,8 +1,12 @@
 import Foundation
 
-/// The three tools QuotaVadis tracks. Raw values are stable identifiers used in sync records.
+/// The four tools QuotaVadis tracks. Raw values are stable identifiers used in sync records.
+/// `gemini`'s raw value stays "antigravity" (its data still comes from Antigravity.app's language server;
+/// see `AntigravityUsageFetcher`) so no migration is needed for anything already persisted under that key —
+/// UserDefaults arrays, CloudKit sync payloads, cost report JSON, widget shared-store files.
 public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
-    case claude, codex, cursor, antigravity
+    case claude, codex, cursor
+    case gemini = "antigravity"
 
     public var id: String { rawValue }
 
@@ -11,7 +15,7 @@ public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .cursor: "Cursor"
-        case .antigravity: "Antigravity"
+        case .gemini: "Gemini"
         }
     }
 
@@ -21,7 +25,7 @@ public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .cursor: "Cursor"
-        case .antigravity: "AG"
+        case .gemini: "Gemini"
         }
     }
 }

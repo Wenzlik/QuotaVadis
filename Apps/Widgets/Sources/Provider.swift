@@ -5,10 +5,11 @@ import QuotaCore
 
 /// Widget configuration: which tool a single-provider widget shows.
 enum ProviderChoice: String, AppEnum {
-    case claude, codex, cursor, antigravity
+    case claude, codex, cursor
+    case gemini = "antigravity"
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Tool")
     static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
-        .claude: "Claude Code", .codex: "Codex", .cursor: "Cursor", .antigravity: "Antigravity",
+        .claude: "Claude Code", .codex: "Codex", .cursor: "Cursor", .gemini: "Gemini",
     ]
     var providerID: ProviderID { ProviderID(rawValue: rawValue)! }
 }

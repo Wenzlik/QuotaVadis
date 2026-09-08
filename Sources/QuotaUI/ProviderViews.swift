@@ -301,7 +301,7 @@ public extension ProviderID {
         case .claude: URL(string: "https://claude.ai/settings/usage")!
         case .codex: URL(string: "https://chatgpt.com/codex/settings/usage")!
         case .cursor: URL(string: "https://cursor.com/dashboard")!
-        case .antigravity: URL(string: "https://antigravity.google/")!
+        case .gemini: URL(string: "https://antigravity.google/")!
         }
     }
 
@@ -310,7 +310,7 @@ public extension ProviderID {
         case .claude: URL(string: "https://status.anthropic.com")!
         case .codex: URL(string: "https://status.openai.com")!
         case .cursor: URL(string: "https://status.cursor.com")!
-        case .antigravity: URL(string: "https://status.cloud.google.com")!
+        case .gemini: URL(string: "https://status.cloud.google.com")!
         }
     }
 }

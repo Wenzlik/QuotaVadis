@@ -70,15 +70,51 @@ struct SettingsView: View {
 
             pane {
                 Section("Menu bar") {
-                    Picker("Show", selection: $model.menuBarSource) {
-                        ForEach(model.menuBarSourceOptions, id: \.0) { option in
-                            Text(option.1).tag(option.0)
-                        }
+                    Picker("Style", selection: $model.menuBarDisplayStyle) {
+                        Text("Icon").tag(MenuBarDisplayStyle.icon)
+                        Text("Filled bars").tag(MenuBarDisplayStyle.bars)
                     }
-                    Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
-                    Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
+                    .pickerStyle(.segmented)
+                    if model.menuBarDisplayStyle == .icon {
+                        Picker("Show", selection: $model.menuBarSource) {
+                            ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                                Text(option.1).tag(option.0)
+                            }
+                        }
+                        Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+                        Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
+                    } else {
+                        Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+                        Toggle("Show vendor mark", isOn: $model.menuBarShowVendorIcons)
+                        if model.showPercentInMenuBar {
+                            Picker("Percentage", selection: $model.menuBarPercentPlacement) {
+                                Text("Beside each bar").tag(MenuBarPercentPlacement.beside)
+                                Text("Inside each bar").tag(MenuBarPercentPlacement.inside)
+                            }
+                        }
+                        ForEach(Array(model.menuBarBarSources.enumerated()), id: \.offset) { index, source in
+                            HStack {
+                                Picker("Bar \(index + 1)", selection: Binding(
+                                    get: { source },
+                                    set: { model.setBarSource($0, at: index) })) {
+                                    ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                                        Text(option.1).tag(option.0)
+                                    }
+                                }
+                                if model.menuBarBarSources.count > 1 {
+                                    Button(role: .destructive) { model.removeBar(at: index) } label: { Image(systemName: "minus.circle") }
+                                        .buttonStyle(.borderless)
+                                }
+                            }
+                        }
+                        if model.menuBarBarSources.count < AppModel.maxBars {
+                            Button("Add bar") { model.addBar() }
+                        }
+                        Text("Each bar fills bottom-up with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                if model.menuBarSource == .worst {
+                if model.menuBarDisplayStyle == .icon, model.menuBarSource == .worst {
                     Section {
                         ForEach(model.menuBarCandidates, id: \.key) { candidate in
                             Toggle(candidate.label, isOn: Binding(

@@ -13,7 +13,12 @@ struct ProviderCard: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(snapshot.provider.tint.opacity(0.18))
-                    Image(systemName: snapshot.provider.symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(snapshot.provider.tint)
+                    if let vendorImageName = snapshot.provider.vendorImageName {
+                        Image(vendorImageName).resizable().renderingMode(.template).scaledToFit()
+                            .frame(width: 18, height: 18).foregroundStyle(snapshot.provider.tint)
+                    } else {
+                        Image(systemName: snapshot.provider.symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(snapshot.provider.tint)
+                    }
                 }
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 2) {
