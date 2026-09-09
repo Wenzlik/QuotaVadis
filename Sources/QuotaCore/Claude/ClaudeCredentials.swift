@@ -64,8 +64,34 @@ public struct ClaudeCredentials: Sendable {
         #endif
     }
 
+    /// The real guarantee against a background prompt isn't any preflight check (all of them can, in theory,
+    /// be fooled by a transient error at the wrong moment) — it's that a background read hits the Keychain as
+    /// rarely as possible in the first place. A background call reuses the last successful read until it
+    /// expires; only a genuinely user-initiated call (or an expired/absent cache) ever reaches the Keychain.
+    private static let cacheLock = NSLock()
+    private nonisolated(unsafe) static var cache: [String: ClaudeCredentials] = [:]
+
+    private static func cached(_ key: String) -> ClaudeCredentials? {
+        cacheLock.withLock {
+            guard let creds = cache[key], let expiresAt = creds.expiresAt, expiresAt > .now else { return nil }
+            return creds
+        }
+    }
+
+    private static func cache(_ creds: ClaudeCredentials, for key: String) {
+        cacheLock.withLock { cache[key] = creds }
+    }
+
     /// `service` nil = Claude Code's default login; otherwise a specific Keychain item (another organization).
     static func load(service: String? = nil) throws -> ClaudeCredentials {
+        let cacheKey = service ?? "default"
+        if !ProviderInteractionContext.userInitiated, let cached = cached(cacheKey) { return cached }
+        let creds = try loadFresh(service: service)
+        cache(creds, for: cacheKey)
+        return creds
+    }
+
+    private static func loadFresh(service: String?) throws -> ClaudeCredentials {
         if service == nil, let data = try? Data(contentsOf: credentialsFileURL) {
             return try parse(data)
         }

@@ -516,7 +516,10 @@ final class AppModel {
         isRefreshing = true
         defer {
             isRefreshing = false
-            if refreshAgain { refreshAgain = false; Task { await refresh() } }
+            // A plain `Task { }` here would inherit whatever ProviderInteractionContext this refresh() call
+            // happened to run under (e.g. a genuinely user-initiated one) — but a call arriving while busy and
+            // getting coalesced into "run me again after" is not itself a fresh user action.
+            if refreshAgain { refreshAgain = false; Task { await ProviderInteractionContext.$userInitiated.withValue(false) { await refresh() } } }
         }
         for instance in visibleInstances { lastAttempts[instance.id] = .now }
         let result = await service.refresh(enabled: enabledProviders) { [weak self] id, state in

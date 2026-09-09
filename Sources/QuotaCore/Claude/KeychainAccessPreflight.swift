@@ -22,10 +22,13 @@ public enum KeychainAccessPreflight {
         case notFound
         case failure(OSStatus)
 
+        /// `.failure` fails CLOSED (treated as requiring interaction): an unexpected status here — most
+        /// plausible right after wake, before securityd has settled — must never be read as "safe to
+        /// proceed," or the real query right behind it could be the one that actually prompts.
         public var requiresInteraction: Bool {
             switch self {
-            case .interactionRequired, .temporarilyUnavailable: true
-            case .allowed, .failure, .notFound: false
+            case .interactionRequired, .temporarilyUnavailable, .failure: true
+            case .allowed, .notFound: false
             }
         }
     }

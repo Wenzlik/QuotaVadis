@@ -49,14 +49,21 @@ public struct ClaudeWebSession: Sendable {
         #endif
     }
 
+    /// The user only ever changes this by retyping it in Settings (`saveManualKey` clears the cache then), so
+    /// a successful read is cached for the process's lifetime — at most one background Keychain touch, ever.
+    private static let manualKeyCacheLock = NSLock()
+    private nonisolated(unsafe) static var manualKeyCache: String??
+
     public static func manualKey() -> String? {
         #if os(macOS)
+        if let cached = manualKeyCacheLock.withLock({ manualKeyCache }) { return cached }
         guard !ProviderInteractionContext.backgroundReadWouldPrompt(service: manualService) else { return nil }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: manualService,
                                     kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         let (status, item) = ProviderInteractionContext.copyMatching(query)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let key = (item as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        if status == errSecSuccess { manualKeyCacheLock.withLock { manualKeyCache = key } }
+        return key
         #else
         return nil
         #endif
@@ -73,6 +80,7 @@ public struct ClaudeWebSession: Sendable {
             var add = query; add[kSecValueData as String] = Data(key.utf8)
             SecItemAdd(add as CFDictionary, nil)
         }
+        manualKeyCacheLock.withLock { manualKeyCache = nil }
         #endif
     }
 }

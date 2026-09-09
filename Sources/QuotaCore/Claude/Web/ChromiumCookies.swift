@@ -66,7 +66,15 @@ public struct ChromiumCookieStore: Sendable {
     }
 
     #if os(macOS)
+    /// Unlike an OAuth token, the Safe Storage password never rotates during a login session, so a successful
+    /// read is cached for the process's whole lifetime — a background call touches this Keychain item at
+    /// most once, ever, per launch, not once per refresh.
+    private static let cacheLock = NSLock()
+    private nonisolated(unsafe) static var cache: [String: String] = [:]
+
     func safeStoragePassword() throws -> String {
+        let cacheKey = "\(keychainService)|\(keychainAccount)"
+        if let cached = Self.cacheLock.withLock({ Self.cache[cacheKey] }) { return cached }
         // Same gate as ClaudeCredentials.load(): lock check + ACL preflight decide whether to read at all in the
         // background, and the process-wide no-UI switch in `copyMatching` makes a wrong answer fail, not prompt.
         if ProviderInteractionContext.backgroundReadWouldPrompt(service: keychainService, account: keychainAccount) {
@@ -83,6 +91,7 @@ public struct ChromiumCookieStore: Sendable {
         guard status == errSecSuccess, let data = item as? Data, let password = String(data: data, encoding: .utf8) else {
             throw status == errSecItemNotFound ? ProviderError.notLoggedIn : ProviderError.keychainDenied
         }
+        Self.cacheLock.withLock { Self.cache[cacheKey] = password }
         return password
     }
 
