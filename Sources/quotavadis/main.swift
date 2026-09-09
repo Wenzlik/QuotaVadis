@@ -28,7 +28,12 @@ let source: UsageService.ClaudeSource = flag("--web") ? .web : .automatic
 // "gemini" is the name shown everywhere now; the raw value is still "antigravity" (see ProviderID), so
 // accept both spellings on the command line.
 let only: ProviderID? = value(after: "--provider").flatMap { ProviderID(rawValue: $0 == "gemini" ? "antigravity" : $0) }
-let enabled: Set<ProviderID> = only.map { [$0] } ?? Set(ProviderID.allCases)
+// The CLI is its own executable (bundle id cz.zmrhal.QuotaVadis.cli), so UserDefaults.standard would be its
+// own, empty domain — read the Mac app's preferences explicitly to respect Settings ▸ Track here too.
+let appDefaults = UserDefaults(suiteName: "cz.zmrhal.QuotaVadis")
+let storedProviders: [ProviderID]? = appDefaults?.stringArray(forKey: "enabledProviders")?.compactMap(ProviderID.init(rawValue:))
+let trackedProviders: Set<ProviderID> = storedProviders.map(Set.init) ?? Set(ProviderID.allCases)
+let enabled: Set<ProviderID> = only.map { [$0] } ?? trackedProviders
 
 if flag("--help") || flag("-h") || args.first == "help" {
     print("""
