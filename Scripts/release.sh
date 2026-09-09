@@ -8,11 +8,12 @@
 # Deploying zmrhal_web is a separate, deliberate step (see docs/DEPLOY.md there).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# Without this, ditto embeds a "._*" AppleDouble sidecar per file (resource-fork/xattr preservation) in the
-# zip; unzipping it back out breaks the code signature ("a sealed resource is missing or invalid") because
-# those sidecars didn't exist when the bundle was signed. Gatekeeper on a fresh quarantined download then
-# refuses to open it — Sparkle's own update path doesn't hit this, so it went unnoticed until 0.4.2.
-export COPYFILE_DISABLE=1
+# Without --norsrc on every ditto zip below, ditto embeds a "._*" AppleDouble sidecar per file
+# (resource-fork/xattr preservation); unzipping it back out breaks the code signature ("a sealed resource is
+# missing or invalid") because those sidecars didn't exist when the bundle was signed. Gatekeeper on a fresh
+# quarantined download then refuses to open it. COPYFILE_DISABLE alone does NOT fix this — verified: 145
+# sidecar entries in the zip with it set and no --norsrc, 0 with --norsrc. Sparkle's own update path doesn't
+# re-zip, so this went unnoticed until a fresh download of 0.4.2.
 VERSION=${1:?version required, e.g. 0.1.0}
 SKIP_BUILD=${2:-}
 BUILD=$(date -u +%Y%m%d%H%M)
@@ -60,18 +61,20 @@ ZIP="$DIST/QuotaVadis-$VERSION.zip"
 if xcrun stapler validate "$APP" >/dev/null 2>&1; then
   echo "already notarized and stapled"
 else
-  ditto -c -k --keepParent "$APP" "$ZIP"
+  ditto --norsrc -c -k --keepParent "$APP" "$ZIP"
   echo "notarizing…"
   xcrun notarytool submit "$ZIP" --key "$P8" --key-id $KEY_ID --issuer $ISSUER --wait 2>&1 | grep -E 'status|id:' | head -3
   xcrun stapler staple "$APP" >/dev/null
 fi
-rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
+rm -f "$ZIP"; ditto --norsrc -c -k --keepParent "$APP" "$ZIP"
 rm -rf .build/dd
 
-# Round-trip check: a zip that unzips into a broken signature must never ship (see the COPYFILE_DISABLE
-# comment above — this catches it even if some other AppleDouble source shows up later).
+# Round-trip check: a zip that unzips into a broken signature must never ship (see the --norsrc comment
+# above — this catches it even if some other AppleDouble source shows up later).
 UNZIPPED=$(mktemp -d)
-ditto -x -k "$ZIP" "$UNZIPPED"
+# Plain unzip, not "ditto -x": ditto merges AppleDouble sidecars back into real xattrs on extraction, which
+# would hide exactly the bug this check exists to catch (it did, the first time this check was written).
+unzip -q "$ZIP" -d "$UNZIPPED"
 codesign --verify --deep --strict "$UNZIPPED/QuotaVadis.app"
 rm -rf "$UNZIPPED"
 
