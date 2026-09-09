@@ -8,6 +8,11 @@
 # Deploying zmrhal_web is a separate, deliberate step (see docs/DEPLOY.md there).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Without this, ditto embeds a "._*" AppleDouble sidecar per file (resource-fork/xattr preservation) in the
+# zip; unzipping it back out breaks the code signature ("a sealed resource is missing or invalid") because
+# those sidecars didn't exist when the bundle was signed. Gatekeeper on a fresh quarantined download then
+# refuses to open it — Sparkle's own update path doesn't hit this, so it went unnoticed until 0.4.2.
+export COPYFILE_DISABLE=1
 VERSION=${1:?version required, e.g. 0.1.0}
 SKIP_BUILD=${2:-}
 BUILD=$(date -u +%Y%m%d%H%M)
@@ -62,6 +67,13 @@ else
 fi
 rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
 rm -rf .build/dd
+
+# Round-trip check: a zip that unzips into a broken signature must never ship (see the COPYFILE_DISABLE
+# comment above — this catches it even if some other AppleDouble source shows up later).
+UNZIPPED=$(mktemp -d)
+ditto -x -k "$ZIP" "$UNZIPPED"
+codesign --verify --deep --strict "$UNZIPPED/QuotaVadis.app"
+rm -rf "$UNZIPPED"
 
 # Sparkle CLI tools: from the official release tarball (Scripts/sparkle-tools.sh installs them).
 SIGN=~/.local/share/sparkle-tools/sign_update
