@@ -30,8 +30,8 @@ public struct ClaudeCredentials: Sendable {
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll,
         ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let rows = result as? [[String: Any]] else { return [] }
+        let (status, result) = ProviderInteractionContext.copyMatching(query)
+        guard status == errSecSuccess, let rows = result as? [[String: Any]] else { return [] }
         return rows.compactMap { row in
             guard let service = row[kSecAttrService as String] as? String, service.hasPrefix(keychainService) else { return nil }
             return KeychainEntry(service: service, created: row[kSecAttrCreationDate as String] as? Date, modified: row[kSecAttrModificationDate as String] as? Date)
@@ -58,8 +58,7 @@ public struct ClaudeCredentials: Sendable {
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        var item: CFTypeRef?
-        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+        return ProviderInteractionContext.copyMatching(query).status == errSecSuccess
         #else
         return false
         #endif
@@ -72,22 +71,16 @@ public struct ClaudeCredentials: Sendable {
         }
         #if os(macOS)
         let keychainService = service ?? keychainService
-        // The UI-fail flags on the real query below are not reliable by themselves — confirmed: a background
-        // refresh still prompted with them set. Only attempt the (possibly prompting) real read in the
-        // background when the ACL preflight already proves it won't need to prompt.
-        if !ProviderInteractionContext.userInitiated,
-           KeychainAccessPreflight.checkGenericPassword(service: keychainService).requiresInteraction {
-            throw ProviderError.keychainDenied
-        }
-        var query: [String: Any] = [
+        // Background: only attempt the real read once the lock check and ACL preflight are clear; the process-wide
+        // no-UI switch inside `copyMatching` then guarantees a wrong answer here fails instead of prompting.
+        if ProviderInteractionContext.backgroundReadWouldPrompt(service: keychainService) { throw ProviderError.keychainDenied }
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        ProviderInteractionContext.suppressUIIfBackground(&query)
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let (status, item) = ProviderInteractionContext.copyMatching(query)
         switch status {
         case errSecSuccess:
             guard let data = item as? Data else { throw ProviderError.notLoggedIn }

@@ -77,12 +77,13 @@ public actor UsageService {
                     // Task.detached starts a task with no parent, so it does not inherit this call's
                     // ProviderInteractionContext — read it here, on the caller's task, and re-establish it
                     // inside the detached task explicitly (plain closure capture survives detachment fine).
+                    // `isAvailable()` touches the Keychain too, so it belongs inside the re-established scope.
                     let userInitiated = ProviderInteractionContext.userInitiated
                     work = Task.detached {
-                        guard fetcher.isAvailable() else { return nil }
-                        try Task.checkCancellation()
-                        return try await ProviderInteractionContext.$userInitiated.withValue(userInitiated) {
-                            try await fetcher.fetchAll()
+                        try await ProviderInteractionContext.$userInitiated.withValue(userInitiated) {
+                            guard fetcher.isAvailable() else { return nil }
+                            try Task.checkCancellation()
+                            return try await fetcher.fetchAll()
                         }
                     }
                     pending[id] = work

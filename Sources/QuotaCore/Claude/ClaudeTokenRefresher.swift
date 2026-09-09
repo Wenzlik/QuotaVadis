@@ -54,9 +54,12 @@ enum ClaudeTokenRefresher {
     }
 
     // MARK: - Own Keychain storage (account = Claude Code service name)
+    // Owning the item does not exempt reads from the ACL prompt: the item trusts the signature of the build that
+    // created it, and a Developer ID release and a local Apple Development install are different signatures.
 
     private static func loadOwn(for service: String) -> ClaudeCredentials? {
         #if os(macOS)
+        guard !ProviderInteractionContext.backgroundReadWouldPrompt(service: ownService, account: service) else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: ownService,
@@ -64,8 +67,8 @@ enum ClaudeTokenRefresher {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data,
+        let (status, item) = ProviderInteractionContext.copyMatching(query)
+        guard status == errSecSuccess, let data = item as? Data,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         guard let token = obj["accessToken"] as? String else { return nil }
         return ClaudeCredentials(accessToken: token, refreshToken: obj["refreshToken"] as? String,
@@ -83,6 +86,9 @@ enum ClaudeTokenRefresher {
         payload["expiresAt"] = creds.expiresAt?.timeIntervalSince1970
         payload["subscriptionType"] = creds.subscriptionType
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        // Runs from background refreshes: with the process-wide no-UI switch a locked Keychain or an untrusted
+        // signature makes the write fail quietly (the token is still returned to the caller) instead of prompting.
+        ProviderInteractionContext.installProcessGuard()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: ownService,

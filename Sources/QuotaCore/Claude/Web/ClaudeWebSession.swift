@@ -15,7 +15,7 @@ public struct ClaudeWebSession: Sendable {
     static let manualService = "cz.zmrhal.QuotaVadis.claude-web-session"
 
     public static func isAvailable() -> Bool {
-        manualKey() != nil || ChromiumCookieStore.claudeDesktop.exists || !ChromiumCookieStore.chromeProfiles().isEmpty
+        hasManualKey() || ChromiumCookieStore.claudeDesktop.exists || !ChromiumCookieStore.chromeProfiles().isEmpty
     }
 
     public static func load() throws -> ClaudeWebSession? {
@@ -35,26 +35,44 @@ public struct ClaudeWebSession: Sendable {
     }
 
     // MARK: - Manual session key (our own Keychain item)
+    // "Our own" does not exempt it from the ACL prompt: the item trusts the signature of the build that created
+    // it, and a Developer ID release and a local Apple Development install are different signatures.
+
+    /// Presence only (attributes, no secret), so it is safe from any context.
+    static func hasManualKey() -> Bool {
+        #if os(macOS)
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: manualService,
+                                    kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        return ProviderInteractionContext.copyMatching(query).status == errSecSuccess
+        #else
+        return false
+        #endif
+    }
 
     public static func manualKey() -> String? {
         #if os(macOS)
+        guard !ProviderInteractionContext.backgroundReadWouldPrompt(service: manualService) else { return nil }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: manualService,
                                     kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
+        let (status, item) = ProviderInteractionContext.copyMatching(query)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
         #else
         return nil
         #endif
     }
 
+    /// Only ever called for a key the user just typed into Settings, so a prompt here is expected and answerable.
     public static func saveManualKey(_ key: String?) {
         #if os(macOS)
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: manualService]
-        SecItemDelete(query as CFDictionary)
-        guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
-        var add = query; add[kSecValueData as String] = Data(key.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        ProviderInteractionContext.installProcessGuard()
+        ProviderInteractionContext.allowingInteraction {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: manualService]
+            SecItemDelete(query as CFDictionary)
+            guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+            var add = query; add[kSecValueData as String] = Data(key.utf8)
+            SecItemAdd(add as CFDictionary, nil)
+        }
         #endif
     }
 }

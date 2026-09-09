@@ -67,23 +67,19 @@ public struct ChromiumCookieStore: Sendable {
 
     #if os(macOS)
     func safeStoragePassword() throws -> String {
-        // See the comment on the equivalent check in ClaudeCredentials.load(): the UI-fail flags on the real
-        // query below are not reliable by themselves, so a background call only proceeds once the ACL
-        // preflight proves it won't need to prompt.
-        if !ProviderInteractionContext.userInitiated,
-           KeychainAccessPreflight.checkGenericPassword(service: keychainService, account: keychainAccount).requiresInteraction {
+        // Same gate as ClaudeCredentials.load(): lock check + ACL preflight decide whether to read at all in the
+        // background, and the process-wide no-UI switch in `copyMatching` makes a wrong answer fail, not prompt.
+        if ProviderInteractionContext.backgroundReadWouldPrompt(service: keychainService, account: keychainAccount) {
             throw ProviderError.keychainDenied
         }
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        ProviderInteractionContext.suppressUIIfBackground(&query)
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let (status, item) = ProviderInteractionContext.copyMatching(query)
         guard status == errSecSuccess, let data = item as? Data, let password = String(data: data, encoding: .utf8) else {
             throw status == errSecItemNotFound ? ProviderError.notLoggedIn : ProviderError.keychainDenied
         }
