@@ -59,7 +59,7 @@ public struct GlowBar: View {
                 Capsule()
                     .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
                     .frame(width: max(height, geo.size.width * min(1, max(0, percent / 100))))
-                    .shadow(color: tint.opacity(0.45), radius: 4, y: 1)
+                    .shadow(color: tint.opacity(0.22), radius: 2, y: 1)
             }
         }
         .frame(height: height)

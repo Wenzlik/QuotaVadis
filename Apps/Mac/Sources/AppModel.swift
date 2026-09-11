@@ -667,9 +667,13 @@ final class AppModel {
     func panelOpened() {
         lastPanelOpen = .now
         if isAdaptiveRefresh { scheduleRefresh() }
-        if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true {
-            Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
-        }
+        if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { refreshNow() }
+    }
+
+    /// The user explicitly asked for fresh numbers (the panel's Refresh button) — unlike a timer tick, this
+    /// is free to touch the Keychain for real and show the OS prompt if it's genuinely needed.
+    func refreshNow() {
+        Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh(); await refreshCosts() } }
     }
 
     private func applyLaunchAtLogin() {
