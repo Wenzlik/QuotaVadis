@@ -248,7 +248,7 @@ public struct CreditsLine: View {
                 Text(credits.title).font(.caption)
                 Spacer()
                 if let reset = credits.resetsAt, credits.limit != nil {
-                    Text(reset.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    ResetLabel(reset: reset)
                 }
                 Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
                     .font(.caption.weight(.semibold).monospacedDigit())
@@ -267,6 +267,21 @@ public struct CreditsLine: View {
     }
 }
 
+/// The "in 2 hours · 13:30" line next to a bar. A plain `Text` of the formatted string goes stale: SwiftUI
+/// only re-evaluates a row whose data changed, so a window sitting at the same percentage for hours keeps the
+/// relative distance it was first drawn with (a 13:30 reset still claiming "in 5 hours"). The timeline makes
+/// the clock, not the usage numbers, the thing that drives this label.
+struct ResetLabel: View {
+    let reset: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(reset <= context.date ? "reset passed" : reset.resetLabel(now: context.date))
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
 public struct UsageBar: View {
     let window: UsageWindow
     /// Sub-window (per-model breakdown): indented, thinner bar.
@@ -280,8 +295,7 @@ public struct UsageBar: View {
                 Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
                 Spacer()
                 if let reset = window.resetsAt {
-                    Text(reset <= .now ? "reset passed" : reset.resetLabel())
-                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    ResetLabel(reset: reset)
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font(.caption.weight(.semibold).monospacedDigit())
