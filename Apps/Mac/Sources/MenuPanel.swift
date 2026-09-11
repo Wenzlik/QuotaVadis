@@ -69,7 +69,7 @@ struct MenuPanel: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { Task { await model.refresh(); await model.refreshCosts() } } label: { Image(systemName: "arrow.clockwise") }
+            Button { model.refreshNow() } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh now (⌘R)")
                 .keyboardShortcut("r")
             Button { bringToFront { openSettings() } } label: { Image(systemName: "gearshape") }
