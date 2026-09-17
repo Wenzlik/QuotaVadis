@@ -4,7 +4,12 @@
 # Derived data is deleted afterwards, so never run the app straight from the build folder.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+# Xcode-beta when it is installed, otherwise the release Xcode — the beta comes and goes on this Mac.
+if [[ -d /Applications/Xcode-beta.app ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+else
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 xcodegen generate >/dev/null
 # Unique build number per install: WidgetKit caches extensions by bundle version and would keep showing stale widgets.
 BUILD=$(date +%Y%m%d%H%M)
