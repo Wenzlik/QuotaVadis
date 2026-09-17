@@ -64,37 +64,67 @@ public struct ClaudeCredentials: Sendable {
         #endif
     }
 
-    /// The real guarantee against a background prompt isn't any preflight check (all of them can, in theory,
-    /// be fooled by a transient error at the wrong moment) — it's that a background read hits the Keychain as
-    /// rarely as possible in the first place. A background call reuses the last successful read until it
-    /// expires; only a genuinely user-initiated call (or an expired/absent cache) ever reaches the Keychain.
+    /// The real guarantee against a prompt isn't any preflight check (all of them can, in theory, be fooled by
+    /// a transient error at the wrong moment) — it's that we hit Claude Code's item as rarely as possible in
+    /// the first place. Two caches in front of it: this process's memory, and [ClaudeTokenStore], our own
+    /// Keychain item, which survives a quit, a reboot and a Sparkle update. A token is reused by both until it
+    /// genuinely expires.
+    ///
+    /// A user-initiated read used to skip the cache, which meant every panel open with numbers older than 30 s
+    /// went straight at Claude Code's item and could prompt (0.4.5). It no longer does: a valid token is a
+    /// valid token no matter who asked for it, and `userInitiated` now only decides whether a read that must
+    /// happen anyway is allowed to show the dialog. `force` is for the one case that really needs the source:
+    /// the API rejected what we had.
     private static let cacheLock = NSLock()
     private nonisolated(unsafe) static var cache: [String: ClaudeCredentials] = [:]
 
+    /// A minute of headroom so a token that dies mid-request isn't handed out as fresh.
+    private static func usable(_ creds: ClaudeCredentials?) -> ClaudeCredentials? {
+        guard let creds, let expiresAt = creds.expiresAt, expiresAt > Date.now.addingTimeInterval(60) else { return nil }
+        return creds
+    }
+
     private static func cached(_ key: String) -> ClaudeCredentials? {
-        cacheLock.withLock {
-            guard let creds = cache[key], let expiresAt = creds.expiresAt, expiresAt > .now else { return nil }
-            return creds
-        }
+        usable(cacheLock.withLock { cache[key] })
     }
 
     private static func cache(_ creds: ClaudeCredentials, for key: String) {
         cacheLock.withLock { cache[key] = creds }
     }
 
+    /// Forgets both copies of a token, so the next load goes back to Claude Code's item. Called when the usage
+    /// API answers 401 — the only proof that what we cached is no longer good.
+    public static func invalidate(service: String? = nil) {
+        let key = service ?? keychainService
+        cacheLock.withLock { cache[key] = nil }
+        #if os(macOS)
+        ClaudeTokenStore.delete(account: key)
+        #endif
+    }
+
     /// `service` nil = Claude Code's default login; otherwise a specific Keychain item (another organization).
-    static func load(service: String? = nil) throws -> ClaudeCredentials {
-        let cacheKey = service ?? "default"
-        if !ProviderInteractionContext.userInitiated, let cached = cached(cacheKey) { return cached }
+    static func load(service: String? = nil, force: Bool = false) throws -> ClaudeCredentials {
+        // A custom CLAUDE_CONFIG_DIR keeps the token in a plain file: no Keychain, so nothing to cache around.
+        if service == nil, let data = try? Data(contentsOf: credentialsFileURL) { return try parse(data) }
+        let cacheKey = service ?? keychainService
+        if !force {
+            if let cached = cached(cacheKey) { return cached }
+            #if os(macOS)
+            if let stored = usable(ClaudeTokenStore.load(account: cacheKey)) {
+                cache(stored, for: cacheKey)
+                return stored
+            }
+            #endif
+        }
         let creds = try loadFresh(service: service)
         cache(creds, for: cacheKey)
+        #if os(macOS)
+        ClaudeTokenStore.save(creds, account: cacheKey)
+        #endif
         return creds
     }
 
     private static func loadFresh(service: String?) throws -> ClaudeCredentials {
-        if service == nil, let data = try? Data(contentsOf: credentialsFileURL) {
-            return try parse(data)
-        }
         #if os(macOS)
         let keychainService = service ?? keychainService
         // Background: only attempt the real read once the lock check and ACL preflight are clear; the process-wide

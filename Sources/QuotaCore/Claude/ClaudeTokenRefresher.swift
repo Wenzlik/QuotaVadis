@@ -11,7 +11,6 @@ enum ClaudeTokenRefresher {
     static let endpoint = URL(string: "https://platform.claude.com/v1/oauth/token")!
     /// Claude Code's public OAuth client id (same one CodexBar uses).
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    static let ownService = "cz.zmrhal.QuotaVadis.claude-oauth"
 
     struct TokenResponse: Decodable {
         let accessToken: String
@@ -53,53 +52,11 @@ enum ClaudeTokenRefresher {
         return fresh
     }
 
-    // MARK: - Own Keychain storage (account = Claude Code service name)
-    // Owning the item does not exempt reads from the ACL prompt: the item trusts the signature of the build that
-    // created it, and a Developer ID release and a local Apple Development install are different signatures.
+    // MARK: - Own Keychain storage
+    // A refreshed token goes to [ClaudeTokenStore], the item this app owns, under the Claude Code service it
+    // was minted from. Owning an item is what makes it prompt-free to read; Claude Code's own item never is.
 
-    private static func loadOwn(for service: String) -> ClaudeCredentials? {
-        #if os(macOS)
-        guard !ProviderInteractionContext.backgroundReadWouldPrompt(service: ownService, account: service) else { return nil }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: ownService,
-            kSecAttrAccount as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        let (status, item) = ProviderInteractionContext.copyMatching(query)
-        guard status == errSecSuccess, let data = item as? Data,
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard let token = obj["accessToken"] as? String else { return nil }
-        return ClaudeCredentials(accessToken: token, refreshToken: obj["refreshToken"] as? String,
-                                 expiresAt: (obj["expiresAt"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                                 subscriptionType: obj["subscriptionType"] as? String)
-        #else
-        return nil
-        #endif
-    }
+    private static func loadOwn(for service: String) -> ClaudeCredentials? { ClaudeTokenStore.load(account: service) }
 
-    private static func saveOwn(_ creds: ClaudeCredentials, for service: String) {
-        #if os(macOS)
-        var payload: [String: Any] = ["accessToken": creds.accessToken]
-        payload["refreshToken"] = creds.refreshToken
-        payload["expiresAt"] = creds.expiresAt?.timeIntervalSince1970
-        payload["subscriptionType"] = creds.subscriptionType
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        // Runs from background refreshes: with the process-wide no-UI switch a locked Keychain or an untrusted
-        // signature makes the write fail quietly (the token is still returned to the caller) instead of prompting.
-        ProviderInteractionContext.installProcessGuard()
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: ownService,
-            kSecAttrAccount as String: service,
-        ]
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        if SecItemUpdate(query as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
-            var add = query
-            add[kSecValueData as String] = data
-            SecItemAdd(add as CFDictionary, nil)
-        }
-        #endif
-    }
+    private static func saveOwn(_ creds: ClaudeCredentials, for service: String) { ClaudeTokenStore.save(creds, account: service) }
 }

@@ -16,8 +16,8 @@ public struct ClaudeUsageFetcher: UsageFetcher {
     public func isAvailable() -> Bool { keychainService == nil ? ClaudeCredentials.isAvailable() : true }
 
     /// Extra profiles: use our refreshed copy and refresh when expired. Primary: Claude Code's item as-is.
-    private func credentials() async throws -> ClaudeCredentials {
-        guard let keychainService else { return try ClaudeCredentials.load() }
+    private func credentials(force: Bool = false) async throws -> ClaudeCredentials {
+        guard let keychainService else { return try ClaudeCredentials.load(force: force) }
         let creds = try ClaudeTokenRefresher.current(service: keychainService)
         if let expiry = creds.expiresAt, expiry < .now.addingTimeInterval(60) {
             return try await ClaudeTokenRefresher.refresh(service: keychainService, using: creds)
@@ -26,7 +26,17 @@ public struct ClaudeUsageFetcher: UsageFetcher {
     }
 
     public func fetch() async throws -> UsageSnapshot {
-        let creds = try await credentials()
+        do { return try await fetch(force: false) }
+        catch ProviderError.unauthorized where keychainService == nil {
+            // A 401 is the only proof our cached copy has gone stale before its stated expiry — Claude Code
+            // logged out or rotated the login underneath us. Drop it and go back to the source once.
+            ClaudeCredentials.invalidate()
+            return try await fetch(force: true)
+        }
+    }
+
+    private func fetch(force: Bool) async throws -> UsageSnapshot {
+        let creds = try await credentials(force: force)
         // Usage is required; profile (seat, email) is best-effort.
         async let usageData = fetchRaw(creds)
         async let profileData = try? HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/profile")!, headers: Self.headers(creds))
