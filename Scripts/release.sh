@@ -17,7 +17,12 @@ cd "$(dirname "$0")/.."
 VERSION=${1:?version required, e.g. 0.1.0}
 SKIP_BUILD=${2:-}
 BUILD=$(date -u +%Y%m%d%H%M)
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+# Xcode-beta when it is installed, otherwise the release Xcode — the beta comes and goes on this Mac.
+if [[ -d /Applications/Xcode-beta.app ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+else
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 TEAM=8PW5FWH7P2
 IDENTITY="Developer ID Application: Vaclav Zmrhal ($TEAM)"
 KEY_ID=C7WD5C4FK2
