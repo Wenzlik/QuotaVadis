@@ -48,7 +48,7 @@ public struct ClaudeCredentials: Sendable {
         return root.appendingPathComponent(".credentials.json")
     }
 
-    static func isAvailable() -> Bool {
+    public static func isAvailable() -> Bool {
         if FileManager.default.fileExists(atPath: credentialsFileURL.path) { return true }
         #if os(macOS)
         // Presence check without reading the secret: no kSecReturnData, so no ACL prompt.

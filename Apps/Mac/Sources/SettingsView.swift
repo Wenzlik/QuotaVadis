@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @Bindable var updater: Updater
     @State private var showKeychainPicker = false
+    @State private var showSignIn = false
 
     private var refreshDescription: String {
         var text = model.isAdaptiveRefresh
@@ -164,13 +165,20 @@ struct SettingsView: View {
                         Text("Claude Code login").tag(UsageService.ClaudeSource.claudeCode)
                         Text("claude.ai web session").tag(UsageService.ClaudeSource.web)
                     }
+                    LabeledContent("QuotaVadis sign-in", value: model.claudeOwnLoginActive ? "signed in — no Keychain prompts" : "not signed in")
+                    if model.claudeOwnLoginActive {
+                        Button("Sign out") { model.signOutClaudeOwnLogin() }
+                    } else {
+                        Button("Sign in to Claude…") { showSignIn = true }
+                            .popover(isPresented: $showSignIn) { ClaudeSignInView(model: model, isPresented: $showSignIn) }
+                    }
                     LabeledContent("Claude Code", value: model.claudeCodeAvailable ? "logged in on this Mac" : "not found")
                     LabeledContent("claude.ai session", value: model.claudeWebAvailable ? "found (Claude app, Chrome or pasted key)" : "not found")
                     SecureField("Paste a claude.ai sessionKey (optional)", text: $model.manualClaudeSessionKey)
                 } header: {
                     Text("Claude source")
                 } footer: {
-                    Text("Automatic uses your Claude Code login and adds organizations from your claude.ai session. Without Claude Code, the session of the Claude desktop app or Chrome is enough. Safari is not read yet; paste the sessionKey cookie from claude.ai instead.")
+                    Text("Signing in gives QuotaVadis a login of its own. It is the only source macOS never asks about: every other one borrows an item another app owns — Claude Code replaces its Keychain item whenever it refreshes its token, which throws away the permission you granted, so the dialog keeps coming back. Without a sign-in, automatic uses your Claude Code login and adds organizations from your claude.ai session; the session of the Claude desktop app or Chrome works too. Safari is not read yet; paste the sessionKey cookie from claude.ai instead.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -261,6 +269,58 @@ struct ProviderToggleRow: View {
                     .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                     .lineLimit(2).truncationMode(.middle)
             }
+        }
+    }
+}
+
+/// QuotaVadis's own Claude sign-in: open the authorization page, paste back the code it shows.
+/// Anthropic has no redirect registered for this app, so the code is copied by hand — the same callback page
+/// the Claude Code CLI uses for its own login.
+struct ClaudeSignInView: View {
+    @Bindable var model: AppModel
+    @Binding var isPresented: Bool
+    @State private var paste = ""
+    @State private var problem: String?
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sign in to Claude").font(.headline)
+            Text("QuotaVadis gets its own login, kept in its own Keychain item. macOS stops asking for permission, because nothing here reads an item another app owns.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            step(1, "Open the Claude authorization page and approve the request.")
+            Button("Sign in to Claude…") { model.beginClaudeSignIn() }
+
+            step(2, "Claude shows a code when you approve. Paste it here.")
+            TextField("code#state", text: $paste).textFieldStyle(.roundedBorder)
+            if let problem {
+                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                Button("Done") {
+                    working = true
+                    Task {
+                        problem = await model.completeClaudeSignIn(paste: paste)
+                        working = false
+                        if problem == nil { isPresented = false }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(paste.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working)
+            }
+        }
+        .padding(16)
+        .frame(width: 380)
+    }
+
+    private func step(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("\(number).").font(.caption.bold()).foregroundStyle(.secondary)
+            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

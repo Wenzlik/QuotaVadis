@@ -7,6 +7,9 @@ public struct CredentialStatus: Sendable, Hashable {
     public var problem: String?
 
     public static func claude(service: String? = nil) -> CredentialStatus {
+        if service == nil, let own = ClaudeTokenStore.load(account: ClaudeOwnLogin.account) {
+            return CredentialStatus(source: "QuotaVadis sign-in", expiresAt: own.expiresAt, problem: nil)
+        }
         let source = service.map { "Keychain item \($0)" } ?? (FileManager.default.fileExists(atPath: ClaudeCredentials.credentialsFileURL.path)
             ? "~/.claude/.credentials.json" : "Keychain item \(ClaudeCredentials.keychainService)")
         guard ClaudeCredentials.isAvailable() || service != nil else { return CredentialStatus(source: source, expiresAt: nil, problem: "Claude Code is not logged in on this Mac") }

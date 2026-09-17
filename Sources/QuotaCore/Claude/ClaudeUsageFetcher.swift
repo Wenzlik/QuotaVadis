@@ -13,11 +13,16 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         return "claude:" + keychainService.replacingOccurrences(of: ClaudeCredentials.keychainService, with: "").trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
-    public func isAvailable() -> Bool { keychainService == nil ? ClaudeCredentials.isAvailable() : true }
+    public func isAvailable() -> Bool { keychainService == nil ? (ClaudeOwnLogin.isSignedIn || ClaudeCredentials.isAvailable()) : true }
 
     /// Extra profiles: use our refreshed copy and refresh when expired. Primary: Claude Code's item as-is.
     private func credentials(force: Bool = false) async throws -> ClaudeCredentials {
-        guard let keychainService else { return try ClaudeCredentials.load(force: force) }
+        guard let keychainService else {
+            // QuotaVadis's own sign-in wins when there is one: it is the only Claude path that never reads an
+            // item another app owns, so it is the only one that can never raise the Keychain dialog.
+            if let own = try await ClaudeOwnLogin.credentials() { return own }
+            return try ClaudeCredentials.load(force: force)
+        }
         let creds = try ClaudeTokenRefresher.current(service: keychainService)
         if let expiry = creds.expiresAt, expiry < .now.addingTimeInterval(60) {
             return try await ClaudeTokenRefresher.refresh(service: keychainService, using: creds)
@@ -27,7 +32,7 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 
     public func fetch() async throws -> UsageSnapshot {
         do { return try await fetch(force: false) }
-        catch ProviderError.unauthorized where keychainService == nil {
+        catch ProviderError.unauthorized where keychainService == nil && !ClaudeOwnLogin.isSignedIn {
             // A 401 is the only proof our cached copy has gone stale before its stated expiry — Claude Code
             // logged out or rotated the login underneath us. Drop it and go back to the source once.
             ClaudeCredentials.invalidate()

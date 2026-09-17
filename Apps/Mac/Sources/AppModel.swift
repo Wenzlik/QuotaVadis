@@ -160,8 +160,43 @@ final class AppModel {
     var manualClaudeSessionKey: String {
         didSet { ClaudeWebSession.saveManualKey(manualClaudeSessionKey); rebuildFetchers() }
     }
-    var claudeCodeAvailable: Bool { ClaudeUsageFetcher().isAvailable() }
+    var claudeCodeAvailable: Bool { ClaudeCredentials.isAvailable() }
     var claudeWebAvailable: Bool { ClaudeWebSession.isAvailable() }
+
+    // MARK: - QuotaVadis's own Claude sign-in
+    // The one Claude source that never reads another app's Keychain item, and so the one that never raises the
+    // Allow/Deny dialog. `claudeSignInAttempt` holds the PKCE verifier between opening the browser and the paste.
+
+    private(set) var claudeOwnLoginActive = ClaudeOwnLogin.isSignedIn
+    private var claudeSignInAttempt: ClaudeOwnLogin.Attempt?
+
+    func beginClaudeSignIn() {
+        let attempt = ClaudeOwnLogin.begin()
+        claudeSignInAttempt = attempt
+        NSWorkspace.shared.open(attempt.url)
+    }
+
+    /// Returns nil on success, otherwise the message to show under the paste field.
+    func completeClaudeSignIn(paste: String) async -> String? {
+        guard let attempt = claudeSignInAttempt else { return "Click “Sign in to Claude…” first." }
+        do {
+            try await ClaudeOwnLogin.complete(paste: paste, attempt: attempt)
+            claudeSignInAttempt = nil
+            claudeOwnLoginActive = true
+            ClaudeCredentials.invalidate()
+            await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() }
+            return nil
+        } catch {
+            return (error as? ProviderError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func signOutClaudeOwnLogin() {
+        ClaudeOwnLogin.signOut()
+        claudeOwnLoginActive = false
+        ClaudeCredentials.invalidate()
+        Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
+    }
 
     /// Organizations already shown through Claude Code logins; the web path skips them in automatic mode.
     private var coveredOrganizations: Set<String> {

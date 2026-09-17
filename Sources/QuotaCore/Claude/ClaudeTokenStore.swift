@@ -40,7 +40,8 @@ enum ClaudeTokenStore {
 
     /// Runs from background refreshes: with the process-wide no-UI switch a locked Keychain or an untrusted
     /// signature makes the write fail quietly (the token is still returned to the caller) instead of prompting.
-    static func save(_ creds: ClaudeCredentials, account: String) {
+    /// `replacing` skips the newer-wins guard, for a fresh sign-in that is authoritative by definition.
+    static func save(_ creds: ClaudeCredentials, account: String, replacing: Bool = false) {
         #if os(macOS)
         var payload: [String: Any] = ["accessToken": creds.accessToken]
         payload["refreshToken"] = creds.refreshToken
@@ -49,7 +50,7 @@ enum ClaudeTokenStore {
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         // Never trade a newer token for an older one: both the refresher's minted tokens and plain copies of
         // Claude Code's item land in the same slot, and they can arrive in either order.
-        if let stored = load(account: account),
+        if !replacing, let stored = load(account: account),
            (stored.expiresAt ?? .distantPast) >= (creds.expiresAt ?? .distantPast) { return }
         ProviderInteractionContext.installProcessGuard()
         let query: [String: Any] = [
