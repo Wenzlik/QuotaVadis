@@ -12,7 +12,7 @@ struct FixedProviderTimelineProvider: TimelineProvider {
         completion(QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: provider))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        completion(Timeline(entries: QuotaEntry.entries(payload: SharedStore.read(), provider: provider),
+        completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: provider),
                             policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
@@ -82,7 +82,7 @@ struct SwitcherTimelineProvider: TimelineProvider {
         completion(QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: SwitcherSelection.current))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        completion(Timeline(entries: QuotaEntry.entries(payload: SharedStore.read(), provider: SwitcherSelection.current),
+        completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: SwitcherSelection.current),
                             policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
@@ -112,6 +112,9 @@ struct SwitcherWidgetView: View {
         return available.contains(wanted) ? wanted : (available.first ?? wanted)
     }
 
+    /// `entry.state` is about the configured tool; the switcher may be showing a different one.
+    private var state: WidgetContentState { WidgetContent.providerState(entry.result, provider: selected) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             tabs
@@ -127,9 +130,9 @@ struct SwitcherWidgetView: View {
                     Spacer(minLength: 0)
                 }
             } else {
-                Spacer()
-                Text("Open QuotaVadis").font(.caption).foregroundStyle(.secondary)
-                Spacer()
+                Spacer(minLength: 0)
+                WidgetEmptyState(state: state, compact: true)
+                Spacer(minLength: 0)
             }
         }
     }

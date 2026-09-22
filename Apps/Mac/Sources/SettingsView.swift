@@ -219,6 +219,23 @@ struct SettingsView: View {
                     Text(SyncPrivacy.summary).font(.caption).foregroundStyle(.secondary)
                     Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                 }
+                // Widgets read an App Group file the app writes after every refresh. When that write fails the
+                // widgets simply stay empty, and until now nothing on the Mac said so — only the iOS app did.
+                Section("Widgets") {
+                    if let error = model.widgetHandoffError {
+                        Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    } else if let written = model.widgetHandoffWrittenAt {
+                        Text("Desktop widgets updated \(written.formatted(.relative(presentation: .named))).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Nothing written for the widgets yet. Refresh once and come back.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Button("Refresh widgets now") { model.refreshWidgetsNow() }
+                        Spacer()
+                    }
+                }
                 Section("Updates") {
                     Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
                     HStack {

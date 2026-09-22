@@ -629,8 +629,17 @@ final class AppModel {
     /// Widgets on this Mac read the App Group file; no iCloud round trip.
     private func updateWidgets() {
         SharedStore.write(currentPayload)
+        widgetHandoffError = SharedStore.lastError
+        widgetHandoffWrittenAt = SharedStore.lastWriteAt
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    /// Why the last hand-off to the widgets failed, nil when it worked. Shown in Settings ▸ iCloud & Updates.
+    private(set) var widgetHandoffError: String? = SharedStore.lastError
+    private(set) var widgetHandoffWrittenAt: Date? = SharedStore.lastWriteAt
+
+    /// Settings button: rewrite the file and ask WidgetKit to reload, without a full provider refresh.
+    func refreshWidgetsNow() { updateWidgets() }
 
     @discardableResult
     private func requestSync() -> Task<Void, Never> {

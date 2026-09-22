@@ -22,20 +22,38 @@ struct ProviderIntent: WidgetConfigurationIntent {
 
 struct QuotaEntry: TimelineEntry {
     let date: Date
-    let payload: DevicePayload?
+    /// The read *and its reason for failing*: an empty widget has to be able to say why it is empty.
+    let result: Result<DevicePayload, SharedStore.ReadFailure>
     let provider: ProviderID?
 
+    init(date: Date, result: Result<DevicePayload, SharedStore.ReadFailure>, provider: ProviderID?) {
+        self.date = date
+        self.result = result
+        self.provider = provider
+    }
+
+    init(date: Date, payload: DevicePayload, provider: ProviderID?) {
+        self.init(date: date, result: .success(payload), provider: provider)
+    }
+
+    var payload: DevicePayload? { try? result.get() }
     var snapshot: UsageSnapshot? { provider.flatMap { payload?.snapshot(for: $0) } }
     var cost: CostReport? { provider.flatMap { payload?.cost(for: $0) } }
 
+    /// What the view should draw. `provider == nil` is the all-tools overview.
+    var state: WidgetContentState {
+        provider.map { WidgetContent.providerState(result, provider: $0) } ?? WidgetContent.overviewState(result)
+    }
+
     /// Pre-schedule age/reset boundaries; re-reading an unchanged file must never rejuvenate a sample.
-    static func entries(payload: DevicePayload?, provider: ProviderID?, now: Date = .now) -> [QuotaEntry] {
+    static func entries(result: Result<DevicePayload, SharedStore.ReadFailure>, provider: ProviderID?, now: Date = .now) -> [QuotaEntry] {
+        let payload = try? result.get()
         let snapshots = payload?.snapshots ?? []
         let nextReload = now.addingTimeInterval(30 * 60)
         let boundaries = snapshots.flatMap { snapshot in
             [snapshot.fetchedAt.addingTimeInterval((payload?.status(for: snapshot).staleAfter ?? ProviderSyncStatus.minimumStaleAfter) + 1)] + snapshot.windows.compactMap(\.resetsAt)
         }.filter { $0 > now && $0 < nextReload }
-        return ([now] + Set(boundaries).sorted()).map { QuotaEntry(date: $0, payload: payload, provider: provider) }
+        return ([now] + Set(boundaries).sorted()).map { QuotaEntry(date: $0, result: result, provider: provider) }
     }
 
     static let placeholder = QuotaEntry(date: .now, payload: .preview, provider: .claude)
@@ -48,8 +66,8 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
         QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: configuration.provider.providerID)
     }
     func timeline(for configuration: ProviderIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        let entry = QuotaEntry(date: .now, payload: SharedStore.read(), provider: configuration.provider.providerID)
-        return Timeline(entries: QuotaEntry.entries(payload: entry.payload, provider: entry.provider), policy: .after(.now.addingTimeInterval(30 * 60)))
+        Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: configuration.provider.providerID),
+                 policy: .after(.now.addingTimeInterval(30 * 60)))
     }
 }
 
@@ -59,8 +77,8 @@ struct OverviewTimelineProvider: TimelineProvider {
         completion(QuotaEntry(date: .now, payload: SharedStore.read() ?? .preview, provider: nil))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        let entry = QuotaEntry(date: .now, payload: SharedStore.read(), provider: nil)
-        completion(Timeline(entries: QuotaEntry.entries(payload: entry.payload, provider: entry.provider), policy: .after(.now.addingTimeInterval(30 * 60))))
+        completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: nil),
+                            policy: .after(.now.addingTimeInterval(30 * 60))))
     }
 }
 
