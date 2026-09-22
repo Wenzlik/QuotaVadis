@@ -96,10 +96,11 @@ public actor Pricing {
         return out.isEmpty ? nil : out
     }
 
-    /// Snapshot of models.dev on 2026-09-05; only used until the live catalog loads.
+    /// Snapshot of models.dev on 2026-09-22; only used until the live catalog loads.
     static let bundled: [String: ModelPrice] = [
         "claude-fable-5-1": .init(input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5),
         "claude-fable-5": .init(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
+        "claude-opus-5-5": .init(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5),
         "claude-opus-5": .init(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         "claude-opus-4-5": .init(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         "claude-sonnet-5": .init(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
@@ -109,5 +110,8 @@ public actor Pricing {
                              longContext: .init(input: 20, output: 75, cacheRead: 2, cacheWrite: 25)),
         "gpt-5.3-codex": .init(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75),
         "gpt-5.3-codex-spark": .init(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75),
+        // models.dev lists no cache_write for xAI, so it falls back to input like `parse` does.
+        "grok-4.7": .init(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 2, longContextThreshold: 200_000,
+                          longContext: .init(input: 4, output: 12, cacheRead: 1, cacheWrite: 4)),
     ]
 }
