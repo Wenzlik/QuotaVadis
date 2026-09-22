@@ -10,6 +10,29 @@ func levelColor(_ percent: Double) -> Color {
     }
 }
 
+/// The one place a widget says "nothing to show, and here is why". Never a blank tile: a desktop widget that
+/// renders only whitespace is indistinguishable from a broken one, which is exactly how this bug was reported.
+struct WidgetEmptyState: View {
+    let state: WidgetContentState
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 2 : 4) {
+            HStack(spacing: 4) {
+                Image(systemName: state.symbol).font(compact ? .caption : .body)
+                Text(state.headline).font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
+            }
+            Text(state.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(compact ? 3 : 4)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// Single tool: ring on small, ring + bars on medium, Lock Screen accessories.
 struct ProviderWidget: Widget {
     var body: some WidgetConfiguration {
@@ -35,7 +58,9 @@ struct ProviderWidgetView: View {
     let entry: QuotaEntry
 
     var body: some View {
-        if let snapshot = entry.snapshot {
+        // `state` also covers "there is a payload, but this tool has no window to draw" — the case that used
+        // to slip past every `if let` below and leave the tile blank.
+        if let snapshot = entry.snapshot, entry.state.isReady {
             switch family {
             case .accessoryCircular: circular(snapshot)
             case .accessoryRectangular: rectangular(snapshot)
@@ -44,15 +69,17 @@ struct ProviderWidgetView: View {
             default: small(snapshot)
             }
         } else {
-            noData
+            empty
         }
     }
 
-    private var noData: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "flame").font(.title2)
-            Text("Open QuotaVadis").font(.caption)
-        }.foregroundStyle(.secondary)
+    @ViewBuilder private var empty: some View {
+        switch family {
+        case .accessoryInline: Text(entry.state.headline)
+        case .accessoryCircular: Image(systemName: entry.state.symbol)
+        case .accessoryRectangular: WidgetEmptyState(state: entry.state, compact: true)
+        default: WidgetEmptyState(state: entry.state)
+        }
     }
 
     private func measurement(_ s: UsageSnapshot) -> some View {
@@ -138,13 +165,10 @@ struct OverviewWidgetView: View {
     let entry: QuotaEntry
 
     var body: some View {
-        if let payload = entry.payload, !payload.snapshots.isEmpty {
+        if let payload = entry.payload, entry.state.isReady {
             if family == .systemLarge { large(payload) } else { medium(payload) }
         } else {
-            VStack(spacing: 4) {
-                Image(systemName: "flame").font(.title2)
-                Text("Open QuotaVadis").font(.caption)
-            }.foregroundStyle(.secondary)
+            WidgetEmptyState(state: entry.state)
         }
     }
 
