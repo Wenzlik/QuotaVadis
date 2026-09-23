@@ -57,6 +57,17 @@ private func tempFile(_ lines: [String]) throws -> URL {
     #expect(await p.price(for: "totally-unknown") == nil)
 }
 
+@Test func bundledPricesCoverOpus55AndGrok47() async {
+    let p = Pricing()   // bundled table only, no live catalog
+    let opus55 = await p.price(for: "claude-opus-5-5")
+    #expect(opus55 == ModelPrice(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5))
+    #expect(opus55 != Pricing.bundled["claude-opus-5"])
+    #expect(await p.price(for: "claude-opus-5-5-20260901") == opus55)
+    let grok = await p.price(for: "grok-4.7-high")
+    #expect(grok?.input == 2 && grok?.output == 6 && grok?.cacheRead == 0.5)
+    #expect(grok == Pricing.bundled["grok-4.7"])
+}
+
 @Test func reportFillsMissingDays() {
     var acc = CostAccumulator()
     let now = Date(timeIntervalSince1970: 1_788_000_000)
