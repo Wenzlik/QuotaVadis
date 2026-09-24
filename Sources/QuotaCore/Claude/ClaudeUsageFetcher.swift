@@ -1,6 +1,6 @@
 import Foundation
 
-/// `GET https://api.anthropic.com/api/oauth/usage` with the Claude Code OAuth token.
+/// `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1` with the Claude Code OAuth token.
 public struct ClaudeUsageFetcher: UsageFetcher {
     public let provider: ProviderID = .claude
     /// Keychain service of the login to read; nil = Claude Code's default item.
@@ -58,9 +58,20 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
     }
 
+    /// The server only hands out `cedar_ember` grants to Claude Code's own surface: with our UA it answers
+    /// `eligible:false, ineligible_reason:"surface"`. Presenting as Claude Code on this one request (owner's
+    /// explicit call) is what makes the usage-limit resets show; every other request stays `QuotaVadis`.
+    static let usageUserAgent = "claude-cli/2.1.281 (external, cli)"
+
+    static func usageHeaders(_ creds: ClaudeCredentials) -> [String: String] {
+        headers(creds).merging(["User-Agent": usageUserAgent]) { $1 }
+    }
+
     private func fetchRaw(_ creds: ClaudeCredentials) async throws -> Data {
         if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
-        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage")!, headers: Self.headers(creds))
+        // `cedar_ember=1` asks for the usage-limit reset grants block on top of the plain payload (what Claude Code's
+        // reset offer reads); without it the key is omitted. Claude Code also sends `skip_spend=1`, we keep spend.
+        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!, headers: Self.usageHeaders(creds))
     }
 
     static func snapshot(from r: ClaudeUsageResponse, plan: String?, profile: ClaudeProfileResponse? = nil) -> UsageSnapshot {
@@ -90,11 +101,22 @@ public struct ClaudeUsageFetcher: UsageFetcher {
             credits.append(UsageCredits(id: "extra", title: "Extra usage", used: used / 100,
                                         limit: extra.monthlyLimit.map { $0 / 100 }, currency: extra.currency ?? "USD"))
         }
+        // Usage-limit resets ("cedar_ember"): Claude's counterpart of Codex's rate limit reset credits.
+        var resetsAvailable: Int?
+        var resetExpiries: [Date] = []
+        if let program = r.cedarEmber, program.eligible == true || !(program.grants ?? []).isEmpty {
+            let grants = (program.grants ?? []).filter { $0.resetsLeft != nil }
+            resetsAvailable = grants.reduce(0) { $0 + max(0, $1.resetsLeft ?? 0) }
+            resetExpiries = grants.filter { ($0.resetsLeft ?? 0) > 0 }
+                .compactMap { ISO8601DateFormatter.parseAny($0.endsAt) }
+                .sorted()
+        }
         let org = profile?.organization
         let planLabel = org?.organizationType.map(Self.planLabel) ?? plan.map(Self.planLabel)
         return UsageSnapshot(provider: .claude, account: profile?.account?.email, organization: org?.name, plan: planLabel,
                              seat: Self.seatLabel(seatTier: org?.seatTier, rateTier: org?.rateLimitTier),
-                             windows: windows, credits: credits)
+                             windows: windows, credits: credits,
+                             resetCreditsAvailable: resetsAvailable, resetCreditExpiries: resetExpiries)
     }
 
     /// Accepts both `subscriptionType` ("max") and `organization_type` ("claude_team").
@@ -183,6 +205,18 @@ struct ClaudeUsageResponse: Decodable {
     let limits: [LimitEntry]?
     let extraUsage: ExtraUsage?
     let spend: Spend?
+    let cedarEmber: ResetProgram?
+
+    /// Usage-limit reset program, only present when the request carries `cedar_ember=1`.
+    struct ResetProgram: Decodable {
+        struct Grant: Decodable {
+            let resetsLeft: Int?
+            let endsAt: String?
+            enum CodingKeys: String, CodingKey { case resetsLeft = "resets_left"; case endsAt = "ends_at" }
+        }
+        let eligible: Bool?
+        let grants: [Grant]?
+    }
 
     struct Money: Decodable {
         let amountMinor: Double?
@@ -215,6 +249,7 @@ struct ClaudeUsageResponse: Decodable {
         case sevenDaySonnet = "seven_day_sonnet"
         case sevenDayOpus = "seven_day_opus"
         case limits
+        case cedarEmber = "cedar_ember"
     }
 
     init(from decoder: Decoder) throws {
@@ -227,5 +262,6 @@ struct ClaudeUsageResponse: Decodable {
         limits = try? c.decodeIfPresent([LimitEntry].self, forKey: .limits)
         extraUsage = try? c.decodeIfPresent(ExtraUsage.self, forKey: .extraUsage)
         spend = try? c.decodeIfPresent(Spend.self, forKey: .spend)
+        cedarEmber = try? c.decodeIfPresent(ResetProgram.self, forKey: .cedarEmber)
     }
 }

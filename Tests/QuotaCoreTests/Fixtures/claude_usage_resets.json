@@ -1,0 +1,157 @@
+{
+  "five_hour": {
+    "utilization": 9.0,
+    "resets_at": "2026-09-24T17:10:00.014317+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day": {
+    "utilization": 24.0,
+    "resets_at": "2026-09-27T20:00:00.014341+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "seven_day_cowork": null,
+  "seven_day_omelette": null,
+  "tangelo": null,
+  "iguana_necktie": null,
+  "omelette_promotional": null,
+  "nimbus_quill": {
+    "utilization": 0.0,
+    "resets_at": null,
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "cinder_cove": null,
+  "copper_kite": null,
+  "brass_thimble": null,
+  "harbor_lantern": null,
+  "wattle_ember": null,
+  "amber_ladder": null,
+  "amber_cistern": null,
+  "juniper_tide": null,
+  "cedar_ember": {
+    "eligible": true,
+    "ineligible_reason": null,
+    "at_limit": false,
+    "exhausted": [],
+    "grants": [
+      {
+        "id": "opus55-launch-team-20260921",
+        "label": "Claude Opus 5.5 launch: one usage-limit reset for Team members",
+        "resets_total": 1,
+        "resets_left": 1,
+        "starts_at": "2026-09-22T16:00:00+00:00",
+        "ends_at": "2026-10-22T16:00:00+00:00",
+        "clears": [
+          "five_hour",
+          "seven_day",
+          "seven_day_overage_included"
+        ],
+        "paused": false,
+        "usable_now": true,
+        "use_requires_limit": false,
+        "percent_used": {
+          "five_hour": 9,
+          "seven_day": 24,
+          "seven_day_overage_included": 5
+        },
+        "blocking": [],
+        "arm": null
+      }
+    ],
+    "next_grant_id": "opus55-launch-team-20260921",
+    "weekly_resets_at": "2026-09-27T20:00:00+00:00",
+    "cooldown_until": null,
+    "event_props": null
+  },
+  "amber_gauge": null,
+  "extra_usage": {
+    "is_enabled": true,
+    "monthly_limit": 500,
+    "used_credits": 1565.0,
+    "utilization": 100.0,
+    "currency": "USD",
+    "decimal_places": 2,
+    "disabled_reason": null,
+    "user_disabled": false,
+    "spend_limit_reached": false,
+    "credits_ever_enabled": true,
+    "daily": null,
+    "weekly": null
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 9,
+      "severity": "normal",
+      "resets_at": "2026-09-24T17:10:00.014317+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_all",
+      "group": "weekly",
+      "percent": 24,
+      "severity": "normal",
+      "resets_at": "2026-09-27T20:00:00.014341+00:00",
+      "scope": null,
+      "is_active": true
+    },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 5,
+      "severity": "normal",
+      "resets_at": "2026-09-27T20:00:00.014546+00:00",
+      "scope": {
+        "model": {
+          "id": null,
+          "display_name": "Fable"
+        },
+        "surface": null
+      },
+      "is_active": false
+    }
+  ],
+  "spend": {
+    "used": {
+      "amount_minor": 1565,
+      "currency": "USD",
+      "exponent": 2
+    },
+    "limit": {
+      "amount_minor": 500,
+      "currency": "USD",
+      "exponent": 2
+    },
+    "percent": 100,
+    "severity": "critical",
+    "enabled": true,
+    "disabled_reason": null,
+    "cap": {
+      "money": null,
+      "credits": {
+        "amount_minor": 500,
+        "exponent": 2
+      }
+    },
+    "balance": null,
+    "auto_reload": null,
+    "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+    "can_purchase_credits": false,
+    "can_toggle": false
+  },
+  "member_dashboard_available": false,
+  "seven_day_breakdown": null
+}

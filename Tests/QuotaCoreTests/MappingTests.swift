@@ -19,6 +19,44 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.credits == [UsageCredits(id: "extra", title: "Extra usage", used: 15.65, limit: 5, currency: "USD")])
 }
 
+@Test func claudeUsageLimitResets() throws {
+    // Live `?cedar_ember=1` payload (Claude Code surface): one launch grant with one reset left.
+    let r = try JSONDecoder().decode(ClaudeUsageResponse.self, from: fixture("claude_usage_resets"))
+    let s = ClaudeUsageFetcher.snapshot(from: r, plan: "team")
+    #expect(s.resetCreditsAvailable == 1)
+    #expect(s.resetCreditExpiries == [try #require(ISO8601DateFormatter.parseAny("2026-10-22T16:00:00+00:00"))])
+    #expect(s.windows.map(\.id).prefix(2) == ["session", "weekly"])
+    #expect(s.credits.first?.used == 15.65)
+}
+
+@Test func claudeUsageLimitResetsHiddenWhenIneligible() throws {
+    let ineligible = #"{"five_hour":{"utilization":6},"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[]}}"#
+    let s = ClaudeUsageFetcher.snapshot(from: try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(ineligible.utf8)), plan: nil)
+    #expect(s.resetCreditsAvailable == nil)
+    #expect(s.resetCreditExpiries.isEmpty)
+    // No block at all (plain endpoint) and a malformed block both leave the rest of the snapshot intact.
+    let plain = ClaudeUsageFetcher.snapshot(from: try JSONDecoder().decode(ClaudeUsageResponse.self, from: fixture("claude_usage")), plan: "max")
+    #expect(plain.resetCreditsAvailable == nil)
+    let malformed = #"{"five_hour":{"utilization":6},"cedar_ember":"oops"}"#
+    let m = ClaudeUsageFetcher.snapshot(from: try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(malformed.utf8)), plan: nil)
+    #expect(m.resetCreditsAvailable == nil)
+    #expect(m.windows.first?.usedPercent == 6)
+    // Eligible but spent: show 0 so the user sees the program exists.
+    let spent = #"{"five_hour":{"utilization":6},"cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_total":1,"resets_left":0,"ends_at":"2026-10-22T16:00:00+00:00"}]}}"#
+    let z = ClaudeUsageFetcher.snapshot(from: try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(spent.utf8)), plan: nil)
+    #expect(z.resetCreditsAvailable == 0)
+    #expect(z.resetCreditExpiries.isEmpty)
+}
+
+@Test func claudeUsageRequestPresentsAsClaudeCode() {
+    // cedar_ember grants are gated on surface; only the usage request carries Claude Code's UA.
+    let h = ClaudeUsageFetcher.usageHeaders(ClaudeCredentials(accessToken: "t", expiresAt: nil, subscriptionType: nil))
+    #expect(h["User-Agent"]?.hasPrefix("claude-cli/") == true)
+    #expect(h["User-Agent"]?.hasSuffix("(external, cli)") == true)
+    #expect(h["Authorization"] == "Bearer t")
+    #expect(h["anthropic-beta"] == "oauth-2025-04-20")
+}
+
 @Test func codexWeeklyOnlyPlan() throws {
     let json = #"{"rate_limit":{"primary_window":{"used_percent":94,"reset_at":1788806972,"limit_window_seconds":604800},"secondary_window":null}}"#
     let r = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
