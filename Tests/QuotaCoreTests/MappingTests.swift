@@ -48,6 +48,15 @@ private func fixture(_ name: String) throws -> Data {
     #expect(z.resetCreditExpiries.isEmpty)
 }
 
+@Test func claudeUsageRequestPresentsAsClaudeCode() {
+    // cedar_ember grants are gated on surface; only the usage request carries Claude Code's UA.
+    let h = ClaudeUsageFetcher.usageHeaders(ClaudeCredentials(accessToken: "t", expiresAt: nil, subscriptionType: nil))
+    #expect(h["User-Agent"]?.hasPrefix("claude-cli/") == true)
+    #expect(h["User-Agent"]?.hasSuffix("(external, cli)") == true)
+    #expect(h["Authorization"] == "Bearer t")
+    #expect(h["anthropic-beta"] == "oauth-2025-04-20")
+}
+
 @Test func codexWeeklyOnlyPlan() throws {
     let json = #"{"rate_limit":{"primary_window":{"used_percent":94,"reset_at":1788806972,"limit_window_seconds":604800},"secondary_window":null}}"#
     let r = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))

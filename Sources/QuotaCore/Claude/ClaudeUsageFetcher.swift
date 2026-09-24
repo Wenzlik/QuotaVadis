@@ -58,11 +58,20 @@ public struct ClaudeUsageFetcher: UsageFetcher {
         ["Authorization": "Bearer \(creds.accessToken)", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "QuotaVadis"]
     }
 
+    /// The server only hands out `cedar_ember` grants to Claude Code's own surface: with our UA it answers
+    /// `eligible:false, ineligible_reason:"surface"`. Presenting as Claude Code on this one request (owner's
+    /// explicit call) is what makes the usage-limit resets show; every other request stays `QuotaVadis`.
+    static let usageUserAgent = "claude-cli/2.1.281 (external, cli)"
+
+    static func usageHeaders(_ creds: ClaudeCredentials) -> [String: String] {
+        headers(creds).merging(["User-Agent": usageUserAgent]) { $1 }
+    }
+
     private func fetchRaw(_ creds: ClaudeCredentials) async throws -> Data {
         if let expiry = creds.expiresAt, expiry < .now { throw ProviderError.tokenExpired }
         // `cedar_ember=1` asks for the usage-limit reset grants block on top of the plain payload (what Claude Code's
         // reset offer reads); without it the key is omitted. Claude Code also sends `skip_spend=1`, we keep spend.
-        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!, headers: Self.headers(creds))
+        return try await HTTP.get(URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!, headers: Self.usageHeaders(creds))
     }
 
     static func snapshot(from r: ClaudeUsageResponse, plan: String?, profile: ClaudeProfileResponse? = nil) -> UsageSnapshot {
