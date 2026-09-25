@@ -571,13 +571,16 @@ final class AppModel {
     /// com.apple.screenIsLocked/Unlocked fire for both the screensaver lock and the login window after sleep.
     private func observeScreenLock() {
         let dnc = DistributedNotificationCenter.default()
+        // queue: .main delivers on the main thread; assumeIsolated tells the compiler what the queue guarantees.
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
-            self?.isScreenLocked = true
+            MainActor.assumeIsolated { self?.isScreenLocked = true }
         }
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            guard let self, self.isScreenLocked else { return }
-            self.isScreenLocked = false
-            Task { @MainActor in await self.refresh() }
+            MainActor.assumeIsolated {
+                guard let self, self.isScreenLocked else { return }
+                self.isScreenLocked = false
+                Task { @MainActor in await self.refresh() }
+            }
         }
     }
 
