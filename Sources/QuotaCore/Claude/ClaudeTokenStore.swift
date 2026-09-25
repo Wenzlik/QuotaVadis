@@ -41,17 +41,19 @@ enum ClaudeTokenStore {
     /// Runs from background refreshes: with the process-wide no-UI switch a locked Keychain or an untrusted
     /// signature makes the write fail quietly (the token is still returned to the caller) instead of prompting.
     /// `replacing` skips the newer-wins guard, for a fresh sign-in that is authoritative by definition.
-    static func save(_ creds: ClaudeCredentials, account: String, replacing: Bool = false) {
+    /// Returns whether the item now holds `creds`; background callers ignore it, an explicit sign-in must not.
+    @discardableResult
+    static func save(_ creds: ClaudeCredentials, account: String, replacing: Bool = false) -> Bool {
         #if os(macOS)
         var payload: [String: Any] = ["accessToken": creds.accessToken]
         payload["refreshToken"] = creds.refreshToken
         payload["expiresAt"] = creds.expiresAt?.timeIntervalSince1970
         payload["subscriptionType"] = creds.subscriptionType
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return false }
         // Never trade a newer token for an older one: both the refresher's minted tokens and plain copies of
         // Claude Code's item land in the same slot, and they can arrive in either order.
         if !replacing, let stored = load(account: account),
-           (stored.expiresAt ?? .distantPast) >= (creds.expiresAt ?? .distantPast) { return }
+           (stored.expiresAt ?? .distantPast) >= (creds.expiresAt ?? .distantPast) { return false }
         ProviderInteractionContext.installProcessGuard()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -59,14 +61,18 @@ enum ClaudeTokenStore {
             kSecAttrAccount as String: account,
         ]
         let attributes: [String: Any] = [kSecValueData as String: data]
-        if SecItemUpdate(query as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
             // Our copy is only useful while this Mac is unlocked and it is always re-derivable from Claude
             // Code's item, so it never needs to leave the device or survive in a locked state.
             add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            SecItemAdd(add as CFDictionary, nil)
+            status = SecItemAdd(add as CFDictionary, nil)
         }
+        return status == errSecSuccess
+        #else
+        return false
         #endif
     }
 
