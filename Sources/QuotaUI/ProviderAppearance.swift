@@ -1,9 +1,10 @@
 import SwiftUI
 import QuotaCore
 
-/// Identity colour per provider: icon tiles, header accents, chart series. Deliberately separate from
+/// Identity colour per provider: header accents, chart series, fallback tile fill. Deliberately separate from
 /// `usageTint`, which keeps meaning "how much is used" — an accent never stands in for a warning.
-/// These are QuotaVadis's own design choices, not the vendors' brand colours.
+/// These are QuotaVadis's own design choices, not the vendors' brand colours (the brand marks themselves
+/// carry their own colour when a bundled vendor image is available).
 public extension ProviderID {
     var accent: Color {
         switch self {
@@ -14,7 +15,7 @@ public extension ProviderID {
         }
     }
 
-    /// Generic SF Symbol for the tile; no vendor marks in shared UI.
+    /// SF Symbol fallback when no bundled vendor mark exists (currently Gemini).
     var symbol: String {
         switch self {
         case .claude: "sparkle"
@@ -23,23 +24,44 @@ public extension ProviderID {
         case .gemini: "diamond.fill"
         }
     }
+
+    /// Asset-catalog name for the provider's real app/brand mark (original rendering).
+    /// Claude/Cursor/Codex ship colour marks extracted from the installed Mac apps Václav uses;
+    /// Gemini stays on the geometric SF Symbol until a local app icon is available.
+    var vendorImageName: String? {
+        switch self {
+        case .claude: "VendorClaude"
+        case .cursor: "VendorCursor"
+        case .codex: "VendorCodex"
+        case .gemini: nil
+        }
+    }
 }
 
-/// Rounded tile in the provider's accent with its symbol: the first thing the eye finds on a card.
+/// Provider identity mark: real brand app icon when bundled, otherwise a rounded accent tile with an SF Symbol.
 public struct ProviderMark: View {
     let provider: ProviderID
     let size: CGFloat
     public init(provider: ProviderID, size: CGFloat = 24) { self.provider = provider; self.size = size }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-        Image(systemName: provider.symbol)
-            .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(LinearGradient(colors: [provider.accent.opacity(0.85), provider.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: shape)
-            .overlay(shape.strokeBorder(.white.opacity(0.18)))
-            .accessibilityHidden(true)
+        if let name = provider.vendorImageName {
+            Image(name)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            Image(systemName: provider.symbol)
+                .font(.system(size: size * 0.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(LinearGradient(colors: [provider.accent.opacity(0.85), provider.accent], startPoint: .topLeading, endPoint: .bottomTrailing), in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.18)))
+                .accessibilityHidden(true)
+        }
     }
 }
 

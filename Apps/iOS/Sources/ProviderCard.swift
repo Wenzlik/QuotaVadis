@@ -1,7 +1,6 @@
 import SwiftUI
 import QuotaCore
 import QuotaUI
-import QuotaUI
 
 /// Overview card: identity, the prominent windows as big bars, the first real spend line.
 struct ProviderCard: View {
@@ -11,16 +10,7 @@ struct ProviderCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(snapshot.provider.tint.opacity(0.18))
-                    if let vendorImageName = snapshot.provider.vendorImageName {
-                        Image(vendorImageName).resizable().renderingMode(.template).scaledToFit()
-                            .frame(width: 18, height: 18).foregroundStyle(snapshot.provider.tint)
-                    } else {
-                        Image(systemName: snapshot.provider.symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(snapshot.provider.tint)
-                    }
-                }
-                .frame(width: 40, height: 40)
+                ProviderMark(provider: snapshot.provider, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(snapshot.displayTitle).font(.headline)
                     if let subtitle = snapshot.subtitle { Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
