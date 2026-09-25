@@ -119,8 +119,8 @@ final class AppModel {
     var menuBarPercentPlacement: MenuBarPercentPlacement {
         didSet { defaults.set(menuBarPercentPlacement.rawValue, forKey: "menuBarPercentPlacement") }
     }
-    /// A small vendor mark drawn ahead of each bar (Claude/Cursor/Codex brand icons; Gemini template glyph;
-    /// Grok Bot uses the installed app icon when available).
+    /// A small colourless vendor mark drawn ahead of each bar (Claude/Cursor/Codex/Gemini template glyphs;
+    /// Grok Bot uses the installed app icon when available, desaturated).
     var menuBarShowVendorIcons: Bool {
         didSet { defaults.set(menuBarShowVendorIcons, forKey: "menuBarShowVendorIcons") }
     }
@@ -451,9 +451,11 @@ final class AppModel {
         return measurement(for: source)?.window.usedPercent
     }
 
-    /// A mark to draw ahead of a bar. Claude/Cursor/Codex use the same bundled full-colour brand marks as
-    /// `ProviderMark` (original rendering). Gemini stays a colourless template glyph. Grok Bot prefers the
-    /// real icon of the installed "Grok Bot" app when present, else a hand-drawn original shape.
+    /// A mark to draw ahead of a bar. Claude/Cursor/Codex use menu-bar-only monochrome silhouettes derived
+    /// from the same brand marks as `ProviderMark` (template-tinted like the rest of the bar). Panel/welcome/
+    /// settings keep the full-colour `Vendor*` assets via `ProviderMark`. Gemini stays a colourless template
+    /// glyph. Grok Bot prefers the real icon of the installed "Grok Bot" app when present, else a hand-drawn
+    /// original shape.
     private func vendorIcon(for source: MenuBarSource) -> MenuBarVendorMark? {
         if case .window(_, let windowID) = source, windowID == "grok-bot" {
             if let real = Self.installedAppIcon("Grok Bot") { return MenuBarVendorMark(image: Self.desaturated(real), isTemplate: false) }
@@ -461,9 +463,9 @@ final class AppModel {
         }
         guard let id = instanceID(for: source), let provider = states[id]?.snapshot?.provider else { return nil }
         switch provider {
-        case .claude: return NSImage(named: "VendorClaude").map { MenuBarVendorMark(image: $0, isTemplate: false) }
-        case .cursor: return NSImage(named: "VendorCursor").map { MenuBarVendorMark(image: $0, isTemplate: false) }
-        case .codex: return NSImage(named: "VendorCodex").map { MenuBarVendorMark(image: $0, isTemplate: false) }
+        case .claude: return NSImage(named: "MenuBarVendorClaude").map { MenuBarVendorMark(image: $0, isTemplate: true) }
+        case .cursor: return NSImage(named: "MenuBarVendorCursor").map { MenuBarVendorMark(image: $0, isTemplate: true) }
+        case .codex: return NSImage(named: "MenuBarVendorCodex").map { MenuBarVendorMark(image: $0, isTemplate: true) }
         case .gemini: return NSImage(named: "VendorGemini").map { MenuBarVendorMark(image: $0, isTemplate: true) }
         }
     }
