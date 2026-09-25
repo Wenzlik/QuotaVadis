@@ -39,11 +39,18 @@ struct OverviewView: View {
                                 !device.snapshots.contains { $0.instanceID == status.instanceID } && status.freshness() != .unavailable
                             }) { status in
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text(status.provider.displayName).font(.headline)
+                                    HStack(spacing: 10) {
+                                        ProviderMark(provider: status.provider, size: 28)
+                                        Text(status.provider.displayName).font(.headline)
+                                        Spacer()
+                                    }
                                     MeasurementStatusView(status: status)
                                     Text(status.errorCode?.nextStep ?? "Open the tool on your Mac, sign in, then refresh.")
                                         .font(.callout).foregroundStyle(.secondary)
-                                }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                                .accentCard(status.provider.accent, cornerRadius: 18)
                             }
                             if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
                                 Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
