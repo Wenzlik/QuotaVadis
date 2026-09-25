@@ -3,8 +3,10 @@
 #
 #   Scripts/release.sh 0.1.0            # version; build number = UTC timestamp
 #
-# Output: dist/QuotaVadis-<version>.zip + appcast entry appended to
-# ../zmrhal_web/public/quotavadis/appcast.xml and the zip copied next to it.
+# Output: dist/QuotaVadis-<version>.zip (Sparkle updates) + dist/QuotaVadis-<version>.dmg
+# (first-time install), appcast entry appended to ../zmrhal_web/public/quotavadis/appcast.xml,
+# and both artifacts copied next to it (zip + DMG, plus -latest.* aliases).
+# Sparkle keeps using the zip — appcast enclosure format unchanged.
 # Deploying zmrhal_web is a separate, deliberate step (see docs/DEPLOY.md there).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -124,5 +126,12 @@ s = s.replace("  </channel>", item, 1)
 open(path, "w").write(s)
 PY
 cp "$ZIP" "$WEB/"
-cp "$ZIP" "$WEB/QuotaVadis-latest.zip"   # stable link for the website download button
-echo "release $VERSION ($BUILD) ready: $ZIP → $WEB (appcast updated). Deploy zmrhal_web to publish."
+cp "$ZIP" "$WEB/QuotaVadis-latest.zip"   # stable link kept for Sparkle / secondary download
+
+# Classic DMG for first-time install (app + Applications symlink). Sparkle stays on the zip.
+DMG="$DIST/QuotaVadis-$VERSION.dmg"
+Scripts/make-dmg.sh "$APP" "$DMG"
+cp "$DMG" "$WEB/"
+cp "$DMG" "$WEB/QuotaVadis-latest.dmg"   # primary website download button
+
+echo "release $VERSION ($BUILD) ready: $ZIP + $DMG → $WEB (appcast updated). Deploy zmrhal_web to publish."
