@@ -1,21 +1,76 @@
 import SwiftUI
 import QuotaCore
+import QuotaUI
+
+/// Settings sidebar sections. Kept on the model so the panel can open Settings straight at Accounts.
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, accounts, appearance, notifications, sync, updates, cost
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .accounts: "Accounts"
+        case .appearance: "Menu Bar"
+        case .notifications: "Notifications"
+        case .sync: "Sync & Widgets"
+        case .updates: "Updates"
+        case .cost: "Cost Estimates"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape.fill"
+        case .accounts: "person.2.fill"
+        case .appearance: "menubar.rectangle"
+        case .notifications: "bell.badge.fill"
+        case .sync: "icloud.fill"
+        case .updates: "arrow.down.circle.fill"
+        case .cost: "dollarsign.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .general: .gray
+        case .accounts: ProviderID.claude.accent
+        case .appearance: .indigo
+        case .notifications: .red
+        case .sync: .blue
+        case .updates: .green
+        case .cost: .teal
+        }
+    }
+}
 
 struct SettingsView: View {
     @Bindable var model: AppModel
     @Bindable var updater: Updater
     @State private var showKeychainPicker = false
-    @State private var showSignIn = false
+    @State private var showAdvancedClaude = false
 
     private var refreshDescription: String {
         var text = model.isAdaptiveRefresh
             ? "Adaptive: every 2 min right after you open the panel, 5 min while you work with the tools or looked within the hour, 15–30 min when idle, 30 min on Low Power. Opening the panel always refreshes."
-            : "Fixed interval. Claude Code is still read at most every 5 minutes: Anthropic's usage API throttles faster polling."
+            : "Fixed interval. Claude is still read at most every 5 minutes: Anthropic's usage API throttles faster polling."
         if let reason = model.adaptiveReason, let next = model.nextRefreshAt {
-            text += " Now: \(reason.rawValue), next check \(next.formatted(.relative(presentation: .named)))."
+            text += " Now: \(reasonLabel(reason)), next check \(next.formatted(.relative(presentation: .named)))."
         }
         text += " After an HTTP 429 the app backs off and keeps the last values."
         return text
+    }
+
+    /// Plain words for the policy's reason, not its enum case.
+    private func reasonLabel(_ reason: AdaptiveRefreshPolicy.Reason) -> String {
+        switch reason {
+        case .constrained: "Low Power or hot, 30 min"
+        case .recentInteraction: "panel opened just now, 2 min"
+        case .warm: "looked within the hour, 5 min"
+        case .codingActivity: "tools in use, 5 min"
+        case .idle: "idle, 15 min"
+        case .longIdle: "idle for hours, 30 min"
+        }
     }
 
     private var syncDescription: String {
@@ -35,230 +90,291 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        // Standard macOS settings tabs; each pane scrolls on its own so the window fits small displays.
-        TabView {
-            pane {
-                Section("Track") {
-                    ForEach(ProviderID.allCases) { id in
-                        ProviderToggleRow(model: model, provider: id)
-                    }
+        NavigationSplitView {
+            List(SettingsSection.allCases, selection: Binding(get: { model.settingsSection }, set: { if let s = $0 { model.settingsSection = s } })) { section in
+                Label {
+                    Text(section.title)
+                } icon: {
+                    Image(systemName: section.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(section.color.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .onAppear { model.refreshCredentialStatuses() }
-                Section {
-                    Picker("Refresh", selection: $model.refreshIntervalSeconds) {
-                        Text("Adaptive (2–30 min)").tag(0)
-                        Text("30 seconds").tag(30)
-                        Text("1 minute").tag(60)
-                        Text("5 minutes").tag(300)
-                        Text("15 minutes").tag(900)
-                        Text("30 minutes").tag(1800)
-                    }
-                    Toggle("Launch at login", isOn: $model.launchAtLogin)
-                    Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    HStack {
-                        Button(model.cliInstalled ? "Reinstall command line tool" : "Install command line tool") { model.installCLI() }
-                        Spacer()
-                        Text(model.cliInstalled ? "installed at /usr/local/bin/quotavadis" : "").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let message = model.cliInstallMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
-                    Text("`quotavadis` prints the same limits in Terminal: a table, `--json`, `--watch 60`, `--provider codex`, `cost`. Uses the same logins as the app.")
-                        .font(.caption).foregroundStyle(.secondary)
-                } header: { Text("Command line") }
+                .tag(section)
             }
-            .tabItem { Label("General", systemImage: "gearshape") }
-
-            pane {
-                Section("Menu bar") {
-                    Picker("Style", selection: $model.menuBarDisplayStyle) {
-                        Text("Icon").tag(MenuBarDisplayStyle.icon)
-                        Text("Filled bars").tag(MenuBarDisplayStyle.bars)
-                    }
-                    .pickerStyle(.segmented)
-                    if model.menuBarDisplayStyle == .icon {
-                        Picker("Show", selection: $model.menuBarSource) {
-                            ForEach(model.menuBarSourceOptions, id: \.0) { option in
-                                Text(option.1).tag(option.0)
-                            }
-                        }
-                        Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
-                        Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
-                    } else {
-                        Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
-                        Toggle("Show vendor mark", isOn: $model.menuBarShowVendorIcons)
-                        if model.showPercentInMenuBar {
-                            Picker("Percentage", selection: $model.menuBarPercentPlacement) {
-                                Text("Beside each bar").tag(MenuBarPercentPlacement.beside)
-                                Text("Inside each bar").tag(MenuBarPercentPlacement.inside)
-                            }
-                        }
-                        ForEach(Array(model.menuBarBarSources.enumerated()), id: \.offset) { index, source in
-                            HStack {
-                                Picker("Bar \(index + 1)", selection: Binding(
-                                    get: { source },
-                                    set: { model.setBarSource($0, at: index) })) {
-                                    ForEach(model.menuBarSourceOptions, id: \.0) { option in
-                                        Text(option.1).tag(option.0)
-                                    }
-                                }
-                                if model.menuBarBarSources.count > 1 {
-                                    Button(role: .destructive) { model.removeBar(at: index) } label: { Image(systemName: "minus.circle") }
-                                        .buttonStyle(.borderless)
-                                }
-                            }
-                        }
-                        if model.menuBarBarSources.count < AppModel.maxBars {
-                            Button("Add bar") { model.addBar() }
-                        }
-                        Text("Each bar fills bottom-up with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if model.menuBarDisplayStyle == .icon, model.menuBarSource == .worst {
-                    Section {
-                        ForEach(model.menuBarCandidates, id: \.key) { candidate in
-                            Toggle(candidate.label, isOn: Binding(
-                                get: { !model.menuBarExcluded.contains(candidate.key) },
-                                set: { on in if on { model.menuBarExcluded.remove(candidate.key) } else { model.menuBarExcluded.insert(candidate.key) } }))
-                        }
-                    } header: {
-                        Text("Counted in “Highest usage”")
-                    } footer: {
-                        Text("Untick a window to leave it out of the menu bar number. New windows count by default.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
-
-            pane {
-                Section("Notifications") {
-                    Picker("Notify at", selection: $model.warnAtPercent) {
-                        Text("Never").tag(101)
-                        Text("70%").tag(70)
-                        Text("80%").tag(80)
-                        Text("90%").tag(90)
-                    }
-                    Toggle("Notify when a window resets", isOn: $model.notifyOnReset)
-                        .disabled(model.warnAtPercent > 100)
-                    Text("One alert per window when it crosses the threshold, with a “Snooze 1 hour” action. Reset alerts fire when a nearly used-up window is available again.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Extra usage") {
-                    Toggle("Alert when paid extra usage grows", isOn: $model.notifyExtraUsage)
-                    Text("Two cases: extra usage grows while your limits are not exhausted (a model outside your seat, e.g. Fable on a Standard seat, is billed separately), and extra usage starts after a window hit 100%. At most once per hour per account.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Button("Send test notifications") { model.sendTestNotifications() }
-                    Text("Delivers one sample of each kind so you can see the wording, the sound and the Snooze action. If nothing appears, allow QuotaVadis in System Settings ▸ Notifications.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .tabItem { Label("Notifications", systemImage: "bell") }
-
-            pane {
-                Section {
-                    Picker("Read limits from", selection: $model.claudeSource) {
-                        Text("Automatic").tag(UsageService.ClaudeSource.automatic)
-                        Text("Claude Code login").tag(UsageService.ClaudeSource.claudeCode)
-                        Text("claude.ai web session").tag(UsageService.ClaudeSource.web)
-                    }
-                    LabeledContent("QuotaVadis sign-in", value: model.claudeOwnLoginActive ? "signed in — no Keychain prompts" : "not signed in")
-                    if model.claudeOwnLoginActive {
-                        Button("Sign out") { model.signOutClaudeOwnLogin() }
-                    } else {
-                        Button("Sign in to Claude…") { showSignIn = true }
-                            .popover(isPresented: $showSignIn) { ClaudeSignInView(model: model, isPresented: $showSignIn) }
-                    }
-                    LabeledContent("Claude Code", value: model.claudeCodeAvailable ? "logged in on this Mac" : "not found")
-                    LabeledContent("claude.ai session", value: model.claudeWebAvailable ? "found (Claude app, Chrome or pasted key)" : "not found")
-                    SecureField("Paste a claude.ai sessionKey (optional)", text: $model.manualClaudeSessionKey)
-                } header: {
-                    Text("Claude source")
-                } footer: {
-                    Text("Signing in gives QuotaVadis a login of its own. It is the only source macOS never asks about: every other one borrows an item another app owns — Claude Code replaces its Keychain item whenever it refreshes its token, which throws away the permission you granted, so the dialog keeps coming back. Without a sign-in, automatic uses your Claude Code login and adds organizations from your claude.ai session; the session of the Claude desktop app or Chrome works too. Safari is not read yet; paste the sessionKey cookie from claude.ai instead.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    ForEach(model.extraClaudeServices, id: \.self) { service in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(model.states["claude:" + AppModel.suffix(service)]?.snapshot?.organization ?? "Organization (\(AppModel.suffix(service)))")
-                                Text(service).font(.caption2).foregroundStyle(.tertiary)
-                            }
-                            Spacer()
-                            Button(role: .destructive) { model.extraClaudeServices.removeAll { $0 == service } } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless)
-                        }
-                    }
-                    Button("Add organization…") { showKeychainPicker = true }
-                        .popover(isPresented: $showKeychainPicker) { ClaudeKeychainPicker(model: model, isPresented: $showKeychainPicker) }
-                } header: {
-                    Text("Claude organizations")
-                } footer: {
-                    Text("Only needed if you belong to more than one Claude organization and use Claude Code: each organization needs its own Claude Code login, and “Add organization…” walks you through it. With a claude.ai web session, organizations are picked up automatically.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .tabItem { Label("Claude", systemImage: "person.2") }
-
-            pane {
-                Section("iCloud") {
-                    Toggle("Sync to iCloud", isOn: $model.syncEnabled)
-                    HStack {
-                        Button(model.syncEnabled ? "Sync now" : "Retry removal") { Task { await model.publishToCloud() } }
-                            .disabled(model.isSyncing)
-                        if model.isSyncing { ProgressView().controlSize(.small) }
-                        Spacer()
-                        if let attempt = model.lastSyncAttempt {
-                            Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
-                        }
-                    }
-                    Text(SyncPrivacy.summary).font(.caption).foregroundStyle(.secondary)
-                    Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
-                }
-                // Widgets read an App Group file the app writes after every refresh. When that write fails the
-                // widgets simply stay empty, and until now nothing on the Mac said so — only the iOS app did.
-                Section("Widgets") {
-                    if let error = model.widgetHandoffError {
-                        Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
-                    } else if let written = model.widgetHandoffWrittenAt {
-                        Text("Desktop widgets updated \(written.formatted(.relative(presentation: .named))).")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("Nothing written for the widgets yet. Refresh once and come back.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Button("Refresh widgets now") { model.refreshWidgetsNow() }
-                        Spacer()
-                    }
-                }
-                Section("Updates") {
-                    Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
-                    HStack {
-                        Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
-                        Spacer()
-                        if let date = updater.lastCheck {
-                            Text("Last checked \(date.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            .tabItem { Label("iCloud & Updates", systemImage: "icloud") }
-
-            pane {
-                Section("Cost estimates") {
-                    Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)
-                    Text("Costs are estimates at API list prices from local logs (Cursor: from its dashboard). Subscriptions are not billed per token.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .tabItem { Label("Cost", systemImage: "dollarsign.circle") }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            detail(model.settingsSection)
+                .navigationTitle(model.settingsSection.title)
         }
-        .frame(width: 480, height: 400)
+        .frame(minWidth: 700, idealWidth: 760, minHeight: 480, idealHeight: 560)
+        .onAppear {
+            model.refreshCredentialStatuses()
+            showAdvancedClaude = model.claudeSource != .automatic || !model.extraClaudeServices.isEmpty || !model.manualClaudeSessionKey.isEmpty
+        }
+    }
+
+    @ViewBuilder private func detail(_ section: SettingsSection) -> some View {
+        switch section {
+        case .general: general
+        case .accounts: accounts
+        case .appearance: appearance
+        case .notifications: notifications
+        case .sync: syncAndWidgets
+        case .updates: updates
+        case .cost: cost
+        }
+    }
+
+    // MARK: - Panes
+
+    private var general: some View {
+        pane {
+            Section {
+                Picker("Refresh", selection: $model.refreshIntervalSeconds) {
+                    Text("Adaptive (2–30 min)").tag(0)
+                    Text("30 seconds").tag(30)
+                    Text("1 minute").tag(60)
+                    Text("5 minutes").tag(300)
+                    Text("15 minutes").tag(900)
+                    Text("30 minutes").tag(1800)
+                }
+                Toggle("Launch at login", isOn: $model.launchAtLogin)
+                Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                HStack {
+                    Button(model.cliInstalled ? "Reinstall command line tool" : "Install command line tool") { model.installCLI() }
+                    Spacer()
+                    Text(model.cliInstalled ? "installed at /usr/local/bin/quotavadis" : "").font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = model.cliInstallMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
+                Text("`quotavadis` prints the same limits in Terminal: a table, `--json`, `--watch 60`, `--provider codex`, `cost`. Uses the same logins as the app.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: { Text("Command line") }
+        }
+    }
+
+    private var accounts: some View {
+        pane {
+            Section {
+                ClaudeConnectionView(model: model)
+                    .padding(.vertical, 6)
+            } header: {
+                Text("Claude")
+            } footer: {
+                if model.claudeConnection == .notConnected, model.claudeCodeAvailable {
+                    Text("Until you connect, Claude limits come from Claude Code’s login, which makes macOS ask for Keychain access.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section("Track") {
+                ForEach(ProviderID.allCases) { id in
+                    ProviderToggleRow(model: model, provider: id)
+                }
+            }
+            Section {
+                Toggle("Show advanced Claude sources", isOn: $showAdvancedClaude)
+            } footer: {
+                Text("Claude Code’s login, a claude.ai web session and extra organizations. Most people don’t need these.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if showAdvancedClaude { advancedClaude }
+        }
+    }
+
+    @ViewBuilder private var advancedClaude: some View {
+        Section {
+            Picker("Read limits from", selection: $model.claudeSource) {
+                Text("Automatic").tag(UsageService.ClaudeSource.automatic)
+                Text("Claude login only").tag(UsageService.ClaudeSource.claudeCode)
+                Text("claude.ai web session").tag(UsageService.ClaudeSource.web)
+            }
+            LabeledContent("Claude Code", value: model.claudeCodeAvailable ? "logged in on this Mac" : "not found")
+            LabeledContent("claude.ai session", value: model.claudeWebAvailable ? "found (Claude app, Chrome or pasted key)" : "not found")
+            SecureField("Paste a claude.ai sessionKey (optional)", text: $model.manualClaudeSessionKey)
+        } header: {
+            Text("Claude sources")
+        } footer: {
+            Text("Automatic uses your QuotaVadis login when connected, otherwise Claude Code’s, and adds organizations from a claude.ai session (the Claude desktop app, Chrome, or a pasted sessionKey; Safari is not read). “Claude login only” skips the web session.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            ForEach(model.extraClaudeServices, id: \.self) { service in
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(model.states["claude:" + AppModel.suffix(service)]?.snapshot?.organization ?? "Organization (\(AppModel.suffix(service)))")
+                        Text(service).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Button(role: .destructive) { model.extraClaudeServices.removeAll { $0 == service } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                }
+            }
+            Button("Add organization…") { showKeychainPicker = true }
+                .popover(isPresented: $showKeychainPicker) { ClaudeKeychainPicker(model: model, isPresented: $showKeychainPicker) }
+        } header: {
+            Text("Claude organizations")
+        } footer: {
+            Text("Only for several Claude organizations with Claude Code: each needs its own Claude Code login. With a claude.ai web session, organizations are picked up automatically.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var appearance: some View {
+        pane {
+            Section("Preview") {
+                MenuBarPreview(model: model)
+            }
+            Section("Menu bar") {
+                Picker("Style", selection: $model.menuBarDisplayStyle) {
+                    Text("Icon").tag(MenuBarDisplayStyle.icon)
+                    Text("Filled bars").tag(MenuBarDisplayStyle.bars)
+                }
+                .pickerStyle(.segmented)
+                if model.menuBarDisplayStyle == .icon {
+                    Picker("Show", selection: $model.menuBarSource) {
+                        ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                            Text(option.1).tag(option.0)
+                        }
+                    }
+                    Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+                    Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
+                } else {
+                    Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
+                    Toggle("Show vendor mark", isOn: $model.menuBarShowVendorIcons)
+                    if model.showPercentInMenuBar {
+                        Picker("Percentage", selection: $model.menuBarPercentPlacement) {
+                            Text("Beside each bar").tag(MenuBarPercentPlacement.beside)
+                            Text("Inside each bar").tag(MenuBarPercentPlacement.inside)
+                        }
+                    }
+                    ForEach(Array(model.menuBarBarSources.enumerated()), id: \.offset) { index, source in
+                        HStack {
+                            Picker("Bar \(index + 1)", selection: Binding(
+                                get: { source },
+                                set: { model.setBarSource($0, at: index) })) {
+                                ForEach(model.menuBarSourceOptions, id: \.0) { option in
+                                    Text(option.1).tag(option.0)
+                                }
+                            }
+                            if model.menuBarBarSources.count > 1 {
+                                Button(role: .destructive) { model.removeBar(at: index) } label: { Image(systemName: "minus.circle") }
+                                    .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    if model.menuBarBarSources.count < AppModel.maxBars {
+                        Button("Add bar") { model.addBar() }
+                    }
+                    Text("Each bar fills bottom-up with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if model.menuBarDisplayStyle == .icon, model.menuBarSource == .worst {
+                Section {
+                    ForEach(model.menuBarCandidates, id: \.key) { candidate in
+                        Toggle(candidate.label, isOn: Binding(
+                            get: { !model.menuBarExcluded.contains(candidate.key) },
+                            set: { on in if on { model.menuBarExcluded.remove(candidate.key) } else { model.menuBarExcluded.insert(candidate.key) } }))
+                    }
+                } header: {
+                    Text("Counted in “Highest usage”")
+                } footer: {
+                    Text("Untick a window to leave it out of the menu bar number. New windows count by default.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var notifications: some View {
+        pane {
+            Section("Notifications") {
+                Picker("Notify at", selection: $model.warnAtPercent) {
+                    Text("Never").tag(101)
+                    Text("70%").tag(70)
+                    Text("80%").tag(80)
+                    Text("90%").tag(90)
+                }
+                Toggle("Notify when a window resets", isOn: $model.notifyOnReset)
+                    .disabled(model.warnAtPercent > 100)
+                Text("One alert per window when it crosses the threshold, with a “Snooze 1 hour” action. Reset alerts fire when a nearly used-up window is available again.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Extra usage") {
+                Toggle("Alert when paid extra usage grows", isOn: $model.notifyExtraUsage)
+                Text("Two cases: extra usage grows while your limits are not exhausted (a model outside your seat, e.g. Fable on a Standard seat, is billed separately), and extra usage starts after a window hit 100%. At most once per hour per account.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Button("Send test notifications") { model.sendTestNotifications() }
+                Text("Delivers one sample of each kind so you can see the wording, the sound and the Snooze action. If nothing appears, allow QuotaVadis in System Settings ▸ Notifications.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var syncAndWidgets: some View {
+        pane {
+            Section("iCloud") {
+                Toggle("Sync to iCloud", isOn: $model.syncEnabled)
+                HStack {
+                    Button(model.syncEnabled ? "Sync now" : "Retry removal") { Task { await model.publishToCloud() } }
+                        .disabled(model.isSyncing)
+                    if model.isSyncing { ProgressView().controlSize(.small) }
+                    Spacer()
+                    if let attempt = model.lastSyncAttempt {
+                        Text("Last attempt \(attempt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                Text(SyncPrivacy.summary).font(.caption).foregroundStyle(.secondary)
+                Text(syncDescription).font(.caption).foregroundStyle(model.lastSyncError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+            }
+            // Widgets read an App Group file the app writes after every refresh. When that write fails the
+            // widgets simply stay empty, and until now nothing on the Mac said so — only the iOS app did.
+            Section("Widgets") {
+                if let error = model.widgetHandoffError {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                } else if let written = model.widgetHandoffWrittenAt {
+                    Text("Desktop widgets updated \(written.formatted(.relative(presentation: .named))).")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Nothing written for the widgets yet. Refresh once and come back.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Refresh widgets now") { model.refreshWidgetsNow() }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var updates: some View {
+        pane {
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
+                HStack {
+                    Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
+                    Spacer()
+                    if let date = updater.lastCheck {
+                        Text("Last checked \(date.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var cost: some View {
+        pane {
+            Section("Cost estimates") {
+                Toggle("Price Codex Fast mode at 2x", isOn: $model.fastModeAt2x)
+                Text("Costs are estimates at API list prices from local logs (Cursor: from its dashboard). Subscriptions are not billed per token.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// A grouped, scrolling settings pane.
@@ -266,6 +382,25 @@ struct SettingsView: View {
         Form { content() }
             .formStyle(.grouped)
             .scrollContentBackground(.automatic)
+    }
+}
+
+/// Live preview of the menu bar item with the current style, drawn from the same model values.
+private struct MenuBarPreview: View {
+    let model: AppModel
+
+    var body: some View {
+        HStack {
+            Spacer()
+            MenuBarLabel(model: model)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(.bar, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.separator))
+            Spacer()
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Menu bar preview")
     }
 }
 
@@ -280,64 +415,24 @@ struct ProviderToggleRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Toggle(provider.displayName, isOn: isOn)
-            if let status = model.credentialStatuses[provider] {
-                Text(status.summary).font(.caption)
-                    .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
-                    .lineLimit(2).truncationMode(.middle)
-            }
-        }
-    }
-}
-
-/// QuotaVadis's own Claude sign-in: open the authorization page, paste back the code it shows.
-/// Anthropic has no redirect registered for this app, so the code is copied by hand — the same callback page
-/// the Claude Code CLI uses for its own login.
-struct ClaudeSignInView: View {
-    @Bindable var model: AppModel
-    @Binding var isPresented: Bool
-    @State private var paste = ""
-    @State private var problem: String?
-    @State private var working = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Sign in to Claude").font(.headline)
-            Text("QuotaVadis gets its own login, kept in its own Keychain item. macOS stops asking for permission, because nothing here reads an item another app owns.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-
-            step(1, "Open the Claude authorization page and approve the request.")
-            Button("Sign in to Claude…") { model.beginClaudeSignIn() }
-
-            step(2, "Claude shows a code when you approve. Paste it here.")
-            TextField("code#state", text: $paste).textFieldStyle(.roundedBorder)
-            if let problem {
-                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { isPresented = false }
-                Button("Done") {
-                    working = true
-                    Task {
-                        problem = await model.completeClaudeSignIn(paste: paste)
-                        working = false
-                        if problem == nil { isPresented = false }
-                    }
+            Toggle(isOn: isOn) {
+                HStack(spacing: 8) {
+                    ProviderMark(provider: provider, size: 20)
+                    Text(provider.displayName)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(paste.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working)
             }
-        }
-        .padding(16)
-        .frame(width: 380)
-    }
-
-    private func step(_ number: Int, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(number).").font(.caption.bold()).foregroundStyle(.secondary)
-            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
+            if let status = model.credentialStatuses[provider] {
+                if provider == .claude, status.problem != nil, model.claudeConnection == .notConnected, model.claudeSource == .automatic {
+                    // Without an own login the probe reports on Claude Code's item. Telling people to "choose
+                    // Always Allow" here would undo the point of the Connect card above it.
+                    Text("No QuotaVadis login yet — use Connect above. Claude Code’s login: \(status.problem ?? "")")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                } else {
+                    Text(status.summary).font(.caption)
+                        .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                        .lineLimit(2).truncationMode(.middle)
+                }
+            }
         }
     }
 }

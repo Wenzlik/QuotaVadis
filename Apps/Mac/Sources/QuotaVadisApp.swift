@@ -5,31 +5,33 @@ import QuotaCore
 struct QuotaVadisApp: App {
     @State private var model = AppModel()
     @State private var updater = Updater()
-    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra {
             MenuPanel(model: model)
-                .onAppear {
-                    if !model.hasOnboarded {
-                        openWindow(id: "welcome")
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                }
         } label: {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
 
-        Window("Welcome", id: "welcome") {
+        Window("Welcome to QuotaVadis", id: "welcome") {
             WelcomeView(model: model)
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
 
+        // Keyed by instance id: one window per provider account, reopened in place rather than duplicated.
+        WindowGroup("Usage details", id: "dashboard", for: String.self) { $instanceID in
+            if let instanceID {
+                ProviderDashboardView(model: model, instanceID: instanceID)
+            }
+        }
+        .defaultSize(width: 640, height: 720)
+
         Settings {
             SettingsView(model: model, updater: updater)
         }
+        .windowResizability(.contentMinSize)
 
         Window("About QuotaVadis", id: "about") {
             AboutView(updater: updater)
@@ -43,6 +45,9 @@ struct QuotaVadisApp: App {
 /// or 1–4 CodexBar/Headroom-style filled bars.
 struct MenuBarLabel: View {
     let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    /// Per launch: the label is the one view that exists from startup, so it presents the welcome window once.
+    @State private var presentedWelcome = false
 
     private var isBars: Bool { model.menuBarDisplayStyle == .bars }
     private var isStale: Bool { isBars ? model.menuBarBarIsStale : model.menuBarIsStale }
@@ -71,6 +76,11 @@ struct MenuBarLabel: View {
         }
         .accessibilityLabel(accessibilityText)
         .help(accessibilityText)
+        .task {
+            guard !model.hasOnboarded, !presentedWelcome else { return }
+            presentedWelcome = true
+            bringToFront { openWindow(id: "welcome") }
+        }
     }
 
 }

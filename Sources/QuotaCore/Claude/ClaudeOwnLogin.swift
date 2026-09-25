@@ -47,17 +47,44 @@ public enum ClaudeOwnLogin {
         return Attempt(url: components.url!, verifier: verifier, state: state)
     }
 
-    /// Exchanges what the user pasted for tokens and stores them. The callback page hands out `code#state`;
+    /// Why an explicit sign-in did not end connected. Messages are shown as-is under the paste field.
+    public enum LoginError: Error, LocalizedError, Equatable, Sendable {
+        case emptyCode
+        case codeMismatch
+        case rejected
+        case exchange(String)
+        case keychainSaveFailed
+
+        public var errorDescription: String? {
+            switch self {
+            case .emptyCode: "Paste the code Claude showed you."
+            case .codeMismatch: "That code belongs to a different sign-in. Choose Start over and try again."
+            case .rejected: "Claude did not accept that code. Codes work once and expire quickly — choose Start over."
+            case .exchange(let why): "Could not reach Claude: \(why)"
+            case .keychainSaveFailed: "Signed in, but the login could not be saved to the Keychain. Unlock the Mac's Keychain and try again."
+            }
+        }
+    }
+
+    /// Splits what the user pasted into the code and state to send. The callback page hands out `code#state`;
     /// people paste it with either half missing or with the whole URL around it, so all three are accepted.
-    public static func complete(paste: String, attempt: Attempt) async throws {
+    /// A bare code carries no state of its own and is sent with this attempt's.
+    static func parse(paste: String, attempt: Attempt) throws(LoginError) -> (code: String, state: String) {
         let trimmed = paste.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ProviderError.notLoggedIn }
+        guard !trimmed.isEmpty else { throw .emptyCode }
         let raw = URLComponents(string: trimmed)?.queryItems?.first { $0.name == "code" }?.value ?? trimmed
         let parts = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
         let code = String(parts[0])
         let state = parts.count > 1 ? String(parts[1]) : attempt.state
-        guard !code.isEmpty, state == attempt.state else { throw ProviderError.decoding("that code does not match this sign-in — start again") }
+        guard !code.isEmpty else { throw .emptyCode }
+        guard state == attempt.state else { throw .codeMismatch }
+        return (code, state)
+    }
 
+    /// Trades the pasted code for tokens. Stores nothing: the caller decides whether the attempt is still
+    /// current before `store` replaces whatever login is there now.
+    static func exchange(paste: String, attempt: Attempt) async throws -> ClaudeCredentials {
+        let (code, state) = try parse(paste: paste, attempt: attempt)
         var request = URLRequest(url: ClaudeTokenRefresher.endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
@@ -72,23 +99,54 @@ public enum ClaudeOwnLogin {
             "code_verifier": attempt.verifier,
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await HTTP.session.data(for: request)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await HTTP.session.data(for: request) }
+        catch { throw LoginError.exchange(error.localizedDescription) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw status == 400 || status == 401 ? ProviderError.unauthorized : ProviderError.http(status) }
+        guard status == 200 else { throw status == 400 || status == 401 ? LoginError.rejected : LoginError.exchange("HTTP \(status)") }
         let token = try HTTP.decode(ClaudeTokenRefresher.TokenResponse.self, from: data)
-        ClaudeTokenStore.save(ClaudeCredentials(accessToken: token.accessToken, refreshToken: token.refreshToken,
-                                                expiresAt: Date(timeIntervalSinceNow: token.expiresIn), subscriptionType: nil),
-                              account: account, replacing: true)
+        return ClaudeCredentials(accessToken: token.accessToken, refreshToken: token.refreshToken,
+                                 expiresAt: Date(timeIntervalSinceNow: token.expiresIn), subscriptionType: nil)
     }
 
-    public static var isSignedIn: Bool { ClaudeTokenStore.load(account: account) != nil }
+    /// Replaces the stored login with a fresh one. The user just signed in, so the write may show the
+    /// Keychain's own UI (a locked login keychain); a write that still fails is reported, never swallowed —
+    /// "connected" is only true once the login is really on disk.
+    static func store(_ creds: ClaudeCredentials) throws(LoginError) {
+        #if os(macOS)
+        let saved = ProviderInteractionContext.allowingInteraction { ClaudeTokenStore.save(creds, account: account, replacing: true) }
+        guard saved else { throw .keychainSaveFailed }
+        #else
+        throw .keychainSaveFailed
+        #endif
+    }
+
+    /// Exchange and store in one go, for callers without a UI attempt to guard (none in the app itself).
+    public static func complete(paste: String, attempt: Attempt) async throws {
+        try store(try await exchange(paste: paste, attempt: attempt))
+    }
+
+    /// Whether a QuotaVadis login is stored, from the item's attributes alone: never reads the secret, so it
+    /// cannot prompt and it stays true while the Keychain is locked or the ACL needs a fresh grant.
+    public static var isSignedIn: Bool {
+        #if os(macOS)
+        if case .notFound = KeychainAccessPreflight.checkGenericPassword(service: ClaudeTokenStore.service, account: account) { return false }
+        return true
+        #else
+        return false
+        #endif
+    }
 
     public static func signOut() { ClaudeTokenStore.delete(account: account) }
 
     /// The credentials to use when this login exists, refreshing them first if they are about to expire.
     /// nil means no own login is set up, and the caller falls back to Claude Code's item.
+    /// A login that exists but cannot be read right now is an error, not a reason to go borrow Claude Code's.
     static func credentials() async throws -> ClaudeCredentials? {
-        guard let stored = ClaudeTokenStore.load(account: account) else { return nil }
+        guard let stored = ClaudeTokenStore.load(account: account) else {
+            guard isSignedIn else { return nil }
+            throw ProviderError.keychainDenied
+        }
         guard let expiry = stored.expiresAt, expiry > .now.addingTimeInterval(60) else {
             return try await ClaudeTokenRefresher.refresh(service: account, using: stored)
         }

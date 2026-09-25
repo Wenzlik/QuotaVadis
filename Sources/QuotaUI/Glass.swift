@@ -1,11 +1,18 @@
 import SwiftUI
 
 /// Liquid Glass on macOS 26 / iOS 26, translucent material before that. One place to keep the look consistent.
+/// With Reduce Transparency on, an opaque grouped background instead.
 public struct GlassCard: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     public func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(macOS 26.0, iOS 26.0, *) {
+        if reduceTransparency {
+            content
+                .background(opaqueCardBackground, in: shape)
+                .overlay(shape.strokeBorder(.primary.opacity(0.12)))
+        } else if #available(macOS 26.0, iOS 26.0, *) {
             content.glassEffect(.regular, in: shape)
         } else {
             content
@@ -13,6 +20,14 @@ public struct GlassCard: ViewModifier {
                 .overlay(shape.strokeBorder(.white.opacity(0.08)))
         }
     }
+}
+
+private var opaqueCardBackground: Color {
+    #if os(macOS)
+    Color(nsColor: .controlBackgroundColor)
+    #else
+    Color(uiColor: .secondarySystemGroupedBackground)
+    #endif
 }
 
 public extension View {
@@ -56,10 +71,13 @@ public struct GlowBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.primary.opacity(0.08))
-                Capsule()
-                    .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
-                    .frame(width: max(height, geo.size.width * min(1, max(0, percent / 100))))
-                    .shadow(color: tint.opacity(0.22), radius: 2, y: 1)
+                // Exactly zero is an empty track; anything above keeps a visible nub so 0.4 % is not "nothing".
+                if percent > 0 {
+                    Capsule()
+                        .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(height, geo.size.width * min(1, percent / 100)))
+                        .shadow(color: tint.opacity(0.22), radius: 2, y: 1)
+                }
             }
         }
         .frame(height: height)

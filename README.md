@@ -20,16 +20,21 @@ You do not need the DMG again after the first install.
 - One row per tool: session / weekly / monthly windows as bars, reset countdowns, plan and seat.
 - Extra usage and credits against their caps, Codex limit resets available.
 - Expand a row for the full picture: per-model windows, account, cost and tokens for today and
-  the last 30 days, a daily chart, breakdown by model and by project.
+  the last 30 days, a dated daily chart, token mix, breakdown by model and by project.
+- "View details" opens a resizable dashboard window per account with larger charts.
 - Menu bar number is yours to choose: highest usage, or one specific window.
 
 ## Where the data comes from
 
-QuotaVadis never asks you to log in. It reuses the sessions the tools already keep on your Mac:
+On first launch a short welcome picks the tools to track and connects Claude; nothing is read before you
+finish it. Claude uses a login of QuotaVadis's own: "Continue in browser", approve, then paste the code
+Claude shows back into the app (there is no automatic return — Anthropic has no redirect for this app). The
+login lives in a Keychain item only QuotaVadis owns, so macOS stops asking for Keychain permission.
+Reconnect or sign out any time in Settings ▸ Accounts. The other tools reuse the sessions they already keep:
 
 | Tool | Credentials | Usage | Cost |
 |---|---|---|---|
-| Claude Code | Keychain item `Claude Code-credentials` | `api.anthropic.com/api/oauth/usage` + `/profile` | local `~/.claude/projects/**/*.jsonl` |
+| Claude | QuotaVadis's own login (or, under advanced sources, Claude Code's Keychain item `Claude Code-credentials`) | `api.anthropic.com/api/oauth/usage` + `/profile` | local `~/.claude/projects/**/*.jsonl` |
 | Codex | `~/.codex/auth.json` | `chatgpt.com/backend-api/wham/usage` | local `~/.codex/sessions/**/*.jsonl` |
 | Cursor | Cursor.app `state.vscdb` | `cursor.com/api/usage-summary` (+ Grok Bot) | `cursor.com/api/dashboard/get-filtered-usage-events` |
 
@@ -53,7 +58,7 @@ quotavadis cost             30-day cost & token estimates
 
 Claude limits can also come from a claude.ai web session: the Claude desktop app or Chrome are read automatically
 (decrypting their cookie store with the app's Safe Storage key from your Keychain), or paste the `sessionKey` cookie in
-Settings ▸ Claude. Every organization with limits shows up as its own row.
+Settings ▸ Accounts ▸ advanced Claude sources. Every organization with limits shows up as its own row.
 
 ## Build
 

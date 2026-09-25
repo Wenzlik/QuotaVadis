@@ -82,7 +82,7 @@ final class AppModel {
             }
             updateWidgets()
             schedulePublish()
-            Task { await refresh() }
+            if !applyingOnboarding { Task { await refresh() } }
         }
     }
     /// Seconds between limit refreshes for the fixed cadence; 0 = adaptive (2–30 min by interaction and activity).
@@ -165,37 +165,45 @@ final class AppModel {
 
     // MARK: - QuotaVadis's own Claude sign-in
     // The one Claude source that never reads another app's Keychain item, and so the one that never raises the
-    // Allow/Deny dialog. `claudeSignInAttempt` holds the PKCE verifier between opening the browser and the paste.
+    // Allow/Deny dialog. One coordinator owns the attempt so the welcome window and Settings show the same one.
 
     private(set) var claudeOwnLoginActive = ClaudeOwnLogin.isSignedIn
-    private var claudeSignInAttempt: ClaudeOwnLogin.Attempt?
+    let claudeSignIn = ClaudeSignInCoordinator { NSWorkspace.shared.open($0) }
 
-    func beginClaudeSignIn() {
-        let attempt = ClaudeOwnLogin.begin()
-        claudeSignInAttempt = attempt
-        NSWorkspace.shared.open(attempt.url)
+    enum ClaudeConnection { case notConnected, connected, reconnectRequired }
+
+    /// "Connected" is a stored login; a login the API has started rejecting asks for Reconnect instead, while
+    /// the stored item stays in place until a new sign-in actually replaces it.
+    var claudeConnection: ClaudeConnection {
+        guard claudeOwnLoginActive else { return .notConnected }
+        if case .failed(let error, _) = states["claude"], error == .unauthorized || error == .tokenExpired { return .reconnectRequired }
+        return .connected
     }
 
-    /// Returns nil on success, otherwise the message to show under the paste field.
-    func completeClaudeSignIn(paste: String) async -> String? {
-        guard let attempt = claudeSignInAttempt else { return "Click “Sign in to Claude…” first." }
-        do {
-            try await ClaudeOwnLogin.complete(paste: paste, attempt: attempt)
-            claudeSignInAttempt = nil
-            claudeOwnLoginActive = true
-            ClaudeCredentials.invalidate()
-            await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() }
-            return nil
-        } catch {
-            return (error as? ProviderError)?.errorDescription ?? error.localizedDescription
-        }
+    /// Existing installs keep whatever source they had; this is the one-time nudge towards an own login.
+    var claudeConnectTipDismissed: Bool {
+        didSet { defaults.set(claudeConnectTipDismissed, forKey: "claudeConnectTipDismissed") }
+    }
+    var showClaudeConnectTip: Bool {
+        hasOnboarded && !claudeOwnLoginActive && !claudeConnectTipDismissed && enabledProviders.contains(.claude)
     }
 
+    /// The new login is in the Keychain. Pick it up: an explicit web-only choice moves to automatic (own login
+    /// first), and the fetchers are rebuilt so the new account replaces whatever was shown before.
+    private func claudeDidConnect() {
+        claudeOwnLoginActive = true
+        ClaudeCredentials.invalidate()
+        if claudeSource == .web { claudeSource = .automatic } else { rebuildFetchers() }
+    }
+
+    /// Stops using the QuotaVadis login without reaching for another app's: no user-initiated refresh follows,
+    /// so nothing here can surface Claude Code's Keychain prompt. Connect again from the same card.
     func signOutClaudeOwnLogin() {
+        claudeSignIn.cancel()
         ClaudeOwnLogin.signOut()
         claudeOwnLoginActive = false
         ClaudeCredentials.invalidate()
-        Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
+        rebuildFetchers(userRefresh: false)
     }
 
     /// Organizations already shown through Claude Code logins; the web path skips them in automatic mode.
@@ -203,12 +211,15 @@ final class AppModel {
         Set(states.filter { $0.key == "claude" || $0.key.hasPrefix("claude:") }.compactMap { $0.value.snapshot?.organization })
     }
 
-    private func rebuildFetchers() {
+    /// Every caller changes which Claude account(s) are read, so the service drops what it holds for Claude.
+    private func rebuildFetchers(userRefresh: Bool = true) {
+        let fetchers = UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource,
+                                                    coveredOrganizations: coveredOrganizations)
+        states = states.filter { key, _ in !key.hasPrefix("claude") }
+        pendingWebStates.removeAll()
         Task {
-            await service.setFetchers(UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource,
-                                                                   coveredOrganizations: coveredOrganizations))
-            states = states.filter { key, _ in !key.hasPrefix("claude") }
-            await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() }
+            await service.setFetchers(fetchers, invalidating: [.claude])
+            if userRefresh, !applyingOnboarding { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
         }
     }
 
@@ -281,20 +292,45 @@ final class AppModel {
             extraClaudeServices: defaults.stringArray(forKey: "extraClaudeServices") ?? [],
             claudeSource: UsageService.ClaudeSource(rawValue: defaults.string(forKey: "claudeSource") ?? "") ?? .automatic))
         hasOnboarded = defaults.bool(forKey: "hasOnboarded")
+        claudeConnectTipDismissed = defaults.bool(forKey: "claudeConnectTipDismissed")
         observeScreenLock()
         scheduleRefresh()
         if !syncEnabled && defaults.bool(forKey: "pendingCloudRemoval") { requestSync() }
-        // First launch waits for the welcome window so the Keychain prompt is explained before it appears.
+        // First launch reads nothing until the welcome window is finished (see `refresh`).
         if hasOnboarded { Task { await refresh() } }
+        claudeSignIn.onConnected = { [weak self] in self?.claudeDidConnect() }
     }
 
+    /// False until the welcome flow is finished. Until then nothing reads a provider, scans logs or publishes
+    /// to iCloud — panel, timers, unlock and Settings callbacks all go through `refresh()`/`refreshCosts()`.
     private(set) var hasOnboarded: Bool
+    /// Settings sidebar selection, so the panel can open Settings straight at Accounts.
+    var settingsSection: SettingsSection = .general
 
-    func completeOnboarding() {
+    /// The welcome window's draft choices, applied in one go.
+    /// The setters' own refresh side effects are held back so the one refresh that follows runs under the
+    /// user's click (the only kind allowed to show a Keychain dialog) and with the final fetchers.
+    func completeOnboarding(providers: Set<ProviderID>, claudeSource source: UsageService.ClaudeSource, sync: Bool) {
         hasOnboarded = true
         defaults.set(true, forKey: "hasOnboarded")
-        Task { await ProviderInteractionContext.$userInitiated.withValue(true) { await refresh() } }
+        applyingOnboarding = true
+        if enabledProviders != providers { enabledProviders = providers }
+        if claudeSource != source { claudeSource = source }
+        if syncEnabled != sync { syncEnabled = sync }
+        // Choosing Claude Code's login in the welcome flow was informed; the panel's nudge is for older installs.
+        if source == .claudeCode { claudeConnectTipDismissed = true }
+        let fetchers = UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource)
+        Task {
+            await service.setFetchers(fetchers, invalidating: [.claude])
+            applyingOnboarding = false
+            await ProviderInteractionContext.$userInitiated.withValue(true) {
+                await refresh()
+                await refreshCosts()
+            }
+        }
     }
+
+    private var applyingOnboarding = false
 
     // MARK: - Command line tool
 
@@ -338,7 +374,7 @@ final class AppModel {
         for provider in ProviderID.allCases where enabledProviders.contains(provider) {
             var ids: [String] = [provider.rawValue]
             if provider == .claude {
-                let useClaudeCode = claudeSource == .claudeCode || (claudeSource == .automatic && claudeCodeAvailable)
+                let useClaudeCode = claudeSource == .claudeCode || (claudeSource == .automatic && (claudeOwnLoginActive || claudeCodeAvailable))
                 ids = useClaudeCode ? ["claude"] + extraClaudeServices.map { "claude:" + Self.suffix($0) } : []
                 let web = states.keys.filter { $0.hasPrefix("claude-web:") }.sorted()
                 ids += web
@@ -354,7 +390,7 @@ final class AppModel {
     /// which is reserved for Settings since it can touch the Keychain for real data.
     private func isDetected(_ provider: ProviderID) -> Bool {
         switch provider {
-        case .claude: return claudeCodeAvailable || claudeWebAvailable
+        case .claude: return claudeOwnLoginActive || claudeCodeAvailable || claudeWebAvailable
         case .codex: return CodexUsageFetcher().isAvailable()
         case .cursor: return CursorUsageFetcher().isAvailable()
         case .gemini: return AntigravityUsageFetcher().isAvailable()
@@ -535,18 +571,21 @@ final class AppModel {
     /// com.apple.screenIsLocked/Unlocked fire for both the screensaver lock and the login window after sleep.
     private func observeScreenLock() {
         let dnc = DistributedNotificationCenter.default()
+        // queue: .main delivers on the main thread; assumeIsolated tells the compiler what the queue guarantees.
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
-            self?.isScreenLocked = true
+            MainActor.assumeIsolated { self?.isScreenLocked = true }
         }
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            guard let self, self.isScreenLocked else { return }
-            self.isScreenLocked = false
-            Task { @MainActor in await self.refresh() }
+            MainActor.assumeIsolated {
+                guard let self, self.isScreenLocked else { return }
+                self.isScreenLocked = false
+                Task { @MainActor in await self.refresh() }
+            }
         }
     }
 
     func refresh() async {
-        guard !isScreenLocked else { return }
+        guard hasOnboarded, !isScreenLocked else { return }
         guard !isRefreshing else { refreshAgain = true; return }
         isRefreshing = true
         defer {
@@ -594,7 +633,7 @@ final class AppModel {
     }
 
     func refreshCosts() async {
-        guard !isRefreshingCosts else { return }
+        guard hasOnboarded, !isRefreshingCosts else { return }
         isRefreshingCosts = true
         defer { isRefreshingCosts = false }
         let result = await costService.refresh(enabled: enabledProviders, fastModeAt2x: fastModeAt2x)
@@ -607,6 +646,7 @@ final class AppModel {
 
     /// Coalesces the usage and cost publishes that land a few seconds apart into one record write.
     private func schedulePublish() {
+        guard hasOnboarded else { return }
         publishTask?.cancel()
         publishTask = Task {
             try? await Task.sleep(for: .seconds(3))
@@ -666,6 +706,7 @@ final class AppModel {
                 lastSyncPush = nil
                 lastSyncError = nil
             } else {
+                guard hasOnboarded else { return }
                 syncStatus = try await withTimeout(seconds: 20) { await self.cloud.accountStatus() }
                 guard generation == syncGeneration, syncEnabled else { return }
                 guard syncStatus == .available else { throw ProviderError.network("iCloud not available: \(syncStatus)") }
@@ -709,6 +750,7 @@ final class AppModel {
 
     /// The panel was opened: remember it for the adaptive policy and refresh if the numbers are older than 30 s.
     func panelOpened() {
+        guard hasOnboarded else { return }
         lastPanelOpen = .now
         if isAdaptiveRefresh { scheduleRefresh() }
         if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { refreshNow() }

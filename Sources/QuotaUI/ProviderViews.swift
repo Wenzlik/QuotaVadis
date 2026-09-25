@@ -2,7 +2,19 @@ import Charts
 import SwiftUI
 import QuotaCore
 
-/// Collapsed: name, plan and the main bars. Expanded: every window, credits, resets, account, freshness.
+/// A contextual button on a provider card (Connect, Reconnect), owned by the app, not by QuotaUI.
+public struct ProviderRowAction {
+    public let title: String
+    public let systemImage: String
+    public let isWarning: Bool
+    public let perform: () -> Void
+    public init(title: String, systemImage: String, isWarning: Bool = false, perform: @escaping () -> Void) {
+        self.title = title; self.systemImage = systemImage; self.isWarning = isWarning; self.perform = perform
+    }
+}
+
+/// Collapsed: coloured mark, name, plan and the main bars. Expanded: every window, credits, resets, account,
+/// freshness and a compact cost section. Provider colour marks identity only; bar colours keep meaning usage.
 public struct ProviderRow: View {
     let provider: ProviderID
     let title: String
@@ -10,20 +22,25 @@ public struct ProviderRow: View {
     let cost: CostReport?
     let isExpanded: Bool
     let toggle: () -> Void
+    let action: ProviderRowAction?
+    let showDetails: (() -> Void)?
 
-    public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool, toggle: @escaping () -> Void) {
+    public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool,
+                action: ProviderRowAction? = nil, showDetails: (() -> Void)? = nil, toggle: @escaping () -> Void) {
         self.provider = provider; self.title = title ?? provider.displayName; self.state = state; self.cost = cost
-        self.isExpanded = isExpanded; self.toggle = toggle
+        self.isExpanded = isExpanded; self.toggle = toggle; self.action = action; self.showDetails = showDetails
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             Button(action: toggle) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title).font(.headline).lineLimit(1)
-                    if let snapshot = state.snapshot {
-                        Text([snapshot.plan, isExpanded ? snapshot.seat : nil].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(alignment: .center, spacing: 9) {
+                    ProviderMark(provider: provider, size: 26)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(title).font(.headline).lineLimit(1)
+                        if let snapshot = state.snapshot, let plan = [snapshot.plan, isExpanded ? snapshot.seat : nil].compactMap({ $0 }).nonEmptyJoined {
+                            Text(plan).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -40,13 +57,18 @@ public struct ProviderRow: View {
             if status.freshness() != .fresh, state.snapshot != nil || status.errorCode != .unavailable {
                 MeasurementStatusView(status: status)
             }
-            if case .failed(let error, _) = state {
+            if case .failed(let error, _) = state, action == nil {
                 Text(ProviderFailureCode(error).nextStep).font(.caption).foregroundStyle(.orange)
+            }
+            if let action {
+                Button(action: action.perform) { Label(action.title, systemImage: action.systemImage) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .tint(action.isWarning ? .orange : provider.accent)
             }
 
             if let snapshot = state.snapshot {
                 if let notice = snapshot.modelLimitNotice {
-                    Text(notice).font(.caption).foregroundStyle(.orange)
+                    Label(notice, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
                 ForEach(mainWindows(snapshot)) { window in
                     UsageBar(window: window)
@@ -79,19 +101,27 @@ public struct ProviderRow: View {
                         DetailLine(title: "Last error", value: error.localizedDescription).foregroundStyle(.orange)
                     }
                     DetailLine(title: "Updated", value: snapshot.fetchedAt.formatted(.relative(presentation: .named)))
-                    HStack(spacing: 14) {
-                        Link(destination: provider.dashboardURL) { Label("Dashboard", systemImage: "chart.bar.xaxis") }
-                        Link(destination: provider.statusURL) { Label("Status", systemImage: "waveform.path.ecg") }
+                    if let cost {
+                        Divider().padding(.vertical, 2)
+                        // The glance: figures and the daily chart. Models, projects and the token mix are a
+                        // window of their own, one click below.
+                        CostSection(report: cost, style: .glance)
+                    }
+                    HStack(spacing: 12) {
+                        if let showDetails {
+                            Button(action: showDetails) { Label(cost == nil ? "View details" : "Models & projects", systemImage: "chart.bar.xaxis") }
+                                .buttonStyle(.bordered).controlSize(.small).tint(provider.accent)
+                                .help("Open a window with every limit, the daily history and the model and project breakdowns")
+                        }
                         Spacer()
+                        Link(destination: provider.dashboardURL) { Label("Website", systemImage: "arrow.up.right.square") }
+                            .help("Open \(provider.displayName)’s usage page in the browser")
+                        Link(destination: provider.statusURL) { Label("Status", systemImage: "waveform.path.ecg") }
                     }
                     .font(.caption)
                     .padding(.top, 2)
-                    if let cost {
-                        Divider().padding(.vertical, 2)
-                        CostSection(report: cost)
-                    }
                 }
-            } else if case .unavailable = state {
+            } else if case .unavailable = state, action == nil {
                 Text("Open \(provider.displayName) on this Mac and sign in, then use Refresh above.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -104,120 +134,8 @@ public struct ProviderRow: View {
     }
 }
 
-/// Today / 30-day spend and tokens, a daily bar chart, top model. Same numbers `quotactl --cost` prints.
-public struct CostSection: View {
-    let report: CostReport
-
-    public init(report: CostReport) { self.report = report }
-    @AppStorage("costChartMetric") private var metric: ChartMetric = .cost
-
-    enum ChartMetric: String, CaseIterable { case cost, tokens }
-
-    public var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            content(now: context.date)
-        }
-    }
-
-    private func content(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                GridRow {
-                    stat("Today", report.day(at: now).map { money($0.costUSD) } ?? "Unavailable")
-                    stat("30d cost", money(report.totalCostUSD))
-                }
-                GridRow {
-                    stat("Today tokens", report.day(at: now).map { tokens($0.tokens.total) } ?? "Unavailable")
-                    stat("30d tokens", tokens(report.totalTokens))
-                }
-            }
-            HStack {
-                Text("Last 30 days").font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                Picker("", selection: $metric) {
-                    Text("Cost").tag(ChartMetric.cost)
-                    Text("Tokens").tag(ChartMetric.tokens)
-                }
-                .pickerStyle(.segmented).controlSize(.mini).frame(width: 110).labelsHidden()
-            }
-            Chart(report.days) { day in
-                BarMark(x: .value("Day", day.id), y: .value(metric == .cost ? "USD" : "Tokens", value(day)))
-                    .foregroundStyle(day.id == report.days.last?.id
-                        ? AnyShapeStyle(LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .bottom, endPoint: .top))
-                        : AnyShapeStyle(Color.secondary.opacity(0.35)))
-                    .cornerRadius(3)
-            }
-            .chartXAxis(.hidden)
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { v in
-                    AxisValueLabel { if let d = v.as(Double.self) { Text(axisLabel(d)).font(.caption2) } }
-                }
-            }
-            .frame(height: 56)
-
-            breakdown("By model", report.byModel)
-            if !report.byProject.isEmpty { breakdown("By project", report.byProject) }
-            Text(report.source).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// Top five buckets as thin proportional bars; the rest folded into "Other".
-    private func breakdown(_ title: String, _ buckets: [CostBucket]) -> some View {
-        let shown = Array(buckets.prefix(5))
-        let rest = buckets.dropFirst(5)
-        let others = rest.isEmpty ? nil : CostBucket(id: "Other (\(rest.count))",
-                                                     tokens: rest.reduce(TokenCounts()) { var t = $0; t += $1.tokens; return t },
-                                                     costUSD: rest.reduce(0) { $0 + $1.costUSD }, requests: rest.reduce(0) { $0 + $1.requests })
-        let rows = shown + (others.map { [$0] } ?? [])
-        let maxValue = max(rows.map(value).max() ?? 1, 0.0001)
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption2).foregroundStyle(.secondary).padding(.top, 2)
-            ForEach(rows) { b in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(label(b.id)).font(.caption).lineLimit(1).truncationMode(.head).help(b.id)
-                        Spacer()
-                        Text(metric == .cost ? money(b.costUSD) : tokens(b.tokens.total))
-                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                    GeometryReader { geo in
-                        Capsule().fill(LinearGradient(colors: [Color.accentColor.opacity(0.45), Color.accentColor.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(3, geo.size.width * value(b) / maxValue))
-                    }
-                    .frame(height: 4)
-                }
-            }
-        }
-    }
-
-    private func value(_ b: CostBucket) -> Double { metric == .cost ? b.costUSD : Double(b.tokens.total) }
-    private func axisLabel(_ v: Double) -> String { metric == .cost ? money(v, digits: 0) : tokens(Int(v)) }
-
-    /// Project ids are working directories; show the folder name, keep the full path in the tooltip.
-    private func label(_ id: String) -> String {
-        id.hasPrefix("/") ? (id as NSString).lastPathComponent : id
-    }
-
-    private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.callout.weight(.medium).monospacedDigit())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func money(_ v: Double, digits: Int = 2) -> String {
-        v.formatted(.currency(code: "USD").precision(.fractionLength(digits)))
-    }
-
-    private func tokens(_ n: Int) -> String {
-        switch n {
-        case 1_000_000_000...: String(format: "%.1fB", Double(n) / 1e9)
-        case 1_000_000...: String(format: "%.0fM", Double(n) / 1e6)
-        case 1_000...: String(format: "%.0fK", Double(n) / 1e3)
-        default: "\(n)"
-        }
-    }
+private extension Array where Element == String {
+    var nonEmptyJoined: String? { isEmpty ? nil : joined(separator: " · ") }
 }
 
 public struct DetailLine: View {
@@ -275,9 +193,11 @@ struct ResetLabel: View {
     let reset: Date
 
     var body: some View {
+        // Short in the row ("Resets in 2 hr"); the exact time is one hover away.
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            Text(reset <= context.date ? "reset passed" : reset.resetLabel(now: context.date))
+            Text(reset <= context.date ? "Reset passed" : "Resets \(reset.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                .help(reset.resetLabel(now: context.date))
         }
     }
 }
@@ -297,9 +217,11 @@ public struct UsageBar: View {
                 if let reset = window.resetsAt {
                     ResetLabel(reset: reset)
                 }
+                // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(usageTint(window.usedPercent))
+                    .frame(minWidth: 34, alignment: .trailing)
             }
             GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
         }
