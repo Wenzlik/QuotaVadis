@@ -101,22 +101,25 @@ public struct ProviderRow: View {
                         DetailLine(title: "Last error", value: error.localizedDescription).foregroundStyle(.orange)
                     }
                     DetailLine(title: "Updated", value: snapshot.fetchedAt.formatted(.relative(presentation: .named)))
-                    HStack(spacing: 14) {
+                    if let cost {
+                        Divider().padding(.vertical, 2)
+                        // The glance: figures and the daily chart. Models, projects and the token mix are a
+                        // window of their own, one click below.
+                        CostSection(report: cost, style: .glance)
+                    }
+                    HStack(spacing: 12) {
                         if let showDetails {
-                            Button(action: showDetails) { Label("View details", systemImage: "chart.bar.xaxis") }
-                                .buttonStyle(.borderless)
+                            Button(action: showDetails) { Label(cost == nil ? "View details" : "Models & projects", systemImage: "chart.bar.xaxis") }
+                                .buttonStyle(.bordered).controlSize(.small).tint(provider.accent)
+                                .help("Open a window with every limit, the daily history and the model and project breakdowns")
                         }
-                        Link(destination: provider.dashboardURL) { Label("Provider website", systemImage: "arrow.up.right.square") }
+                        Spacer()
+                        Link(destination: provider.dashboardURL) { Label("Website", systemImage: "arrow.up.right.square") }
                             .help("Open \(provider.displayName)’s usage page in the browser")
                         Link(destination: provider.statusURL) { Label("Status", systemImage: "waveform.path.ecg") }
-                        Spacer()
                     }
                     .font(.caption)
                     .padding(.top, 2)
-                    if let cost {
-                        Divider().padding(.vertical, 2)
-                        CostSection(report: cost)
-                    }
                 }
             } else if case .unavailable = state, action == nil {
                 Text("Open \(provider.displayName) on this Mac and sign in, then use Refresh above.")

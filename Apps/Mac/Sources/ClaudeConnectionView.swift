@@ -12,6 +12,7 @@ struct ClaudeConnectionView: View {
     /// Settings shows Sign out next to Reconnect; the welcome window has nothing to sign out of yet.
     var allowsSignOut = true
     @FocusState private var codeFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var flow: ClaudeSignInCoordinator { model.claudeSignIn }
 
@@ -29,7 +30,7 @@ struct ClaudeConnectionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .animation(.snappy(duration: 0.2), value: flow.phase)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: flow.phase)
     }
 
     private var header: some View {
@@ -82,9 +83,11 @@ struct ClaudeConnectionView: View {
 
     private var pasteStep: some View {
         let exchanging = flow.phase == .exchanging
+        // A step is ticked once there is evidence for it: a pasted code means the browser part happened.
+        let hasCode = !flow.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: 10) {
-            StepLine(number: 1, text: "Finish signing in in your browser.", done: true)
-            StepLine(number: 2, text: "Copy the code Claude shows and paste it below.", done: false)
+            StepLine(number: 1, text: "Approve QuotaVadis in the browser tab that just opened.", done: hasCode)
+            StepLine(number: 2, text: "Copy the code Claude shows and paste it below.", done: exchanging)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Authorization code").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 TextField("Paste the code from Claude", text: Binding(get: { flow.code }, set: { flow.code = $0 }))

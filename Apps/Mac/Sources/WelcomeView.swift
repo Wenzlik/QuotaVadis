@@ -8,6 +8,7 @@ import QuotaUI
 struct WelcomeView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Step: Int, CaseIterable { case choose, connect, review }
     private enum ClaudeChoice { case ownLogin, claudeCode, skipped }
@@ -85,6 +86,7 @@ struct WelcomeView: View {
             case .choose:
                 Button("Continue") { go(1) }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
                     .disabled(draftProviders.isEmpty)
             case .connect:
                 if model.claudeConnection == .notConnected && claudeChoice == .ownLogin {
@@ -97,6 +99,7 @@ struct WelcomeView: View {
                 }
                 Button("Continue") { go(1) }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
                     .disabled(model.claudeConnection == .notConnected && claudeChoice == .ownLogin)
             case .review:
                 Button("Open QuotaVadis") { finish() }
@@ -113,7 +116,7 @@ struct WelcomeView: View {
         let next = min(max(0, index + delta), list.count - 1)
         // Coming back to the Claude step undoes "Set up later": the user is looking at Connect again.
         if list[next] == .connect, claudeChoice == .skipped { claudeChoice = .ownLogin }
-        withAnimation(.snappy(duration: 0.2)) { step = list[next] }
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { step = list[next] }
     }
 
     // MARK: - Steps
@@ -134,9 +137,14 @@ struct WelcomeView: View {
                         }
                     }
                     .toggleStyle(.switch)
+                    // A switch toggle sizes to its label; without this each row is centred at its own width.
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
                     .background(provider.accent.opacity(draftProviders.contains(provider) ? 0.08 : 0.02),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(provider.accent.opacity(draftProviders.contains(provider) ? 0.35 : 0.0)))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: draftProviders)
                 }
             }
             Label("Your logins and numbers stay on this Mac. QuotaVadis never asks for passwords or API keys.",

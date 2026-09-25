@@ -2,9 +2,13 @@ import Charts
 import SwiftUI
 import QuotaCore
 
-/// How much room a cost section gets: the menu panel's expanded row, or the dashboard window.
+/// How much room a cost section gets.
+/// - `glance`: the menu panel's expanded card — the four figures and the daily chart, nothing that needs
+///   reading; breakdowns wait in the dashboard window.
+/// - `compact`: a phone-width detail screen (iOS): everything, tightly spaced.
+/// - `dashboard`: a resizable Mac window: everything, with room to breathe.
 public enum CostSectionStyle: Sendable {
-    case compact, dashboard
+    case glance, compact, dashboard
 }
 
 /// Today / 30-day tokens and estimated cost, a dated daily chart, token composition, and model/project
@@ -31,17 +35,19 @@ public struct CostSection: View {
                     .accessibilityLabel("Chart shows cost or tokens")
                 }
                 UsageHistoryChart(report: report, metric: metric, now: context.date,
-                                  height: style == .dashboard ? 200 : 100)
-                TokenCompositionBar(tokens: report.tokenComposition)
-                CostBreakdownView(title: "By model", buckets: report.byModel, metric: metric,
-                                  top: style == .dashboard ? 8 : 5, accent: report.provider.accent)
-                if !report.byProject.isEmpty {
-                    CostBreakdownView(title: "By project", buckets: report.byProject, metric: metric,
-                                      top: style == .dashboard ? 8 : 5, accent: report.provider.accent,
-                                      shareCaption: "share of tracked projects")
+                                  height: style == .dashboard ? 200 : (style == .glance ? 84 : 100))
+                if style != .glance {
+                    TokenCompositionBar(tokens: report.tokenComposition)
+                    CostBreakdownView(title: "By model", buckets: report.byModel, metric: metric,
+                                      top: style == .dashboard ? 8 : 5, accent: report.provider.accent)
+                    if !report.byProject.isEmpty {
+                        CostBreakdownView(title: "By project", buckets: report.byProject, metric: metric,
+                                          top: style == .dashboard ? 8 : 5, accent: report.provider.accent,
+                                          shareCaption: "share of tracked projects")
+                    }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(report.source)
+                    if style != .glance { Text(report.source) }
                     Text("Computed \(report.generatedAt.formatted(.relative(presentation: .named)))")
                 }
                 .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
@@ -124,6 +130,7 @@ public struct UsageHistoryChart: View {
         let accent = report.provider.accent
         let calendar = report.bucketCalendar
         let selectedPoint = selected.flatMap { s in points.first { calendar.isDate($0.date, inSameDayAs: s) } }
+        let isEmpty = !points.contains { $0.bucket.value(metric) > 0 }
         VStack(alignment: .leading, spacing: 4) {
             readout(selectedPoint ?? points.last { $0.bucket.id == todayID } ?? points.last)
             Chart(points) { point in
@@ -132,7 +139,17 @@ public struct UsageHistoryChart: View {
                         ? AnyShapeStyle(LinearGradient(colors: [accent.opacity(0.75), accent], startPoint: .bottom, endPoint: .top))
                         : AnyShapeStyle(accent.opacity(0.6)))
                     .cornerRadius(2)
-                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.4)).lineStyle(StrokeStyle(lineWidth: 0.5))
+                // A concrete colour: a hierarchical style on a mark resolves against the chart's series colour
+                // and paints the baseline bright blue.
+                RuleMark(y: .value("Zero", 0)).foregroundStyle(Color.primary.opacity(0.28)).lineStyle(StrokeStyle(lineWidth: 0.5))
+            }
+            .chartOverlay { _ in
+                // All-zero days: say so, instead of an axis floating over nothing.
+                if isEmpty {
+                    Text("No \(metric == .cost ? "estimated cost" : "tokens") recorded in these \(points.count) days")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
             .chartXSelection(value: $selected)
             .chartXAxis {

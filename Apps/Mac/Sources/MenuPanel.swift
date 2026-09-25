@@ -7,6 +7,7 @@ struct MenuPanel: View {
     @Bindable var model: AppModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -129,7 +130,7 @@ struct MenuPanel: View {
                         isExpanded: model.expanded.contains(instance.id),
                         action: action(for: instance),
                         showDetails: { bringToFront { openWindow(id: "dashboard", value: instance.id) } }) {
-                withAnimation(.snappy(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                     if model.expanded.contains(instance.id) { model.expanded.remove(instance.id) } else { model.expanded.insert(instance.id) }
                 }
             }

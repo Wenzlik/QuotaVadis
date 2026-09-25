@@ -7,6 +7,7 @@ import QuotaUI
 struct ProviderDashboardView: View {
     @Bindable var model: AppModel
     let instanceID: String
+    @Environment(\.openSettings) private var openSettings
 
     private var instance: AppModel.Instance? { model.visibleInstances.first { $0.id == instanceID } }
 
@@ -53,6 +54,14 @@ struct ProviderDashboardView: View {
                     }
                     if case .failed(let error, _) = state {
                         Label(error.localizedDescription, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.orange)
+                    }
+                    // The fix for a rejected Claude login lives in Settings; offer it where the failure is shown.
+                    if instance.id == "claude", model.claudeConnection == .reconnectRequired {
+                        Button {
+                            model.settingsSection = .accounts
+                            bringToFront { openSettings() }
+                        } label: { Label("Reconnect Claude…", systemImage: "arrow.triangle.2.circlepath") }
+                            .buttonStyle(.borderedProminent).tint(.orange)
                     }
                 }
 

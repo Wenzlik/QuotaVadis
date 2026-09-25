@@ -55,10 +55,22 @@ struct SettingsView: View {
             ? "Adaptive: every 2 min right after you open the panel, 5 min while you work with the tools or looked within the hour, 15–30 min when idle, 30 min on Low Power. Opening the panel always refreshes."
             : "Fixed interval. Claude is still read at most every 5 minutes: Anthropic's usage API throttles faster polling."
         if let reason = model.adaptiveReason, let next = model.nextRefreshAt {
-            text += " Now: \(reason.rawValue), next check \(next.formatted(.relative(presentation: .named)))."
+            text += " Now: \(reasonLabel(reason)), next check \(next.formatted(.relative(presentation: .named)))."
         }
         text += " After an HTTP 429 the app backs off and keeps the last values."
         return text
+    }
+
+    /// Plain words for the policy's reason, not its enum case.
+    private func reasonLabel(_ reason: AdaptiveRefreshPolicy.Reason) -> String {
+        switch reason {
+        case .constrained: "Low Power or hot, 30 min"
+        case .recentInteraction: "panel opened just now, 2 min"
+        case .warm: "looked within the hour, 5 min"
+        case .codingActivity: "tools in use, 5 min"
+        case .idle: "idle, 15 min"
+        case .longIdle: "idle for hours, 30 min"
+        }
     }
 
     private var syncDescription: String {
@@ -410,9 +422,16 @@ struct ProviderToggleRow: View {
                 }
             }
             if let status = model.credentialStatuses[provider] {
-                Text(status.summary).font(.caption)
-                    .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
-                    .lineLimit(2).truncationMode(.middle)
+                if provider == .claude, status.problem != nil, model.claudeConnection == .notConnected, model.claudeSource == .automatic {
+                    // Without an own login the probe reports on Claude Code's item. Telling people to "choose
+                    // Always Allow" here would undo the point of the Connect card above it.
+                    Text("No QuotaVadis login yet — use Connect above. Claude Code’s login: \(status.problem ?? "")")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                } else {
+                    Text(status.summary).font(.caption)
+                        .foregroundStyle(status.problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                        .lineLimit(2).truncationMode(.middle)
+                }
             }
         }
     }
