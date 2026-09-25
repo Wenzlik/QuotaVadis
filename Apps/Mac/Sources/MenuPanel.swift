@@ -123,6 +123,10 @@ struct MenuPanel: View {
 
     @ViewBuilder private var providerRows: some View {
         ForEach(model.visibleInstances) { instance in
+            if model.states[instance.id] == nil, model.isRefreshing {
+                // First read after setup: a spinner, not "sign in and refresh" for the second the fetch takes.
+                loadingCard(instance)
+            } else {
             // Cost reports come from local logs and cannot be split per organization: primary instance only.
             ProviderRow(provider: instance.provider, title: model.title(for: instance),
                         state: model.states[instance.id] ?? .unavailable,
@@ -139,7 +143,21 @@ struct MenuPanel: View {
             .contextMenu {
                 Button("View details") { bringToFront { openWindow(id: "dashboard", value: instance.id) } }
             }
+            }
         }
+    }
+
+    private func loadingCard(_ instance: AppModel.Instance) -> some View {
+        HStack(spacing: 9) {
+            ProviderMark(provider: instance.provider, size: 26)
+            Text(model.title(for: instance)).font(.headline)
+            Spacer()
+            ProgressView().controlSize(.small)
+            Text("Reading limits…").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .accentCard(instance.provider.accent)
+        .accessibilityElement(children: .combine)
     }
 
     /// Reconnect lives on the card it fixes; the flow itself is in Settings ▸ Accounts.

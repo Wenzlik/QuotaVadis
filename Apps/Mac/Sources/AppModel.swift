@@ -317,6 +317,8 @@ final class AppModel {
         if enabledProviders != providers { enabledProviders = providers }
         if claudeSource != source { claudeSource = source }
         if syncEnabled != sync { syncEnabled = sync }
+        // Choosing Claude Code's login in the welcome flow was informed; the panel's nudge is for older installs.
+        if source == .claudeCode { claudeConnectTipDismissed = true }
         let fetchers = UsageService.defaultFetchers(extraClaudeServices: extraClaudeServices, claudeSource: claudeSource)
         Task {
             await service.setFetchers(fetchers, invalidating: [.claude])

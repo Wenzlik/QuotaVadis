@@ -217,9 +217,11 @@ public struct UsageBar: View {
                 if let reset = window.resetsAt {
                     ResetLabel(reset: reset)
                 }
+                // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(usageTint(window.usedPercent))
+                    .frame(minWidth: 34, alignment: .trailing)
             }
             GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
         }
