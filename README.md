@@ -4,6 +4,15 @@ Your AI coding limits, at a glance. A small macOS menu bar app that shows how mu
 Claude Code, Codex and Cursor quota is left, what it costs, and when it resets.
 An iOS companion synced over iCloud is planned.
 
+## Download
+
+Recommended for first-time install: the notarized **DMG** from
+[zmrhal.cz/quotavadis](https://zmrhal.cz/quotavadis/) — open it and drag
+`QuotaVadis.app` onto the Applications shortcut.
+
+In-app updates keep using the **zip** via Sparkle (same appcast as before).
+You do not need the DMG again after the first install.
+
 ![icon](Apps/Mac/Resources/Assets.xcassets/AppIcon.appiconset/icon_128.png)
 
 ## What it shows
@@ -56,6 +65,8 @@ swift run quotactl              # live table from your accounts
 swift run quotactl --cost       # 30-day cost/token report
 swift run quotactl --raw        # raw API responses
 Scripts/install-local.sh        # build Release, install to ~/Applications, launch
+Scripts/release.sh 0.x.y        # Developer ID archive → zip (Sparkle) + DMG (install)
+Scripts/make-dmg.sh path/to/QuotaVadis.app   # DMG only, from an already signed+stapled app
 ```
 
 `QuotaCore` (SwiftPM) holds models, fetchers, scanners and pricing; `Apps/Mac` is the SwiftUI menu bar app.
