@@ -163,6 +163,17 @@ private let en = Locale(identifier: "en_US")
     #expect(!none.windows.contains { $0.id == "grok-bot" })
 }
 
+@Test func cursorGrokBotPeriodKind() throws {
+    let r = try JSONDecoder().decode(CursorUsageSummary.self, from: fixture("cursor_usage"))
+    func kind(_ json: String) throws -> UsageWindow.Kind? {
+        let bot = try JSONDecoder().decode(CursorBotUsage.self, from: Data(json.utf8))
+        return CursorUsageFetcher.snapshot(from: r, bot: bot, account: nil).windows.first { $0.id == "grok-bot" }?.kind
+    }
+    #expect(try kind(#"{"currentPeriodStart":"2026-09-01T07:33:00.000Z","nextResetTimestampUtc":"2026-09-08T07:33:00.000Z","usagePercent":40,"hasNonZeroIncludedLimit":true}"#) == .weekly)
+    #expect(try kind(#"{"currentPeriodStart":"2026-09-01T07:33:00.000Z","nextResetTimestampUtc":"2026-10-01T07:33:00.000Z","usagePercent":40,"hasNonZeroIncludedLimit":true}"#) == .monthly)
+    #expect(try kind(#"{"nextResetTimestampUtc":"2026-09-08T07:33:00.000Z","usagePercent":40,"hasNonZeroIncludedLimit":true}"#) == .weekly)
+}
+
 @Test func seatLabels() {
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_tier_1", rateTier: "default_claude_max_5x") == "Premium seat · Max 5x")
     #expect(ClaudeUsageFetcher.seatLabel(seatTier: "team_standard", rateTier: nil) == "Standard seat")
@@ -259,6 +270,16 @@ private let en = Locale(identifier: "en_US")
     #expect(label.contains("·"))
     let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
     #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
+    // Mid-day, a reset ~5.2 days away must not round up to "6 days".
+    let grok = now.addingTimeInterval(5 * 86400 + 4 * 3600 + 33 * 60)
+    #expect(grok.remainingLabel(now: now) == "in 5d 4h")
+    #expect(grok.resetLabel(now: now, calendar: cal).hasPrefix("in 5d 4h · "))
+    #expect(now.addingTimeInterval(3 * 3600 + 5 * 60).remainingLabel(now: now) == "in 3h 5m")
+    #expect(now.addingTimeInterval(42 * 60).remainingLabel(now: now) == "in 42m")
+    #expect(now.addingTimeInterval(20).remainingLabel(now: now) == "in 1m")
+    #expect(now.addingTimeInterval(6 * 86400 + 59).remainingLabel(now: now) == "in 6d")
+    #expect(now.addingTimeInterval(20 * 86400 + 7200).remainingLabel(now: now) == "in 20d 2h")
+    #expect(now.addingTimeInterval(-60).remainingLabel(now: now) == "passed")
 }
 
 @Test func cursorSubWindowPromotedWhenBinding() throws {
