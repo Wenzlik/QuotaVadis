@@ -87,14 +87,18 @@ public struct CodexUsageFetcher: UsageFetcher {
         let plan = rawPlan.map(Self.planLabel)
         let seat = rawPlan.flatMap(Self.seatLabel)
         var credits: [UsageCredits] = []
+        // Codex amounts are ChatGPT credits, not dollars (live payloads say `"unit": "credit"`): no currency sign.
         // Business/Team workspaces: monthly credit pool with a per-user cap.
         if let cap = r.individualLimit ?? r.rateLimit?.individualLimit ?? r.spendControl?.individualLimit, let used = cap.used {
-            credits.append(UsageCredits(id: "monthly", title: "Monthly credits", used: used, limit: cap.limit,
-                                        resetsAt: cap.resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }))
+            credits.append(UsageCredits(id: "monthly", title: cap.currency == nil ? "Monthly credits" : "Monthly spend",
+                                        used: used, limit: cap.limit, currency: cap.currency ?? UsageCredits.creditUnit,
+                                        resetsAt: cap.resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                                        approxUSDPerCredit: cap.currency == nil ? approxUSDPerCredit : nil))
         }
         // Personal plans: prepaid credit balance (only a balance, no "used" figure is exposed).
         if let c = r.credits, c.hasCredits, !c.unlimited, let balance = c.balance {
-            credits.append(UsageCredits(id: "balance", title: "Credit balance", used: 0, limit: balance))
+            credits.append(UsageCredits(id: "balance", title: "Credit balance", used: 0, limit: balance,
+                                        currency: UsageCredits.creditUnit, approxUSDPerCredit: approxUSDPerCredit))
         }
         return UsageSnapshot(provider: .codex, account: account, plan: plan, seat: seat, windows: windows, credits: credits,
                              resetCreditsAvailable: r.rateLimitResetCredits?.availableCount)
@@ -102,6 +106,11 @@ public struct CodexUsageFetcher: UsageFetcher {
 }
 
 extension CodexUsageFetcher {
+    /// List price of one ChatGPT credit: OpenAI sells Codex credits to Plus/Pro in packs of 1,000 for $40
+    /// (OpenAI Developers, 30 Oct 2025). Business/Enterprise prices depend on the agreement, so the UI only
+    /// ever shows this as an approximation next to the credit count.
+    static let approxUSDPerCredit = 0.04
+
     /// Seat inside a workspace plan. Verified on a real Business workspace: `self_serve_business_prolite` is what
     /// ChatGPT shows as a Premium seat. A workspace plan without a suffix is assumed to be the Standard seat
     /// (unverified: no standard-seat account was available). nil for personal plans.
@@ -176,7 +185,9 @@ struct CodexUsageResponse: Decodable {
         let limit: Double?
         let used: Double?
         let resetsAt: Int?
-        enum CodingKeys: String, CodingKey { case limit, used, resetsAt = "resets_at", resetAt = "reset_at" }
+        /// "credit" on live Business payloads (`spend_control.individual_limit.unit`).
+        let unit: String?
+        enum CodingKeys: String, CodingKey { case limit, used, unit, resetsAt = "resets_at", resetAt = "reset_at" }
         /// Values arrive as numbers or as numeric strings ("1", "0.0").
         private static func number(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
             (try? c.decodeIfPresent(Double.self, forKey: key)) ?? (try? c.decodeIfPresent(String.self, forKey: key)).flatMap(Double.init)
@@ -186,6 +197,13 @@ struct CodexUsageResponse: Decodable {
             limit = Self.number(c, .limit)
             used = Self.number(c, .used)
             resetsAt = (try? c.decodeIfPresent(Int.self, forKey: .resetsAt)) ?? (try? c.decodeIfPresent(Int.self, forKey: .resetAt))
+            unit = try? c.decodeIfPresent(String.self, forKey: .unit)
+        }
+
+        /// A currency code only if the payload names one; otherwise (absent or "credit") ChatGPT credits.
+        var currency: String? {
+            guard let unit, unit.count == 3, unit.allSatisfy(\.isLetter) else { return nil }
+            return unit.uppercased()
         }
     }
     struct SpendControl: Decodable {

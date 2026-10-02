@@ -228,8 +228,12 @@ public extension UsageFetcher {
     func fetchAll() async throws -> [UsageSnapshot] { [try await fetch()] }
 }
 
-/// Money-style quota: how much was spent against a limit (extra usage, on-demand, credits).
+/// Spend against a limit (extra usage, on-demand, credits). Either real money (`currency` is an ISO code)
+/// or a provider's own credit unit (`currency == UsageCredits.creditUnit`), which is never shown as money.
 public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
+    /// `currency` value for amounts counted in provider credits rather than money.
+    public static let creditUnit = "credits"
+
     public var id: String
     public var title: String
     public var used: Double
@@ -237,14 +241,53 @@ public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
     public var limit: Double?
     public var currency: String
     public var resetsAt: Date?
+    /// Approximate USD value of one credit, for the "(~$…)" hint. nil for money or when no rate is known.
+    public var approxUSDPerCredit: Double?
 
-    public init(id: String, title: String, used: Double, limit: Double?, currency: String = "USD", resetsAt: Date? = nil) {
+    public init(id: String, title: String, used: Double, limit: Double?, currency: String = "USD", resetsAt: Date? = nil,
+                approxUSDPerCredit: Double? = nil) {
         self.id = id
         self.title = title
         self.used = used
         self.limit = limit
         self.currency = currency
         self.resetsAt = resetsAt
+        self.approxUSDPerCredit = approxUSDPerCredit
+    }
+
+    public var isCredits: Bool { currency == Self.creditUnit }
+
+    /// One amount in this line's unit: "$15.65" for money, "1,240" for credits (the unit goes on `valueLabel`).
+    public func amount(_ value: Double, locale: Locale = .current) -> String {
+        if isCredits { return value.formatted(.number.precision(.fractionLength(0...1)).locale(locale)) }
+        return value.formatted(.currency(code: currency).precision(.fractionLength(2)).locale(locale))
+    }
+
+    /// "$15.65 / $5.00", or "1,240 / 2,500 credits" for credit pools.
+    public func valueLabel(locale: Locale = .current) -> String {
+        let core = amount(used, locale: locale) + (limit.map { " / " + amount($0, locale: locale) } ?? "")
+        return isCredits ? core + " credits" : core
+    }
+
+    /// Approximate USD for a credit amount: "~$49.60", "~$100". nil for money or without a rate.
+    public func approxUSD(_ value: Double, locale: Locale = .current) -> String? {
+        guard isCredits, let rate = approxUSDPerCredit else { return nil }
+        let usd = (value * rate * 100).rounded() / 100
+        let digits = usd == usd.rounded() ? 0 : 2
+        return "~" + usd.formatted(.currency(code: "USD").precision(.fractionLength(digits)).locale(locale))
+    }
+
+    /// "~$49.60 / ~$100" next to a credit line; nil when there is nothing to convert.
+    public func approxUSDLabel(locale: Locale = .current) -> String? {
+        guard let usedUSD = approxUSD(used, locale: locale) else { return nil }
+        return usedUSD + (limit.flatMap { approxUSD($0, locale: locale) }.map { " / " + $0 } ?? "")
+    }
+
+    /// One amount for prose (alerts): "$1.60", or "40 credits (~$1.60)".
+    public func describe(_ value: Double, locale: Locale = .current) -> String {
+        guard isCredits else { return amount(value, locale: locale) }
+        let base = amount(value, locale: locale) + (value == 1 ? " credit" : " credits")
+        return approxUSD(value, locale: locale).map { "\(base) (\($0))" } ?? base
     }
 
     public var usedPercent: Double? {
