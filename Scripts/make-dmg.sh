@@ -63,7 +63,7 @@ hdiutil create -volname "$VOLNAME" -srcfolder "$STAGE" -ov -format UDRW -fs HFS+
 
 # Mount and try to arrange icons. Failures here are non-fatal.
 MOUNT_OUT=$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen 2>&1)
-MOUNTPOINT=$(echo "$MOUNT_OUT" | awk '/\/Volumes\// {print $NF; exit}')
+MOUNTPOINT=$(echo "$MOUNT_OUT" | awk -F'\t' '/\/Volumes\// {print $NF; exit}')  # tab-split: the mountpoint may contain spaces ("QuotaVadis 1")
 if [[ -z "$MOUNTPOINT" || ! -d "$MOUNTPOINT" ]]; then
   echo "warning: could not mount RW DMG for layout; shipping minimal DMG" >&2
 else
