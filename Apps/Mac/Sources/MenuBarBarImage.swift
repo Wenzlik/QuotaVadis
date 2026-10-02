@@ -24,7 +24,7 @@ enum MenuBarBarImage {
     private static let iconSize: CGFloat = 11
     private static let iconGap: CGFloat = 3
     private static var besideFont: NSFont { .monospacedDigitSystemFont(ofSize: 11, weight: .semibold) }
-    private static var insideFont: NSFont { .monospacedDigitSystemFont(ofSize: 7, weight: .heavy) }
+    private static var insideFont: NSFont { .monospacedDigitSystemFont(ofSize: 8, weight: .heavy) }
 
     static func render(percents: [Double?], icons: [MenuBarVendorMark?] = [], shortWindow: [Bool] = [], placement: MenuBarPercentPlacement?, isStale: Bool = false) -> NSImage {
         let bars = percents.isEmpty ? [nil] : percents
@@ -104,12 +104,17 @@ enum MenuBarBarImage {
             }
         }
         guard let insideText else { return }
-        // White with a dark stroke so the number stays legible over both the coloured fill and the bare track.
+        // A solid dark backing isolates digits from the fill and either menu-bar appearance.
+        let textWidth = (insideText as NSString).size(withAttributes: [.font: insideFont]).width
+        let font = NSFont.monospacedDigitSystemFont(ofSize: insideFont.pointSize * min(1, (width - 2) / textWidth), weight: .heavy)
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: insideFont, .foregroundColor: NSColor.white,
-            .strokeColor: NSColor.black, .strokeWidth: -6.0,
+            .font: font, .foregroundColor: NSColor.white,
         ]
         let size = (insideText as NSString).size(withAttributes: attrs)
+        let backing = NSRect(x: x + (width - size.width) / 2 - 0.5,
+                             y: (height - size.height) / 2, width: size.width + 1, height: size.height)
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: backing, xRadius: 2, yRadius: 2).fill()
         (insideText as NSString).draw(at: NSPoint(x: x + (width - size.width) / 2, y: (height - size.height) / 2), withAttributes: attrs)
     }
 
