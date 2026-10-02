@@ -77,6 +77,51 @@ private func fixture(_ name: String) throws -> Data {
     #expect(s.resetCreditsAvailable == 3)
     #expect(s.credits.first?.limit == 1)
     #expect(s.credits.first?.used == 0)
+    #expect(s.credits.allSatisfy { $0.isCredits })
+}
+
+private let en = Locale(identifier: "en_US")
+
+@Test func codexCreditsAreNotDollars() throws {
+    // Business workspace: a 2,500-credit monthly cap with 1,240 used. These are credits, not $1,240.
+    let json = #"{"plan_type":"self_serve_business","spend_control":{"individual_limit":{"limit":"2500","used":"1240","reset_at":1790812800}},"credits":{"has_credits":true,"unlimited":false,"balance":"500"}}"#
+    let r = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+    let s = CodexUsageFetcher.snapshot(from: r, account: nil, fallbackPlan: nil)
+    let monthly = try #require(s.credits.first { $0.id == "monthly" })
+    #expect(monthly.currency == UsageCredits.creditUnit)
+    #expect(monthly.valueLabel(locale: en) == "1,240 / 2,500 credits")
+    #expect(monthly.approxUSDLabel(locale: en) == "~$49.60 / ~$100")
+    #expect(monthly.describe(40, locale: en) == "40 credits (~$1.60)")
+    #expect(!monthly.valueLabel(locale: en).contains("$"))
+    let balance = try #require(s.credits.first { $0.id == "balance" })
+    #expect(balance.isCredits)
+    #expect(balance.valueLabel(locale: en) == "0 / 500 credits")
+    #expect(balance.approxUSDLabel(locale: en) == "~$0 / ~$20")
+    // Snapshots synced from an older build lack the rate: credits still render, just without the hint.
+    let bare = UsageCredits(id: "monthly", title: "Monthly credits", used: 12.5, limit: nil, currency: UsageCredits.creditUnit)
+    #expect(bare.valueLabel(locale: en) == "12.5 credits")
+    #expect(bare.approxUSDLabel(locale: en) == nil)
+    #expect(bare.describe(1, locale: en) == "1 credit")
+    let decoded = try JSONDecoder().decode(UsageCredits.self, from: JSONEncoder().encode(monthly))
+    #expect(decoded == monthly)
+    // Live Business payload names the unit explicitly.
+    let live = #"{"spend_control":{"individual_limit":{"limit":"2500","used":"10.0","unit":"credit","reset_at":1793491200}}}"#
+    let l = CodexUsageFetcher.snapshot(from: try JSONDecoder().decode(CodexUsageResponse.self, from: Data(live.utf8)), account: nil, fallbackPlan: nil)
+    #expect(l.credits.first?.valueLabel(locale: en) == "10 / 2,500 credits")
+    // Should OpenAI ever report a currency, it is money and gets no credit conversion.
+    let usd = #"{"spend_control":{"individual_limit":{"limit":"100","used":"12.5","unit":"usd"}}}"#
+    let u = CodexUsageFetcher.snapshot(from: try JSONDecoder().decode(CodexUsageResponse.self, from: Data(usd.utf8)), account: nil, fallbackPlan: nil)
+    #expect(u.credits.first?.valueLabel(locale: en) == "$12.50 / $100.00")
+    #expect(u.credits.first?.approxUSDLabel(locale: en) == nil)
+}
+
+@Test func moneyLinesStayMoney() throws {
+    let claude = ClaudeUsageFetcher.snapshot(from: try JSONDecoder().decode(ClaudeUsageResponse.self, from: fixture("claude_usage")), plan: "max")
+    #expect(claude.credits.first?.valueLabel(locale: en) == "$15.65 / $5.00")
+    #expect(claude.credits.first?.approxUSDLabel(locale: en) == nil)
+    let cursor = CursorUsageFetcher.snapshot(from: try JSONDecoder().decode(CursorUsageSummary.self, from: fixture("cursor_usage")), account: nil)
+    #expect(cursor.credits.first?.valueLabel(locale: en) == "$13.40 / $20.00")
+    #expect(cursor.credits.allSatisfy { !$0.isCredits })
 }
 
 @Test func cursorMapping() throws {
@@ -249,6 +294,18 @@ private func fixture(_ name: String) throws -> Data {
     #expect(c.count == 1 && c[0].title.contains("reset in 30 min"))
     var off = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: false, notifyExtraUsage: false, creditBaseline: ["claude/credit/extra": 1])
     #expect(off.evaluate(snapshots: [snap(5, weekly: 40)]).isEmpty)
+}
+
+@Test func codexCreditAlertsSpeakCredits() {
+    var engine = QuotaAlertEngine(warnAtPercent: 101, notifyOnReset: false, creditBaseline: ["codex/credit/monthly": 1200])
+    let s = UsageSnapshot(provider: .codex, account: nil, plan: "Business",
+                          windows: [UsageWindow(id: "weekly", kind: .weekly, title: "Weekly", usedPercent: 40, resetsAt: nil)],
+                          credits: [UsageCredits(id: "monthly", title: "Monthly credits", used: 1240, limit: 2500,
+                                                 currency: UsageCredits.creditUnit, approxUSDPerCredit: CodexUsageFetcher.approxUSDPerCredit)])
+    let a = engine.evaluate(snapshots: [s])
+    #expect(a.count == 1)
+    // "grew by 40 credits (~$1.60) to 1,240 credits (~$49.60)": both amounts in credits; currency style follows the locale.
+    #expect(a.first?.body.components(separatedBy: " credits (~").count == 3)
 }
 
 @Test func rateLimitGateBacksOff() async {
