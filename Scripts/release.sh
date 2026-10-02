@@ -1,7 +1,9 @@
 #!/bin/zsh
 # Build, sign (Developer ID), notarize, staple, zip and publish a QuotaVadis release.
 #
-#   Scripts/release.sh 0.1.0            # version; build number = UTC timestamp
+#   Scripts/release.sh 0.1.0                         # stable (default channel); build number = UTC timestamp
+#   Scripts/release.sh 0.1.1-dev development         # development channel item (or CHANNEL=development)
+#   Scripts/release.sh 0.1.0 --skip-build            # reuse dist/export/QuotaVadis.app
 #
 # Output: dist/QuotaVadis-<version>.zip (Sparkle updates) + dist/QuotaVadis-<version>.dmg
 # (first-time install), appcast entry appended to ../zmrhal_web/public/quotavadis/appcast.xml,
@@ -17,7 +19,20 @@ cd "$(dirname "$0")/.."
 # sidecar entries in the zip with it set and no --norsrc, 0 with --norsrc. Sparkle's own update path doesn't
 # re-zip, so this went unnoticed until a fresh download of 0.4.2.
 VERSION=${1:?version required, e.g. 0.1.0}
-SKIP_BUILD=${2:-}
+SKIP_BUILD=
+CHANNEL=${CHANNEL:-stable}
+for arg in "${@:2}"; do
+  case $arg in
+    --skip-build) SKIP_BUILD=$arg ;;
+    stable|development) CHANNEL=$arg ;;
+    *) echo "unknown argument: $arg"; exit 1 ;;
+  esac
+done
+[[ $CHANNEL == stable || $CHANNEL == development ]] || { echo "CHANNEL must be stable or development"; exit 1; }
+# Stable = Sparkle's default channel (no tag). Development items are only offered to users who opted in.
+CHANNEL_TAG=
+[ "$CHANNEL" = development ] && CHANNEL_TAG="
+      <sparkle:channel>development</sparkle:channel>"
 BUILD=$(date -u +%Y%m%d%H%M)
 # Xcode-beta when it is installed, otherwise the release Xcode — the beta comes and goes on this Mac.
 if [[ -d /Applications/Xcode-beta.app ]]; then
@@ -111,7 +126,7 @@ ITEM="    <item>
       <pubDate>$DATE</pubDate>
       <sparkle:version>$BUILD</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>$CHANNEL_TAG
       <description><![CDATA[<pre>$NOTES</pre>]]></description>
       <enclosure url=\"https://zmrhal.cz/quotavadis/QuotaVadis-$VERSION.zip\" $SIG type=\"application/octet-stream\"/>
     </item>
@@ -126,12 +141,13 @@ s = s.replace("  </channel>", item, 1)
 open(path, "w").write(s)
 PY
 cp "$ZIP" "$WEB/"
-cp "$ZIP" "$WEB/QuotaVadis-latest.zip"   # stable link kept for Sparkle / secondary download
+# -latest.* aliases are Stable only.
+[ "$CHANNEL" = stable ] && cp "$ZIP" "$WEB/QuotaVadis-latest.zip"   # stable link kept for Sparkle / secondary download
 
 # Classic DMG for first-time install (app + Applications symlink). Sparkle stays on the zip.
 DMG="$DIST/QuotaVadis-$VERSION.dmg"
 Scripts/make-dmg.sh "$APP" "$DMG"
 cp "$DMG" "$WEB/"
-cp "$DMG" "$WEB/QuotaVadis-latest.dmg"   # primary website download button
+[ "$CHANNEL" = stable ] && cp "$DMG" "$WEB/QuotaVadis-latest.dmg"   # primary website download button
 
-echo "release $VERSION ($BUILD) ready: $ZIP + $DMG → $WEB (appcast updated). Deploy zmrhal_web to publish."
+echo "release $VERSION ($BUILD, $CHANNEL) ready: $ZIP + $DMG → $WEB (appcast updated). Deploy zmrhal_web to publish."
