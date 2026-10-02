@@ -356,6 +356,15 @@ struct SettingsView: View {
         pane {
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $updater.automaticChecks)
+                Picker("Update channel", selection: $updater.channel) {
+                    Text("Stable").tag(Updater.Channel.stable)
+                    Text("Development").tag(Updater.Channel.development)
+                }
+                .pickerStyle(.segmented)
+                Text(updater.channel == .stable
+                     ? "Production releases."
+                     : "Experimental builds, may be less polished. Switching doesn't change the installed app until an update is downloaded.")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
                     Spacer()
