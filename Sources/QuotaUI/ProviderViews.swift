@@ -195,9 +195,9 @@ struct ResetLabel: View {
     let reset: Date
 
     var body: some View {
-        // Short in the row ("Resets in 2 hr"); the exact time is one hover away.
+        // Short in the row ("Resets in 5d 4h"); the exact time is one hover away.
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            Text(reset <= context.date ? "Reset passed" : "Resets \(reset.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))")
+            Text(reset <= context.date ? "Reset passed" : "Resets \(reset.remainingLabel(now: context.date))")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 .help(reset.resetLabel(now: context.date))
         }

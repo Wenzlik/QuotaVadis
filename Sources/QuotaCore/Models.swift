@@ -297,10 +297,20 @@ public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
 }
 
 public extension Date {
-    /// "in 1 hr · 14:35" — relative distance plus the exact clock time; adds the weekday when it is not today,
+    /// "in 5d 4h" — real time left, floored. Calendar-relative formatting would say "in 6 days" for 5.2 days.
+    func remainingLabel(now: Date = .now) -> String {
+        guard self > now else { return "passed" }
+        let minutes = Int(timeIntervalSince(now) / 60)
+        let (d, h, m) = (minutes / 1440, minutes % 1440 / 60, minutes % 60)
+        if d > 0 { return h > 0 ? "in \(d)d \(h)h" : "in \(d)d" }
+        if h > 0 { return m > 0 ? "in \(h)h \(m)m" : "in \(h)h" }
+        return "in \(max(m, 1))m"
+    }
+
+    /// "in 1h 5m · 14:35" — time left plus the exact clock time; adds the weekday when it is not today,
     /// and the date when it is more than a week away.
     func resetLabel(now: Date = .now, calendar: Calendar = .current) -> String {
-        let relative = formatted(.relative(presentation: .numeric))
+        let relative = remainingLabel(now: now)
         let exact: String
         if calendar.isDate(self, inSameDayAs: now) {
             exact = formatted(date: .omitted, time: .shortened)
