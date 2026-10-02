@@ -29,7 +29,6 @@ struct MenuPanel: View {
                             Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             providerRows
                         }
-                        CrossDeviceSection(model: model)
                     }
                     .padding(10)
                 }
