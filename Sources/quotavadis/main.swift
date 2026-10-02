@@ -143,9 +143,9 @@ func renderSnapshot(_ s: UsageSnapshot) -> String {
         out += "  \(w.title.padding(toLength: 22, withPad: " ", startingAt: 0)) \(bar(w.usedPercent)) \(paint(String(format: "%3.0f%%", w.usedPercent), tint(w.usedPercent)))\(reset)\n"
     }
     for c in s.credits where c.used > 0 || c.limit != nil {
-        let limit = c.limit.map { String(format: " / %.2f", $0) } ?? ""
         let over = c.limit.map { c.used >= $0 } ?? false
-        out += "  \(c.title.padding(toLength: 22, withPad: " ", startingAt: 0)) " + paint(String(format: "$%.2f%@ %@", c.used, limit, c.currency), over ? "31" : "0") + "\n"
+        let usd = c.approxUSDLabel().map { "  " + paint("(\($0))", "90") } ?? ""
+        out += "  \(c.title.padding(toLength: 22, withPad: " ", startingAt: 0)) " + paint(c.valueLabel(), over ? "31" : "0") + usd + "\n"
     }
     if let resets = s.resetCreditsAvailable { out += "  \("Resets available".padding(toLength: 22, withPad: " ", startingAt: 0)) \(resets)\n" }
     return out

@@ -90,17 +90,17 @@ public struct QuotaAlertEngine: Sendable {
             guard notifyExtraUsage, let previous, credit.used > previous + 0.005 else { continue }
             guard snoozed[key] == nil else { continue }
             let delta = credit.used - previous
-            let money = { (v: Double) in v.formatted(.currency(code: credit.currency).precision(.fractionLength(2))) }
+            let amount = { (v: Double) in credit.describe(v) }
             let exhausted = snapshot.windows.filter(\.prominent).filter { $0.usedPercent >= 99.5 }
             if exhausted.isEmpty {
                 alerts.append(QuotaAlert(kind: .extraUsageUnexpected, key: key,
                                          title: "\(title): paying extra usage while limits remain",
-                                         body: "\(credit.title) grew by \(money(delta)) to \(money(credit.used)) although no window is exhausted. A model outside your seat (e.g. Fable on a Standard seat) is billed separately."))
+                                         body: "\(credit.title) grew by \(amount(delta)) to \(amount(credit.used)) although no window is exhausted. A model outside your seat (e.g. Fable on a Standard seat) is billed separately."))
             } else {
                 let names = exhausted.map(\.title).joined(separator: ", ")
                 // The cheapest advice: if the exhausted window resets soon, waiting beats paying.
                 let soonest = exhausted.compactMap(\.resetsAt).min()
-                var body = "\(names) is exhausted; further use is billed. \(credit.title) is at \(money(credit.used))."
+                var body = "\(names) is exhausted; further use is billed. \(credit.title) is at \(amount(credit.used))."
                 var heading = "\(title): extra usage started"
                 if let soonest, soonest > now {
                     let minutes = Int(soonest.timeIntervalSince(now) / 60)

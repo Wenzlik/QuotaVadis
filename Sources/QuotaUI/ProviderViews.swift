@@ -154,7 +154,8 @@ public struct DetailLine: View {
     }
 }
 
-/// Spend against a cap as a bar: "Extra usage  $15.65 / $5.00". Without a cap, a plain line.
+/// Spend against a cap as a bar: "Extra usage  $15.65 / $5.00". Without a cap, a plain line. Credit pools
+/// (Codex) count credits, with the approximate dollar value as a quiet hint: "1,240 / 2,500 credits  ~$49.60 / ~$100".
 public struct CreditsLine: View {
     let credits: UsageCredits
 
@@ -168,9 +169,14 @@ public struct CreditsLine: View {
                 if let reset = credits.resetsAt, credits.limit != nil {
                     ResetLabel(reset: reset)
                 }
-                Text(amount(credits.used) + (credits.limit.map { " / " + amount($0) } ?? ""))
+                Text(credits.valueLabel())
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+            }
+            if let usd = credits.approxUSDLabel() {
+                Text(usd).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .help("Approximate: credits valued at their list price")
             }
             if let percent = credits.usedPercent {
                 GlowBar(percent: percent, height: 6)
@@ -179,10 +185,6 @@ public struct CreditsLine: View {
     }
 
     private var tint: Color { usageTint(credits.usedPercent ?? 0) }
-
-    private func amount(_ value: Double) -> String {
-        value.formatted(.currency(code: credits.currency).precision(.fractionLength(2)))
-    }
 }
 
 /// The "in 2 hours · 13:30" line next to a bar. A plain `Text` of the formatted string goes stale: SwiftUI
