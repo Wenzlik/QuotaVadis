@@ -71,6 +71,13 @@ final class AppModel {
     var lastSyncAttempt: Date?
     var lastSyncError: String?
     var isSyncing = false
+    var syncedDevices: [DevicePayload] = []
+    var lastSyncRead: Date?
+    var syncReadWarning: String?
+
+    var combinedUsage: CombinedUsage {
+        CombinedUsage(devices: [currentPayload] + (syncEnabled ? syncedDevices : []))
+    }
 
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
@@ -144,6 +151,9 @@ final class AppModel {
         didSet {
             defaults.set(syncEnabled, forKey: "syncEnabled")
             syncGeneration += 1
+            syncedDevices = []
+            lastSyncRead = nil
+            syncReadWarning = nil
             defaults.set(!syncEnabled, forKey: "pendingCloudRemoval")
             requestSync()
         }
@@ -451,11 +461,7 @@ final class AppModel {
         return measurement(for: source)?.window.usedPercent
     }
 
-    /// A mark to draw ahead of a bar. Claude/Cursor/Codex use menu-bar-only monochrome silhouettes derived
-    /// from the same brand marks as `ProviderMark` (template-tinted like the rest of the bar). Panel/welcome/
-    /// settings keep the full-colour `Vendor*` assets via `ProviderMark`. Gemini stays a colourless template
-    /// glyph. Grok Bot prefers the real icon of the installed "Grok Bot" app when present, else a hand-drawn
-    /// original shape.
+    /// Reuse the original colour marks from the panel; template masks lose the app icon’s shading.
     private func vendorIcon(for source: MenuBarSource) -> MenuBarVendorMark? {
         if case .window(_, let windowID) = source, windowID == "grok-bot" {
             if let real = Self.installedAppIcon("Grok Bot") { return MenuBarVendorMark(image: Self.desaturated(real), isTemplate: false) }
@@ -463,9 +469,9 @@ final class AppModel {
         }
         guard let id = instanceID(for: source), let provider = states[id]?.snapshot?.provider else { return nil }
         switch provider {
-        case .claude: return NSImage(named: "MenuBarVendorClaude").map { MenuBarVendorMark(image: $0, isTemplate: true) }
-        case .cursor: return NSImage(named: "MenuBarVendorCursor").map { MenuBarVendorMark(image: $0, isTemplate: true) }
-        case .codex: return NSImage(named: "MenuBarVendorCodex").map { MenuBarVendorMark(image: $0, isTemplate: true) }
+        case .claude: return NSImage(named: "VendorClaude").map { MenuBarVendorMark(image: $0, isTemplate: false) }
+        case .cursor: return NSImage(named: "VendorCursor").map { MenuBarVendorMark(image: $0, isTemplate: false) }
+        case .codex: return NSImage(named: "VendorCodex").map { MenuBarVendorMark(image: $0, isTemplate: false) }
         case .gemini: return NSImage(named: "VendorGemini").map { MenuBarVendorMark(image: $0, isTemplate: true) }
         }
     }
@@ -711,10 +717,19 @@ final class AppModel {
                 guard syncStatus == .available else { throw ProviderError.network("iCloud not available: \(syncStatus)") }
                 let payload = currentPayload
                 try await withTimeout(seconds: 60) { try await self.cloud.publish(payload) }
+                guard generation == syncGeneration, syncEnabled else { return }
                 lastSyncPush = .now
+                let devices = try await withTimeout(seconds: 60) { try await self.cloud.fetchAll() }
+                guard generation == syncGeneration, syncEnabled else { return }
+                let warning = await cloud.lastReadWarning
+                guard generation == syncGeneration, syncEnabled else { return }
+                syncedDevices = devices.filter { $0.deviceID != DeviceIdentity.id }
+                lastSyncRead = .now
+                syncReadWarning = warning
                 lastSyncError = nil
             }
         } catch {
+            guard generation == syncGeneration else { return }
             lastSyncError = (enabled ? "Sync failed: " : "Removal failed; will retry: ") +
                 (error is TimeoutError ? "iCloud timed out" : error.localizedDescription)
         }
@@ -753,6 +768,9 @@ final class AppModel {
         lastPanelOpen = .now
         if isAdaptiveRefresh { scheduleRefresh() }
         if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { refreshNow() }
+        else if syncEnabled, !isSyncing, lastSyncRead.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true {
+            requestSync()
+        }
     }
 
     /// The user explicitly asked for fresh numbers (the panel's Refresh button) — unlike a timer tick, this
