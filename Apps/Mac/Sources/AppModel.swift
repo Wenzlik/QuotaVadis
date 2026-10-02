@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import Foundation
 import Observation
 import ServiceManagement
@@ -126,7 +127,7 @@ final class AppModel {
         didSet { defaults.set(menuBarPercentPlacement.rawValue, forKey: "menuBarPercentPlacement") }
     }
     /// A small colourless vendor mark drawn ahead of each bar (Claude/Cursor/Codex/Gemini template glyphs;
-    /// Grok Bot uses the monochrome fallback glyph).
+    /// Grok Bot uses the installed app icon when available, desaturated).
     var menuBarShowVendorIcons: Bool {
         didSet { defaults.set(menuBarShowVendorIcons, forKey: "menuBarShowVendorIcons") }
     }
@@ -460,9 +461,14 @@ final class AppModel {
         return measurement(for: source)?.window.usedPercent
     }
 
-    /// Menu-bar-only monochrome templates; provider cards keep their original colour marks.
+    /// A mark to draw ahead of a bar. Claude/Cursor/Codex use menu-bar-only monochrome silhouettes derived
+    /// from the same brand marks as `ProviderMark` (template-tinted like the rest of the bar). Panel/welcome/
+    /// settings keep the full-colour `Vendor*` assets via `ProviderMark`. Gemini stays a colourless template
+    /// glyph. Grok Bot prefers the real icon of the installed "Grok Bot" app when present, else a hand-drawn
+    /// original shape.
     private func vendorIcon(for source: MenuBarSource) -> MenuBarVendorMark? {
         if case .window(_, let windowID) = source, windowID == "grok-bot" {
+            if let real = Self.installedAppIcon("Grok Bot") { return MenuBarVendorMark(image: Self.desaturated(real), isTemplate: false) }
             return MenuBarVendorMark(image: OriginalVendorIcons.grok, isTemplate: true)
         }
         guard let id = instanceID(for: source), let provider = states[id]?.snapshot?.provider else { return nil }
@@ -472,6 +478,30 @@ final class AppModel {
         case .codex: return NSImage(named: "MenuBarVendorCodex").map { MenuBarVendorMark(image: $0, isTemplate: true) }
         case .gemini: return NSImage(named: "VendorGemini").map { MenuBarVendorMark(image: $0, isTemplate: true) }
         }
+    }
+
+    /// `.icns` of a locally installed app, read straight off disk — never bundled or redistributed.
+    private static func installedAppIcon(_ appName: String) -> NSImage? {
+        for base in ["/Applications", NSHomeDirectory() + "/Applications"] {
+            let path = "\(base)/\(appName).app"
+            if FileManager.default.fileExists(atPath: path) { return NSWorkspace.shared.icon(forFile: path) }
+        }
+        return nil
+    }
+
+    /// Desaturates a real app icon to grayscale so it reads as "colourless" like the other marks, while
+    /// keeping its actual shape/shading detail — unlike tinting via its (rounded-square) alpha shape, which
+    /// would just draw a plain rounded square and lose everything that makes the icon recognisable.
+    private static func desaturated(_ icon: NSImage) -> NSImage {
+        guard let tiff = icon.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let cgImage = bitmap.cgImage,
+              let filter = CIFilter(name: "CIColorMonochrome") else { return icon }
+        filter.setValue(CIImage(cgImage: cgImage), forKey: kCIInputImageKey)
+        filter.setValue(CIColor(red: 0.5, green: 0.5, blue: 0.5), forKey: kCIInputColorKey)
+        filter.setValue(1.0, forKey: kCIInputIntensityKey)
+        guard let output = filter.outputImage else { return icon }
+        let result = NSImage(size: icon.size)
+        result.addRepresentation(NSCIImageRep(ciImage: output))
+        return result
     }
 
     private func instanceID(for source: MenuBarSource) -> String? {
