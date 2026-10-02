@@ -71,6 +71,13 @@ final class AppModel {
     var lastSyncAttempt: Date?
     var lastSyncError: String?
     var isSyncing = false
+    var syncedDevices: [DevicePayload] = []
+    var lastSyncRead: Date?
+    var syncReadWarning: String?
+
+    var combinedUsage: CombinedUsage {
+        CombinedUsage(devices: [currentPayload] + (syncEnabled ? syncedDevices : []))
+    }
 
     // Settings. Stored directly in UserDefaults; @AppStorage inside @Observable is not supported.
     var enabledProviders: Set<ProviderID> {
@@ -144,6 +151,9 @@ final class AppModel {
         didSet {
             defaults.set(syncEnabled, forKey: "syncEnabled")
             syncGeneration += 1
+            syncedDevices = []
+            lastSyncRead = nil
+            syncReadWarning = nil
             defaults.set(!syncEnabled, forKey: "pendingCloudRemoval")
             requestSync()
         }
@@ -707,10 +717,19 @@ final class AppModel {
                 guard syncStatus == .available else { throw ProviderError.network("iCloud not available: \(syncStatus)") }
                 let payload = currentPayload
                 try await withTimeout(seconds: 60) { try await self.cloud.publish(payload) }
+                guard generation == syncGeneration, syncEnabled else { return }
                 lastSyncPush = .now
+                let devices = try await withTimeout(seconds: 60) { try await self.cloud.fetchAll() }
+                guard generation == syncGeneration, syncEnabled else { return }
+                let warning = await cloud.lastReadWarning
+                guard generation == syncGeneration, syncEnabled else { return }
+                syncedDevices = devices.filter { $0.deviceID != DeviceIdentity.id }
+                lastSyncRead = .now
+                syncReadWarning = warning
                 lastSyncError = nil
             }
         } catch {
+            guard generation == syncGeneration else { return }
             lastSyncError = (enabled ? "Sync failed: " : "Removal failed; will retry: ") +
                 (error is TimeoutError ? "iCloud timed out" : error.localizedDescription)
         }
@@ -749,6 +768,9 @@ final class AppModel {
         lastPanelOpen = .now
         if isAdaptiveRefresh { scheduleRefresh() }
         if lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true { refreshNow() }
+        else if syncEnabled, !isSyncing, lastSyncRead.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true {
+            requestSync()
+        }
     }
 
     /// The user explicitly asked for fresh numbers (the panel's Refresh button) — unlike a timer tick, this

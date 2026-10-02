@@ -15,10 +15,6 @@ struct MenuPanel: View {
             Divider()
             if !model.hasOnboarded {
                 setupPrompt
-            } else if model.visibleInstances.isEmpty && !needsClaudeConnect {
-                ContentUnavailableView("Nothing to track", systemImage: "flame",
-                                       description: Text("Log in to Claude Code, Codex, Cursor or Antigravity on this Mac, then Refresh."))
-                    .frame(height: 160)
             } else {
                 // A bare ScrollView inside a MenuBarExtra window gets no height proposal and collapses to zero.
                 // fixedSize makes it report its content height; the frame then caps it so long lists scroll.
@@ -26,7 +22,14 @@ struct MenuPanel: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if model.showClaudeConnectTip { connectTip }
                         if needsClaudeConnect { connectCard }
-                        providerRows
+                        if model.visibleInstances.isEmpty && !needsClaudeConnect {
+                            ContentUnavailableView("Nothing to track on this Mac", systemImage: "flame",
+                                                   description: Text("Log in to a provider on this Mac, then Refresh."))
+                        } else {
+                            Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            providerRows
+                        }
+                        CrossDeviceSection(model: model)
                     }
                     .padding(10)
                 }
