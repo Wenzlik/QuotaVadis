@@ -53,6 +53,12 @@ enum MenuBarPercentPlacement: String, Codable, CaseIterable {
     case inside
 }
 
+/// How each bar is drawn: `.circular` charcoal badges with a usage-coloured rim, or the `.classic` 0.5.6 pills.
+enum MenuBarBadgeStyle: String, Codable, CaseIterable {
+    case circular
+    case classic
+}
+
 /// Single source of truth for the Mac app: settings, latest provider states, refresh loop.
 @MainActor
 @Observable
@@ -122,6 +128,9 @@ final class AppModel {
     /// 1–4 sources shown as filled bars instead of the icon glyph, style `.bars` only.
     var menuBarBarSources: [MenuBarSource] {
         didSet { defaults.set(menuBarBarSources.map(\.storageKey), forKey: "menuBarBarSources") }
+    }
+    var menuBarStyle: MenuBarBadgeStyle {
+        didSet { defaults.set(menuBarStyle.rawValue, forKey: "qv.menubarStyle") }
     }
     var menuBarPercentPlacement: MenuBarPercentPlacement {
         didSet { defaults.set(menuBarPercentPlacement.rawValue, forKey: "menuBarPercentPlacement") }
@@ -285,6 +294,7 @@ final class AppModel {
         menuBarSource = MenuBarSource(storageKey: defaults.string(forKey: "menuBarSource") ?? "worst")
         menuBarDisplayStyle = MenuBarDisplayStyle(rawValue: defaults.string(forKey: "menuBarDisplayStyle") ?? "") ?? .icon
         menuBarBarSources = defaults.stringArray(forKey: "menuBarBarSources").map { $0.map(MenuBarSource.init(storageKey:)) } ?? [.worst]
+        menuBarStyle = MenuBarBadgeStyle(rawValue: defaults.string(forKey: "qv.menubarStyle") ?? "") ?? .circular
         menuBarPercentPlacement = MenuBarPercentPlacement(rawValue: defaults.string(forKey: "menuBarPercentPlacement") ?? "") ?? .beside
         menuBarShowVendorIcons = defaults.bool(forKey: "menuBarShowVendorIcons")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true

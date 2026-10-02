@@ -1,0 +1,4 @@
+/* Settings ▸ Menu bar ▸ bar look. The rest of the UI is English-only for now (falls back to the key). */
+"Bar look" = "Vzhled";
+"Circular" = "Kruhové";
+"Classic" = "Původní";

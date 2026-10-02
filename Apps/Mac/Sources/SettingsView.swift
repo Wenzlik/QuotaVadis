@@ -242,6 +242,11 @@ struct SettingsView: View {
                     Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
                     Toggle("Colour icon", isOn: $model.useAppIconInMenuBar)
                 } else {
+                    Picker("Bar look", selection: $model.menuBarStyle) {
+                        Text("Circular").tag(MenuBarBadgeStyle.circular)
+                        Text("Classic").tag(MenuBarBadgeStyle.classic)
+                    }
+                    .pickerStyle(.segmented)
                     Toggle("Show percentage", isOn: $model.showPercentInMenuBar)
                     Toggle("Show vendor mark", isOn: $model.menuBarShowVendorIcons)
                     if model.showPercentInMenuBar {
@@ -268,7 +273,9 @@ struct SettingsView: View {
                     if model.menuBarBarSources.count < AppModel.maxBars {
                         Button("Add bar") { model.addBar() }
                     }
-                    Text("Each bar fills bottom-up with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars.")
+                    Text(model.menuBarStyle == .circular
+                         ? "Each badge's rim fills clockwise with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars."
+                         : "Each bar fills bottom-up with its usage (or spend, against a cap) percent. Up to \(AppModel.maxBars) bars.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
