@@ -14,7 +14,7 @@ struct MenuBarVendorMark {
 /// (see the label-limitation comment on `MenuBarLabel`), so a second sibling `Image` for a second bar was
 /// silently dropped — baking the whole thing into one image sidesteps that. Bars use a fixed, vivid palette
 /// (not the app's dynamic `usageTint`) so the image reads correctly on both light and dark menu bars without
-/// re-rendering on appearance changes; vendor marks preserve their original colour and shading.
+/// re-rendering on appearance changes; vendor marks are drawn as template shapes tinted the same way.
 enum MenuBarBarImage {
     private static let height: CGFloat = 16
     private static let strokeWidth: CGFloat = 1.3
@@ -24,7 +24,7 @@ enum MenuBarBarImage {
     private static let iconSize: CGFloat = 11
     private static let iconGap: CGFloat = 3
     private static var besideFont: NSFont { .monospacedDigitSystemFont(ofSize: 11, weight: .semibold) }
-    private static var insideFont: NSFont { .monospacedDigitSystemFont(ofSize: 8, weight: .heavy) }
+    private static var insideFont: NSFont { .monospacedDigitSystemFont(ofSize: 6.5, weight: .bold) }
 
     static func render(percents: [Double?], icons: [MenuBarVendorMark?] = [], shortWindow: [Bool] = [], placement: MenuBarPercentPlacement?, isStale: Bool = false) -> NSImage {
         let bars = percents.isEmpty ? [nil] : percents
@@ -104,17 +104,12 @@ enum MenuBarBarImage {
             }
         }
         guard let insideText else { return }
-        // A solid dark backing isolates digits from the fill and either menu-bar appearance.
-        let textWidth = (insideText as NSString).size(withAttributes: [.font: insideFont]).width
-        let font = NSFont.monospacedDigitSystemFont(ofSize: insideFont.pointSize * min(1, (width - 2) / textWidth), weight: .heavy)
+        // White with a dark stroke so the number stays legible over both the coloured fill and the bare track.
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: NSColor.white,
+            .font: insideFont, .foregroundColor: NSColor.white,
+            .strokeColor: NSColor.black.withAlphaComponent(0.65), .strokeWidth: -3.0,
         ]
         let size = (insideText as NSString).size(withAttributes: attrs)
-        let backing = NSRect(x: x + (width - size.width) / 2 - 0.5,
-                             y: (height - size.height) / 2, width: size.width + 1, height: size.height)
-        NSColor.black.setFill()
-        NSBezierPath(roundedRect: backing, xRadius: 2, yRadius: 2).fill()
         (insideText as NSString).draw(at: NSPoint(x: x + (width - size.width) / 2, y: (height - size.height) / 2), withAttributes: attrs)
     }
 
