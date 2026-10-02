@@ -93,8 +93,11 @@ public struct CursorUsageFetcher: UsageFetcher {
         }
         if let bot, bot.hasNonZeroIncludedLimit == true, let pct = bot.usagePercent {
             // Grok Bot sits in the main list once it has been used; an untouched 0% stays in the detail.
-            windows.append(UsageWindow(id: "grok-bot", kind: .weekly, title: "Grok Bot", usedPercent: pct,
-                                       resetsAt: ISO8601DateFormatter.parseAny(bot.nextResetTimestampUtc), prominent: pct > 0))
+            let reset = ISO8601DateFormatter.parseAny(bot.nextResetTimestampUtc)
+            let start = ISO8601DateFormatter.parseAny(bot.currentPeriodStart)
+            let kind = reset.flatMap { r in start.map { UsageWindow.kind(forSeconds: Int(r.timeIntervalSince($0))) } } ?? .weekly
+            windows.append(UsageWindow(id: "grok-bot", kind: kind, title: "Grok Bot", usedPercent: pct,
+                                       resetsAt: reset, prominent: pct > 0))
         }
         // Cursor reports Teams workspaces as `enterprise`; the API exposes no seat type, so none is shown.
         let plan = r.membershipType.map(Self.planLabel)
@@ -149,6 +152,7 @@ struct CursorTeamDetail: Decodable {
 }
 
 struct CursorBotUsage: Decodable {
+    var currentPeriodStart: String? = nil
     let nextResetTimestampUtc: String?
     let usagePercent: Double?
     let hasNonZeroIncludedLimit: Bool?
