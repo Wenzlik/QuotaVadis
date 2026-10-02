@@ -63,14 +63,15 @@ hdiutil create -volname "$VOLNAME" -srcfolder "$STAGE" -ov -format UDRW -fs HFS+
 
 # Mount and try to arrange icons. Failures here are non-fatal.
 MOUNT_OUT=$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen 2>&1)
-MOUNTPOINT=$(echo "$MOUNT_OUT" | awk '/\/Volumes\// {print $NF; exit}')
+# Tab-separated; the mount point may contain spaces ("/Volumes/QuotaVadis 1" when another QuotaVadis volume is mounted).
+MOUNTPOINT=$(echo "$MOUNT_OUT" | awk -F'\t' '/\/Volumes\// {print $NF; exit}')
 if [[ -z "$MOUNTPOINT" || ! -d "$MOUNTPOINT" ]]; then
   echo "warning: could not mount RW DMG for layout; shipping minimal DMG" >&2
 else
   # Best-effort Finder layout. Documented as optional / flaky under automation.
   if osascript <<ASCRIPT >/dev/null 2>&1; then
     tell application "Finder"
-      tell disk "$VOLNAME"
+      tell disk "${MOUNTPOINT:t}"
         open
         set current view of container window to icon view
         set toolbar visible of container window to false
