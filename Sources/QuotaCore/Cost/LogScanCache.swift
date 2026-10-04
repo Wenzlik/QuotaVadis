@@ -29,6 +29,30 @@ struct LogScanCache<Entry: Codable & Sendable>: Codable, Sendable {
     func save(_ url: URL) {
         if let data = try? JSONEncoder().encode(self) { try? data.write(to: url, options: .atomic) }
     }
+
+    /// One entry per file in `urls`, re-scanning only changed files. Entries for files outside `urls` (aged out
+    /// of the scan window or deleted) are dropped, and the cache is rewritten only when something changed.
+    static func entries(for urls: [URL], cachedAt cacheURL: URL, scan: (URL) -> Entry) -> [Entry] {
+        let old = load(cacheURL)
+        var cache = Self()
+        var changed = false
+        var entries: [Entry] = []
+        for url in urls {
+            guard let stamp = stamp(of: url) else { continue }
+            if let (cached, entry) = old.files[url.path], cached == stamp {
+                cache.files[url.path] = (stamp, entry)
+                entries.append(entry)
+            } else {
+                let scanned = scan(url)
+                cache.files[url.path] = (stamp, scanned)
+                entries.append(scanned)
+                changed = true
+            }
+        }
+        // No rescans and the same count means the same key set: every kept key came from `old`.
+        if changed || cache.files.count != old.files.count { cache.save(cacheURL) }
+        return entries
+    }
 }
 
 enum LogFiles {

@@ -18,20 +18,8 @@ public struct ClaudeCostScanner: Sendable {
     public func report(now: Date = .now) async -> CostReport? {
         let root = Self.projectsRoot
         guard FileManager.default.fileExists(atPath: root.path) else { return nil }
-        var cache = LogScanCache<[UsageRow]>.load(Self.cacheURL)
-        var rows: [UsageRow] = []
-        for url in LogFiles.recentJSONL(under: root, days: Self.windowDays) {
-            guard let stamp = LogScanCache<[UsageRow]>.stamp(of: url) else { continue }
-            if let (cached, entry) = cache.files[url.path], cached == stamp {
-                rows += entry
-            } else {
-                let scanned = Self.scan(url)
-                cache.files[url.path] = (stamp, scanned)
-                rows += scanned
-            }
-        }
-        cache.files = cache.files.filter { FileManager.default.fileExists(atPath: $0.key) }
-        cache.save(Self.cacheURL)
+        let rows = LogScanCache<[UsageRow]>.entries(for: LogFiles.recentJSONL(under: root, days: Self.windowDays),
+                                                    cachedAt: Self.cacheURL, scan: Self.scan).flatMap { $0 }
 
         let pricing = Pricing.shared
         await pricing.prepare()
