@@ -468,7 +468,7 @@ final class AppModel {
     /// original shape.
     private func vendorIcon(for source: MenuBarSource) -> MenuBarVendorMark? {
         if case .window(_, let windowID) = source, windowID == "grok-bot" {
-            if let real = Self.installedAppIcon("Grok Bot") { return MenuBarVendorMark(image: Self.desaturated(real), isTemplate: false) }
+            if let real = Self.desaturatedAppIcon("Grok Bot") { return MenuBarVendorMark(image: real, isTemplate: false) }
             return MenuBarVendorMark(image: OriginalVendorIcons.grok, isTemplate: true)
         }
         guard let id = instanceID(for: source), let provider = states[id]?.snapshot?.provider else { return nil }
@@ -489,19 +489,38 @@ final class AppModel {
         return nil
     }
 
+    /// Small desaturated app icons, keyed by app name. Label `body` runs on every state change, so the icon is
+    /// built once here and reused; only the small bitmap is kept, never the full IconServices source.
+    private static var desaturatedIcons: [String: NSImage] = [:]
+
+    private static func desaturatedAppIcon(_ appName: String) -> NSImage? {
+        if let cached = desaturatedIcons[appName] { return cached }
+        guard let icon = installedAppIcon(appName), let image = desaturated(icon) else { return nil }
+        desaturatedIcons[appName] = image
+        return image
+    }
+
     /// Desaturates a real app icon to grayscale so it reads as "colourless" like the other marks, while
     /// keeping its actual shape/shading detail — unlike tinting via its (rounded-square) alpha shape, which
     /// would just draw a plain rounded square and lose everything that makes the icon recognisable.
-    private static func desaturated(_ icon: NSImage) -> NSImage {
-        guard let tiff = icon.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let cgImage = bitmap.cgImage,
-              let filter = CIFilter(name: "CIColorMonochrome") else { return icon }
-        filter.setValue(CIImage(cgImage: cgImage), forKey: kCIInputImageKey)
+    /// Draws into a 22 pt @2x bitmap first: `tiffRepresentation` on an IconServices icon encodes every rep up
+    /// to 2048 px (~70 MB) and the result would keep it alive.
+    private static func desaturated(_ icon: NSImage) -> NSImage? {
+        let side: CGFloat = 22, pixels = Int(side * 2)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        icon.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let input = CIImage(bitmapImageRep: rep), let filter = CIFilter(name: "CIColorMonochrome") else { return nil }
+        filter.setValue(input, forKey: kCIInputImageKey)
         filter.setValue(CIColor(red: 0.5, green: 0.5, blue: 0.5), forKey: kCIInputColorKey)
         filter.setValue(1.0, forKey: kCIInputIntensityKey)
-        guard let output = filter.outputImage else { return icon }
-        let result = NSImage(size: icon.size)
-        result.addRepresentation(NSCIImageRep(ciImage: output))
-        return result
+        guard let output = filter.outputImage, let cgImage = CIContext().createCGImage(output, from: input.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: side, height: side))
     }
 
     private func instanceID(for source: MenuBarSource) -> String? {

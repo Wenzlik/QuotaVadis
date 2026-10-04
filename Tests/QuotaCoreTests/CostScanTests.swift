@@ -78,3 +78,24 @@ private func tempFile(_ lines: [String]) throws -> URL {
     #expect(r.days.dropLast().allSatisfy { $0.costUSD == 0 })
     #expect(r.topModel?.id == "m")
 }
+
+@Test func scanCachePrunesOutOfWindowAndSavesOnlyOnChange() throws {
+    let fm = FileManager.default
+    let inWindow = try tempFile(["a"]), aged = try tempFile(["b"])
+    let cacheURL = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+    var scans = 0
+    let scan: (URL) -> [String] = { scans += 1; return [$0.lastPathComponent] }
+
+    _ = LogScanCache<[String]>.entries(for: [inWindow, aged], cachedAt: cacheURL, scan: scan)
+    #expect(scans == 2)
+    // `aged` still exists on disk but has left the window: its entry must go.
+    let entries = LogScanCache<[String]>.entries(for: [inWindow], cachedAt: cacheURL, scan: scan)
+    #expect(entries == [[inWindow.lastPathComponent]] && scans == 2)
+    #expect(Set(LogScanCache<[String]>.load(cacheURL).files.keys) == [inWindow.path])
+
+    // Nothing changed: the cache file is not rewritten.
+    let old = Date(timeIntervalSince1970: 1_000_000)
+    try fm.setAttributes([.modificationDate: old], ofItemAtPath: cacheURL.path)
+    _ = LogScanCache<[String]>.entries(for: [inWindow], cachedAt: cacheURL, scan: scan)
+    #expect(try fm.attributesOfItem(atPath: cacheURL.path)[.modificationDate] as? Date == old)
+}
