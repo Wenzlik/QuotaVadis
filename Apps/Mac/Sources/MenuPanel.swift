@@ -33,6 +33,9 @@ struct MenuPanel: View {
                     .padding(10)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                // With a mouse attached macOS uses legacy scrollers that take width. While a card expands the
+                // window resizes a frame late, the scroller pops in, text rewraps, and the panel jitters.
+                .scrollIndicators(.never)
                 .frame(maxHeight: maxListHeight)
                 .fixedSize(horizontal: false, vertical: true)
             }
