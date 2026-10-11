@@ -64,7 +64,8 @@ struct MenuBarLabel: View {
                     icons: model.menuBarShowVendorIcons ? model.menuBarBarVendorIcons : [],
                     shortWindow: model.menuBarShowVendorIcons ? model.menuBarBarIconIsShortWindow : [],
                     placement: model.showPercentInMenuBar ? model.menuBarPercentPlacement : nil,
-                    isStale: isStale))
+                    isStale: isStale,
+                    style: model.menuBarStyle))
             } else {
                 Image(model.useAppIconInMenuBar ? "MenuBarColor" : "MenuBarMono")
                 if isStale { Image(systemName: "exclamationmark.circle") }
