@@ -96,3 +96,87 @@ private func tempFile(_ name: String = "payload.json") -> URL {
     }
     #expect(WidgetContentState.ready.isReady)
 }
+
+// MARK: - App → widget hand-off after the fix for widgets that stopped updating (stale or blank tiles)
+
+@Test func payloadWrittenByTheAppIsWhatTheWidgetReads() throws {
+    let url = tempFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let measured = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .codex, account: "a@b.c", plan: "Plus", windows: [window(73)], fetchedAt: measured)
+    let status = ProviderSyncStatus(instanceID: snapshot.instanceID, provider: .codex, state: .fresh(snapshot),
+                                    lastAttemptAt: measured, refreshInterval: 600)
+    let written = DevicePayload(deviceID: "mac", deviceName: "Mac mini", snapshots: [snapshot], costs: [],
+                                providerStatuses: [status], updatedAt: measured)
+    // Not checking `lastError` here: it is process-wide and the failure test above runs in parallel.
+    SharedStore.write(try written.encoded(), to: url)
+
+    let read = try SharedStore.readResult(at: url).get()
+    #expect(read == written)
+    // The measurement time survives the round trip, so a widget can say how old its numbers are.
+    #expect(read.status(for: snapshot).lastSuccessAt == measured)
+    #expect(read.status(for: snapshot).staleAfter == 1260) // two missed 10-minute refreshes + 1 min
+}
+
+@Test func oldDataIsLabelledStaleWithItsAgeNotShownAsCurrent() {
+    let measured = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .claude, account: nil, plan: nil, windows: [window(40)], fetchedAt: measured)
+    let payload = DevicePayload(deviceID: "mac", deviceName: "Mac", snapshots: [snapshot], costs: [], updatedAt: measured)
+    let status = payload.status(for: snapshot)
+    let eightDaysLater = measured.addingTimeInterval(8 * 86400)
+
+    #expect(status.freshness(now: measured.addingTimeInterval(60)) == .fresh)
+    #expect(status.freshness(now: eightDaysLater) == .stale)
+    #expect(status.label(now: eightDaysLater).hasPrefix("Stale · measured"))
+    // Old data is still drawn (with that label); it is not an empty state.
+    #expect(WidgetContent.providerState(.success(payload), provider: .claude) == .ready)
+}
+
+@Test func timelineFlipsToStaleOnItsOwnBeforeTheNextReload() {
+    let now = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .claude, account: nil, plan: nil,
+                                 windows: [UsageWindow(id: "session", kind: .session, title: "Session", usedPercent: 10,
+                                                       resetsAt: now.addingTimeInterval(20 * 60))],
+                                 fetchedAt: now.addingTimeInterval(-10 * 60))
+    let payload = DevicePayload(deviceID: "mac", deviceName: "Mac", snapshots: [snapshot], costs: [])
+    let dates = WidgetContent.entryDates(for: payload, now: now)
+
+    let staleAt = snapshot.fetchedAt.addingTimeInterval(ProviderSyncStatus.minimumStaleAfter + 1)
+    #expect(dates == [now, staleAt, now.addingTimeInterval(20 * 60)])
+    #expect(dates.allSatisfy { $0 < now.addingTimeInterval(WidgetContent.reloadInterval) })
+    #expect(payload.status(for: snapshot).freshness(now: dates[1]) == .stale)
+}
+
+@Test func timelineWithoutDataStillHasAnEntry() {
+    // WidgetKit draws nothing for an empty timeline; there must always be an entry to carry the empty state.
+    let now = Date()
+    #expect(WidgetContent.entryDates(for: nil, now: now) == [now])
+    let longAgo = DevicePayload(deviceID: "mac", deviceName: "Mac",
+                                snapshots: [UsageSnapshot(provider: .cursor, account: nil, plan: nil, windows: [],
+                                                          fetchedAt: now.addingTimeInterval(-8 * 86400))], costs: [])
+    #expect(WidgetContent.entryDates(for: longAgo, now: now) == [now])
+}
+
+@Test func onlyTheInstalledCopyRepairsWidgetRegistration() {
+    let home = URL(fileURLWithPath: "/Users/someone")
+    #expect(WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Applications/QuotaVadis.app"), home: home))
+    #expect(WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Users/someone/Applications/QuotaVadis.app"), home: home))
+    // Build products that merely live in a folder called Applications must not unregister the installed app.
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath:
+        "/proj/.build/dd/Build/Intermediates.noindex/ArchiveIntermediates/QuotaVadis/InstallationBuildProductsLocation/Applications/QuotaVadis.app"), home: home))
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath: "/proj/dist/export/QuotaVadis.app"), home: home))
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Volumes/QuotaVadis/QuotaVadis.app"), home: home))
+}
+
+@Test func everyOtherRegisteredCopyIsDroppedButNeverTheRunningOne() {
+    let installed = URL(fileURLWithPath: "/Applications/QuotaVadis.app")
+    let registered = [
+        URL(fileURLWithPath: "/Applications/QuotaVadis.app/"),
+        URL(fileURLWithPath: "/Volumes/QuotaVadis/QuotaVadis.app"),
+        URL(fileURLWithPath: "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app"),
+    ]
+    #expect(WidgetRegistration.otherCopies(of: installed, registered: registered).map(\.path) == [
+        "/Volumes/QuotaVadis/QuotaVadis.app", "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",
+    ])
+    #expect(WidgetRegistration.otherCopies(of: installed, registered: [installed]).isEmpty)
+}

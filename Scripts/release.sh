@@ -46,6 +46,10 @@ KEY_ID=C7WD5C4FK2
 ISSUER=ca252666-8b4c-45a8-88b2-78606d80340d
 P8=~/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8
 WEB=../zmrhal_web/public/quotavadis
+# Every copy of QuotaVadis.app LaunchServices knows about besides /Applications makes WidgetKit drop the installed
+# widget extension "as a safeguard" (see Sources/QuotaCore/Sync/WidgetRegistration.swift). Forget build copies.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+unregister_builds() { find "$@" -name QuotaVadis.app -type d -prune -exec "$LSREGISTER" -u {} \; 2>/dev/null || true; }
 DIST=dist; mkdir -p "$DIST" "$WEB"
 if [ "$SKIP_BUILD" = "--skip-build" ]; then
   APP="$DIST/export/QuotaVadis.app"
@@ -89,6 +93,7 @@ else
   xcrun stapler staple "$APP" >/dev/null
 fi
 rm -f "$ZIP"; ditto --norsrc -c -k --keepParent "$APP" "$ZIP"
+[ -d .build/dd ] && unregister_builds .build/dd
 rm -rf .build/dd
 
 # Round-trip check: a zip that unzips into a broken signature must never ship (see the --norsrc comment
@@ -98,7 +103,7 @@ UNZIPPED=$(mktemp -d)
 # would hide exactly the bug this check exists to catch (it did, the first time this check was written).
 unzip -q "$ZIP" -d "$UNZIPPED"
 codesign --verify --deep --strict "$UNZIPPED/QuotaVadis.app"
-rm -rf "$UNZIPPED"
+unregister_builds "$UNZIPPED"; rm -rf "$UNZIPPED"
 
 # Sparkle CLI tools: from the official release tarball (Scripts/sparkle-tools.sh installs them).
 SIGN=~/.local/share/sparkle-tools/sign_update
@@ -149,5 +154,8 @@ DMG="$DIST/QuotaVadis-$VERSION.dmg"
 Scripts/make-dmg.sh "$APP" "$DMG"
 cp "$DMG" "$WEB/"
 [ "$CHANNEL" = stable ] && cp "$DMG" "$WEB/QuotaVadis-latest.dmg"   # primary website download button
+# The zip and DMG are the release; the unpacked app and the archive would stay registered as extra copies.
+unregister_builds "$DIST"
+rm -rf "$DIST/export" "$DIST/QuotaVadis.xcarchive"
 
 echo "release $VERSION ($BUILD, $CHANNEL) ready: $ZIP + $DMG → $WEB (appcast updated). Deploy zmrhal_web to publish."

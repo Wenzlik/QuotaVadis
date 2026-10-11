@@ -42,11 +42,15 @@ codesign --verify --deep --strict "$APP"
 
 STAGE=$(mktemp -d -t qv-dmg-stage)
 RW_DMG=$(mktemp -t qv-dmg-rw).dmg
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 cleanup() {
   # Detach any leftover mount of our RW image (best-effort).
   if [[ -n "${MOUNTPOINT:-}" && -d "$MOUNTPOINT" ]]; then
+    "$LSREGISTER" -u "$MOUNTPOINT/QuotaVadis.app" 2>/dev/null || true
     hdiutil detach "$MOUNTPOINT" -quiet 2>/dev/null || true
   fi
+  # A staged or mounted copy left registered makes WidgetKit drop the installed widgets (WidgetRegistration.swift).
+  "$LSREGISTER" -u "$STAGE/QuotaVadis.app" 2>/dev/null || true
   rm -rf "$STAGE"
   rm -f "$RW_DMG"
 }

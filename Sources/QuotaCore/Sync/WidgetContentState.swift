@@ -51,6 +51,20 @@ public enum WidgetContentState: Sendable, Equatable {
 }
 
 public enum WidgetContent {
+    /// How long one widget timeline lasts before WidgetKit asks again; the app also reloads after every write.
+    public static let reloadInterval: TimeInterval = 30 * 60
+
+    /// Entry dates for one timeline: now, plus every moment before the next reload at which a measurement turns
+    /// stale or a window resets, so the tile changes by itself. Re-reading an unchanged file never rejuvenates a sample.
+    public static func entryDates(for payload: DevicePayload?, now: Date) -> [Date] {
+        let nextReload = now.addingTimeInterval(reloadInterval)
+        let boundaries = (payload?.snapshots ?? []).flatMap { snapshot in
+            [snapshot.fetchedAt.addingTimeInterval((payload?.status(for: snapshot).staleAfter ?? ProviderSyncStatus.minimumStaleAfter) + 1)]
+                + snapshot.windows.compactMap(\.resetsAt)
+        }.filter { $0 > now && $0 < nextReload }
+        return [now] + Set(boundaries).sorted()
+    }
+
     /// Single-tool widgets (fixed, configurable and the switcher).
     public static func providerState(_ result: Result<DevicePayload, SharedStore.ReadFailure>, provider: ProviderID) -> WidgetContentState {
         switch result {

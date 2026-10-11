@@ -309,6 +309,7 @@ final class AppModel {
         // First launch reads nothing until the welcome window is finished (see `refresh`).
         if hasOnboarded { Task { await refresh() } }
         claudeSignIn.onConnected = { [weak self] in self?.claudeDidConnect() }
+        repairWidgetRegistration()
     }
 
     /// False until the welcome flow is finished. Until then nothing reads a provider, scans logs or publishes
@@ -706,8 +707,36 @@ final class AppModel {
     private(set) var widgetHandoffError: String? = SharedStore.lastError
     private(set) var widgetHandoffWrittenAt: Date? = SharedStore.lastWriteAt
 
-    /// Settings button: rewrite the file and ask WidgetKit to reload, without a full provider refresh.
-    func refreshWidgetsNow() { updateWidgets() }
+    /// Settings button: rewrite the file, re-register the extension and ask WidgetKit to reload, without a full
+    /// provider refresh.
+    func refreshWidgetsNow() {
+        updateWidgets()
+        repairWidgetRegistration()
+    }
+
+    /// Runs on every launch, so the first launch after a Sparkle update re-binds the widgets to the new bundle.
+    /// See `WidgetRegistration` for why other registered copies of the app break the desktop widgets.
+    private func repairWidgetRegistration() {
+        let bundle = Bundle.main.bundleURL
+        guard WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
+        let others = WidgetRegistration.otherCopies(of: bundle, registered: NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id))
+        Task.detached(priority: .utility) {
+            let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+            for copy in others { Self.run(lsregister, ["-u", copy.path]) }
+            Self.run(lsregister, ["-f", bundle.path])
+            Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    private nonisolated static func run(_ tool: String, _ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run(); process.waitUntilExit() } catch {}
+    }
 
     @discardableResult
     private func requestSync() -> Task<Void, Never> {
