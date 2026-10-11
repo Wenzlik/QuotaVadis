@@ -1,6 +1,7 @@
 import BackgroundTasks
 import SwiftUI
 import UIKit
+import os
 import QuotaCore
 
 @main
@@ -12,7 +13,12 @@ struct QuotaVadisApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(store: store)
-                .task { await store.start() }
+                .task {
+                    // Also at launch: after an update or a force-quit iOS has no request pending, and the app may
+                    // be killed before it ever reaches the background.
+                    BackgroundRefresh.schedule()
+                    await store.start()
+                }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await store.refreshIfNeeded() } }
                     if phase == .background { BackgroundRefresh.schedule() }
@@ -27,12 +33,15 @@ struct QuotaVadisApp: App {
 }
 
 enum BackgroundRefresh {
-    static let id = "cz.zmrhal.QuotaVadis.refresh"
-    /// iOS decides when it actually runs; this only asks for no sooner than every 30 minutes.
+    static let id = WidgetContent.backgroundRefreshID
+    /// iOS decides when it actually runs; this only asks for no sooner than every 30 minutes. A new request replaces
+    /// the pending one.
     static func schedule() {
         let request = BGAppRefreshTaskRequest(identifier: id)
-        request.earliestBeginDate = .now.addingTimeInterval(30 * 60)
-        try? BGTaskScheduler.shared.submit(request)
+        request.earliestBeginDate = .now.addingTimeInterval(WidgetContent.reloadInterval)
+        do { try BGTaskScheduler.shared.submit(request) } catch {
+            Logger(subsystem: "cz.zmrhal.QuotaVadis", category: "widgets").error("background refresh not scheduled: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 

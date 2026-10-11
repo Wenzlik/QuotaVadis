@@ -97,6 +97,8 @@ ASCRIPT
     echo "warning: Finder layout AppleScript failed; shipping minimal DMG (app + Applications)" >&2
   fi
   sync
+  # Finder registers the mounted copy; once detached it would linger in LaunchServices as a ghost.
+  "$LSREGISTER" -u "$MOUNTPOINT/QuotaVadis.app" 2>/dev/null || true
   hdiutil detach "$MOUNTPOINT" -quiet
   MOUNTPOINT=
 fi

@@ -6,7 +6,10 @@ import ServiceManagement
 import SwiftUI
 import UserNotifications
 import WidgetKit
+import os
 import QuotaCore
+
+private let widgetLog = Logger(subsystem: "cz.zmrhal.QuotaVadis", category: "widgets")
 
 /// What the menu bar number (or one bar, in `.bars` style) represents.
 enum MenuBarSource: Hashable, Codable {
@@ -716,26 +719,43 @@ final class AppModel {
 
     /// Runs on every launch, so the first launch after a Sparkle update re-binds the widgets to the new bundle.
     /// See `WidgetRegistration` for why other registered copies of the app break the desktop widgets.
+    /// Everything runs off the main thread at background priority; the LaunchServices dump takes a few seconds.
     private func repairWidgetRegistration() {
         let bundle = Bundle.main.bundleURL
         guard WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
-        let others = WidgetRegistration.otherCopies(of: bundle, registered: NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id))
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .background) {
             let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-            for copy in others { Self.run(lsregister, ["-u", copy.path]) }
+            // grep keeps the ~15 MB dump out of this process; only path/identifier lines come back.
+            let dump = Self.run("/bin/sh", ["-c", #""$0" -dump Bundle | grep -E '^(path|identifier):'"#, lsregister])
+            let registered = WidgetRegistration.registeredPaths(bundleID: id, dump: String(decoding: dump, as: UTF8.self))
+            for path in WidgetRegistration.copiesToUnregister(running: bundle, registered: registered) {
+                Self.run(lsregister, ["-u", path])
+            }
             Self.run(lsregister, ["-f", bundle.path])
             Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
-    private nonisolated static func run(_ tool: String, _ arguments: [String]) {
+    @discardableResult
+    private nonisolated static func run(_ tool: String, _ arguments: [String]) -> Data {
         let process = Process()
+        let output = Pipe()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
+        process.qualityOfService = .background
+        process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        do { try process.run(); process.waitUntilExit() } catch {}
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            if process.terminationStatus != 0 { widgetLog.error("\(tool, privacy: .public) \(arguments, privacy: .public) exited \(process.terminationStatus)") }
+            return data
+        } catch {
+            widgetLog.error("\(tool, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            return Data()
+        }
     }
 
     @discardableResult

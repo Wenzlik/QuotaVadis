@@ -108,8 +108,9 @@ private func tempFile(_ name: String = "payload.json") -> URL {
                                     lastAttemptAt: measured, refreshInterval: 600)
     let written = DevicePayload(deviceID: "mac", deviceName: "Mac mini", snapshots: [snapshot], costs: [],
                                 providerStatuses: [status], updatedAt: measured)
-    // Not checking `lastError` here: it is process-wide and the failure test above runs in parallel.
-    SharedStore.write(try written.encoded(), to: url)
+    // Same bytes `SharedStore.write` stores, written directly: going through it would reset the process-wide
+    // `lastError` while the failure test above, running in parallel, is checking it.
+    try written.encoded().write(to: url)
 
     let read = try SharedStore.readResult(at: url).get()
     #expect(read == written)
@@ -168,15 +169,62 @@ private func tempFile(_ name: String = "payload.json") -> URL {
     #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Volumes/QuotaVadis/QuotaVadis.app"), home: home))
 }
 
-@Test func everyOtherRegisteredCopyIsDroppedButNeverTheRunningOne() {
-    let installed = URL(fileURLWithPath: "/Applications/QuotaVadis.app")
-    let registered = [
-        URL(fileURLWithPath: "/Applications/QuotaVadis.app/"),
-        URL(fileURLWithPath: "/Volumes/QuotaVadis/QuotaVadis.app"),
-        URL(fileURLWithPath: "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app"),
-    ]
-    #expect(WidgetRegistration.otherCopies(of: installed, registered: registered).map(\.path) == [
-        "/Volumes/QuotaVadis/QuotaVadis.app", "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",
+@Test func ghostRegistrationsAreReadFromTheLaunchServicesDump() {
+    // `lsregister -dump Bundle | grep -E '^(path|identifier):'`, as captured on a Mac whose widgets had stopped:
+    // the archive and the DMG mount no longer exist on disk, NSWorkspace does not list them, LaunchServices still does.
+    let dump = """
+    path:                       /Applications/QuotaVadis.app (0x663c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/Notion.app (0x1234)
+    identifier:                 notion.id
+    path:                       /Volumes/T5 500GB/QuotaVadis/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app (0x562c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Volumes/QuotaVadis/QuotaVadis.app (0x45a8)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex (0x7000)
+    identifier:                 cz.zmrhal.QuotaVadis.widgets
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/QuotaVadis.app (0x663c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    """
+    #expect(WidgetRegistration.registeredPaths(bundleID: "cz.zmrhal.QuotaVadis", dump: dump) == [
+        "/Applications/QuotaVadis.app",
+        "/Volumes/T5 500GB/QuotaVadis/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",
+        "/Volumes/QuotaVadis/QuotaVadis.app",
     ])
-    #expect(WidgetRegistration.otherCopies(of: installed, registered: [installed]).isEmpty)
+    #expect(WidgetRegistration.registeredPaths(bundleID: "cz.zmrhal.QuotaVadis", dump: "").isEmpty)
+}
+
+@Test func everyOtherRegisteredCopyIsDroppedButNeverTheRunningOne() {
+    let home = URL(fileURLWithPath: "/Users/someone")
+    let onDisk: Set = ["/Applications/QuotaVadis.app", "/Users/someone/Applications/QuotaVadis.app", "/Volumes/QuotaVadis/QuotaVadis.app"]
+    let registered = [
+        "/Applications/QuotaVadis.app/",
+        "/Users/someone/Applications/QuotaVadis.app",
+        "/Volumes/QuotaVadis/QuotaVadis.app",
+        "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",  // ghost
+        "/Users/someone/Library/Caches/cz.zmrhal.QuotaVadis/org.sparkle-project.Sparkle/Installation/x/QuotaVadis.app",  // ghost
+    ]
+    let drop = { (running: String) in
+        WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: running), registered: registered,
+                                              exists: onDisk.contains, home: home)
+    }
+    // The other install stays registered whichever one runs, so the two never unregister each other in turn.
+    #expect(drop("/Applications/QuotaVadis.app") == Array(registered[2...]))
+    #expect(drop("/Users/someone/Applications/QuotaVadis.app") == Array(registered[2...]))
+    // An install whose files are gone is just another ghost.
+    #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  registered: ["/Users/someone/Applications/QuotaVadis.app"],
+                                                  exists: { _ in false }, home: home) == ["/Users/someone/Applications/QuotaVadis.app"])
+    #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  registered: ["/Applications/QuotaVadis.app"], home: home).isEmpty)
+}
+
+@Test func iOSBackgroundRefreshIsPermittedByItsInfoPlist() throws {
+    // A submit with an identifier missing from BGTaskSchedulerPermittedIdentifiers fails, and the widgets age silently.
+    let plistURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("Apps/iOS/Info.plist")
+    let plist = try #require(NSDictionary(contentsOf: plistURL) as? [String: Any])
+    #expect((plist["BGTaskSchedulerPermittedIdentifiers"] as? [String])?.contains(WidgetContent.backgroundRefreshID) == true)
+    #expect((plist["UIBackgroundModes"] as? [String])?.contains("fetch") == true)
 }

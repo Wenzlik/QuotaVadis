@@ -53,6 +53,9 @@ public enum WidgetContentState: Sendable, Equatable {
 public enum WidgetContent {
     /// How long one widget timeline lasts before WidgetKit asks again; the app also reloads after every write.
     public static let reloadInterval: TimeInterval = 30 * 60
+    /// iOS `BGAppRefreshTask` that refetches the payloads for the widgets; must be listed in the iOS Info.plist's
+    /// BGTaskSchedulerPermittedIdentifiers or every submit fails.
+    public static let backgroundRefreshID = "cz.zmrhal.QuotaVadis.refresh"
 
     /// Entry dates for one timeline: now, plus every moment before the next reload at which a measurement turns
     /// stale or a window resets, so the tile changes by itself. Re-reading an unchanged file never rejuvenates a sample.
