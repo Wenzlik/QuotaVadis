@@ -22,8 +22,11 @@ pgrep -x QuotaVadis >/dev/null && { pkill -9 -x QuotaVadis; sleep 1; }
 # fights over UserDefaults, Keychain and the App Group file.
 rm -rf ~/Applications/QuotaVadis.app /Applications/QuotaVadis.app
 ditto .build/dd/Build/Products/Release/QuotaVadis.app /Applications/QuotaVadis.app
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# The build-folder copy must not stay registered: a second copy makes WidgetKit drop the installed widgets.
+"$LSREGISTER" -u .build/dd/Build/Products/Release/QuotaVadis.app 2>/dev/null || true
 rm -rf .build/dd
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f ~/Applications/QuotaVadis.app >/dev/null 2>&1 || true
+"$LSREGISTER" -f /Applications/QuotaVadis.app >/dev/null 2>&1 || true
 # Make WidgetKit pick up the new extension right away.
 pluginkit -a /Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex >/dev/null 2>&1 || true
 killall chronod 2>/dev/null || true

@@ -47,14 +47,11 @@ struct QuotaEntry: TimelineEntry {
 
     /// Pre-schedule age/reset boundaries; re-reading an unchanged file must never rejuvenate a sample.
     static func entries(result: Result<DevicePayload, SharedStore.ReadFailure>, provider: ProviderID?, now: Date = .now) -> [QuotaEntry] {
-        let payload = try? result.get()
-        let snapshots = payload?.snapshots ?? []
-        let nextReload = now.addingTimeInterval(30 * 60)
-        let boundaries = snapshots.flatMap { snapshot in
-            [snapshot.fetchedAt.addingTimeInterval((payload?.status(for: snapshot).staleAfter ?? ProviderSyncStatus.minimumStaleAfter) + 1)] + snapshot.windows.compactMap(\.resetsAt)
-        }.filter { $0 > now && $0 < nextReload }
-        return ([now] + Set(boundaries).sorted()).map { QuotaEntry(date: $0, result: result, provider: provider) }
+        WidgetContent.entryDates(for: try? result.get(), now: now).map { QuotaEntry(date: $0, result: result, provider: provider) }
     }
+
+    /// The next time WidgetKit should ask for a timeline.
+    static var nextReload: Date { .now.addingTimeInterval(WidgetContent.reloadInterval) }
 
     static let placeholder = QuotaEntry(date: .now, payload: .preview, provider: .claude)
 }
@@ -67,7 +64,7 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: ProviderIntent, in context: Context) async -> Timeline<QuotaEntry> {
         Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: configuration.provider.providerID),
-                 policy: .after(.now.addingTimeInterval(30 * 60)))
+                 policy: .after(QuotaEntry.nextReload))
     }
 }
 
@@ -78,7 +75,7 @@ struct OverviewTimelineProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
         completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: nil),
-                            policy: .after(.now.addingTimeInterval(30 * 60))))
+                            policy: .after(QuotaEntry.nextReload)))
     }
 }
 

@@ -3,7 +3,7 @@
 #
 #   Scripts/release.sh 0.1.0                         # stable (default channel); build number = UTC timestamp
 #   Scripts/release.sh 0.1.1-dev development         # development channel item (or CHANNEL=development)
-#   Scripts/release.sh 0.1.0 --skip-build            # reuse dist/export/QuotaVadis.app
+#   Scripts/release.sh 0.1.0 --skip-build            # reuse dist/export/QuotaVadis.app (or dist/QuotaVadis-0.1.0.zip)
 #
 # Output: dist/QuotaVadis-<version>.zip (Sparkle updates) + dist/QuotaVadis-<version>.dmg
 # (first-time install), appcast entry appended to ../zmrhal_web/public/quotavadis/appcast.xml,
@@ -46,14 +46,20 @@ KEY_ID=C7WD5C4FK2
 ISSUER=ca252666-8b4c-45a8-88b2-78606d80340d
 P8=~/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8
 WEB=../zmrhal_web/public/quotavadis
+# Every copy of QuotaVadis.app LaunchServices knows about besides /Applications makes WidgetKit drop the installed
+# widget extension "as a safeguard" (see Sources/QuotaCore/Sync/WidgetRegistration.swift). Forget build copies.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+unregister_builds() { find "$@" -name QuotaVadis.app -type d -prune -exec "$LSREGISTER" -u {} \; 2>/dev/null || true; }
 DIST=dist; mkdir -p "$DIST" "$WEB"
+ARCHIVE="$DIST/QuotaVadis.xcarchive"
 if [ "$SKIP_BUILD" = "--skip-build" ]; then
   APP="$DIST/export/QuotaVadis.app"
+  # A finished release leaves only its zip (see the end of this script); the stapled app comes back out of it.
+  [ -d "$APP" ] || ditto -x -k "$DIST/QuotaVadis-$VERSION.zip" "$DIST/export"
   BUILD=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Contents/Info.plist")
 else
 rm -rf "$DIST"; mkdir -p "$DIST"
 xcodegen generate >/dev/null
-ARCHIVE="$DIST/QuotaVadis.xcarchive"
 # Archive with automatic (development) signing, then let -exportArchive re-sign for Developer ID.
 # That step creates/downloads the Developer ID provisioning profile carrying iCloud + App Group.
 xcodebuild -project QuotaVadis.xcodeproj -scheme QuotaVadis -configuration Release \
@@ -89,6 +95,7 @@ else
   xcrun stapler staple "$APP" >/dev/null
 fi
 rm -f "$ZIP"; ditto --norsrc -c -k --keepParent "$APP" "$ZIP"
+[ -d .build/dd ] && unregister_builds .build/dd
 rm -rf .build/dd
 
 # Round-trip check: a zip that unzips into a broken signature must never ship (see the --norsrc comment
@@ -98,7 +105,7 @@ UNZIPPED=$(mktemp -d)
 # would hide exactly the bug this check exists to catch (it did, the first time this check was written).
 unzip -q "$ZIP" -d "$UNZIPPED"
 codesign --verify --deep --strict "$UNZIPPED/QuotaVadis.app"
-rm -rf "$UNZIPPED"
+unregister_builds "$UNZIPPED"; rm -rf "$UNZIPPED"
 
 # Sparkle CLI tools: from the official release tarball (Scripts/sparkle-tools.sh installs them).
 SIGN=~/.local/share/sparkle-tools/sign_update
@@ -149,5 +156,13 @@ DMG="$DIST/QuotaVadis-$VERSION.dmg"
 Scripts/make-dmg.sh "$APP" "$DMG"
 cp "$DMG" "$WEB/"
 [ "$CHANNEL" = stable ] && cp "$DMG" "$WEB/QuotaVadis-latest.dmg"   # primary website download button
+# The zip and DMG are the release; the unpacked app and the archive would stay registered as extra copies.
+# The archive is kept zipped for its dSYMs (crash symbolication); --skip-build restores the app from the zip.
+unregister_builds "$DIST"
+if [ -d "$ARCHIVE" ]; then
+  ditto -c -k --keepParent "$ARCHIVE" "$DIST/QuotaVadis-$VERSION-$BUILD.xcarchive.zip"
+  rm -rf "$ARCHIVE"
+fi
+rm -rf "$DIST/export"
 
 echo "release $VERSION ($BUILD, $CHANNEL) ready: $ZIP + $DMG → $WEB (appcast updated). Deploy zmrhal_web to publish."

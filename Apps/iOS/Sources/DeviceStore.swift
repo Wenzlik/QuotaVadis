@@ -111,6 +111,8 @@ final class DeviceStore {
     }
 
     func start() async {
+        // After an app update the widget file is still there; let the new extension draw it before iCloud answers.
+        WidgetCenter.shared.reloadAllTimelines()
         await refresh()
         try? await cloud.ensureSubscription()
     }

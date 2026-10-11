@@ -13,7 +13,7 @@ struct FixedProviderTimelineProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
         completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: provider),
-                            policy: .after(.now.addingTimeInterval(30 * 60))))
+                            policy: .after(QuotaEntry.nextReload)))
     }
 }
 
@@ -83,7 +83,7 @@ struct SwitcherTimelineProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
         completion(Timeline(entries: QuotaEntry.entries(result: SharedStore.readResult(), provider: SwitcherSelection.current),
-                            policy: .after(.now.addingTimeInterval(30 * 60))))
+                            policy: .after(QuotaEntry.nextReload)))
     }
 }
 

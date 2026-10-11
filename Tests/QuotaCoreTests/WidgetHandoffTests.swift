@@ -96,3 +96,169 @@ private func tempFile(_ name: String = "payload.json") -> URL {
     }
     #expect(WidgetContentState.ready.isReady)
 }
+
+// MARK: - App → widget hand-off after the fix for widgets that stopped updating (stale or blank tiles)
+
+@Test func payloadWrittenByTheAppIsWhatTheWidgetReads() throws {
+    let url = tempFile()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let measured = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .codex, account: "a@b.c", plan: "Plus", windows: [window(73)], fetchedAt: measured)
+    let status = ProviderSyncStatus(instanceID: snapshot.instanceID, provider: .codex, state: .fresh(snapshot),
+                                    lastAttemptAt: measured, refreshInterval: 600)
+    let written = DevicePayload(deviceID: "mac", deviceName: "Mac mini", snapshots: [snapshot], costs: [],
+                                providerStatuses: [status], updatedAt: measured)
+    // Same bytes `SharedStore.write` stores, written directly: going through it would reset the process-wide
+    // `lastError` while the failure test above, running in parallel, is checking it.
+    try written.encoded().write(to: url)
+
+    let read = try SharedStore.readResult(at: url).get()
+    #expect(read == written)
+    // The measurement time survives the round trip, so a widget can say how old its numbers are.
+    #expect(read.status(for: snapshot).lastSuccessAt == measured)
+    #expect(read.status(for: snapshot).staleAfter == 1260) // two missed 10-minute refreshes + 1 min
+}
+
+@Test func oldDataIsLabelledStaleWithItsAgeNotShownAsCurrent() {
+    let measured = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .claude, account: nil, plan: nil, windows: [window(40)], fetchedAt: measured)
+    let payload = DevicePayload(deviceID: "mac", deviceName: "Mac", snapshots: [snapshot], costs: [], updatedAt: measured)
+    let status = payload.status(for: snapshot)
+    let eightDaysLater = measured.addingTimeInterval(8 * 86400)
+
+    #expect(status.freshness(now: measured.addingTimeInterval(60)) == .fresh)
+    #expect(status.freshness(now: eightDaysLater) == .stale)
+    #expect(status.label(now: eightDaysLater).hasPrefix("Stale · measured"))
+    // Old data is still drawn (with that label); it is not an empty state.
+    #expect(WidgetContent.providerState(.success(payload), provider: .claude) == .ready)
+}
+
+@Test func timelineFlipsToStaleOnItsOwnBeforeTheNextReload() {
+    let now = Date(timeIntervalSince1970: 1_790_000_000)
+    let snapshot = UsageSnapshot(provider: .claude, account: nil, plan: nil,
+                                 windows: [UsageWindow(id: "session", kind: .session, title: "Session", usedPercent: 10,
+                                                       resetsAt: now.addingTimeInterval(20 * 60))],
+                                 fetchedAt: now.addingTimeInterval(-10 * 60))
+    let payload = DevicePayload(deviceID: "mac", deviceName: "Mac", snapshots: [snapshot], costs: [])
+    let dates = WidgetContent.entryDates(for: payload, now: now)
+
+    let staleAt = snapshot.fetchedAt.addingTimeInterval(ProviderSyncStatus.minimumStaleAfter + 1)
+    #expect(dates == [now, staleAt, now.addingTimeInterval(20 * 60)])
+    #expect(dates.allSatisfy { $0 < now.addingTimeInterval(WidgetContent.reloadInterval) })
+    #expect(payload.status(for: snapshot).freshness(now: dates[1]) == .stale)
+}
+
+@Test func timelineWithoutDataStillHasAnEntry() {
+    // WidgetKit draws nothing for an empty timeline; there must always be an entry to carry the empty state.
+    let now = Date()
+    #expect(WidgetContent.entryDates(for: nil, now: now) == [now])
+    let longAgo = DevicePayload(deviceID: "mac", deviceName: "Mac",
+                                snapshots: [UsageSnapshot(provider: .cursor, account: nil, plan: nil, windows: [],
+                                                          fetchedAt: now.addingTimeInterval(-8 * 86400))], costs: [])
+    #expect(WidgetContent.entryDates(for: longAgo, now: now) == [now])
+}
+
+@Test func onlyTheInstalledCopyRepairsWidgetRegistration() {
+    let home = URL(fileURLWithPath: "/Users/someone")
+    #expect(WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Applications/QuotaVadis.app"), home: home))
+    #expect(WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Users/someone/Applications/QuotaVadis.app"), home: home))
+    // Build products that merely live in a folder called Applications must not unregister the installed app.
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath:
+        "/proj/.build/dd/Build/Intermediates.noindex/ArchiveIntermediates/QuotaVadis/InstallationBuildProductsLocation/Applications/QuotaVadis.app"), home: home))
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath: "/proj/dist/export/QuotaVadis.app"), home: home))
+    #expect(!WidgetRegistration.isInstalled(URL(fileURLWithPath: "/Volumes/QuotaVadis/QuotaVadis.app"), home: home))
+}
+
+@Test func ghostRegistrationsAreReadFromTheLaunchServicesDump() {
+    // `lsregister -dump Bundle | grep -E '^(path|identifier):'`, as captured on a Mac whose widgets had stopped:
+    // the archive and the DMG mount no longer exist on disk, NSWorkspace does not list them, LaunchServices still does.
+    let dump = """
+    path:                       /Applications/QuotaVadis.app (0x663c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/Notion.app (0x1234)
+    identifier:                 notion.id
+    path:                       /Volumes/T5 500GB/QuotaVadis/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app (0x562c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Volumes/QuotaVadis/QuotaVadis.app (0x45a8)
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex (0x7000)
+    identifier:                 cz.zmrhal.QuotaVadis.widgets
+    identifier:                 cz.zmrhal.QuotaVadis
+    path:                       /Applications/QuotaVadis.app (0x663c)
+    identifier:                 cz.zmrhal.QuotaVadis
+    """
+    #expect(WidgetRegistration.registeredPaths(bundleID: "cz.zmrhal.QuotaVadis", dump: dump) == [
+        "/Applications/QuotaVadis.app",
+        "/Volumes/T5 500GB/QuotaVadis/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",
+        "/Volumes/QuotaVadis/QuotaVadis.app",
+    ])
+    #expect(WidgetRegistration.registeredPaths(bundleID: "cz.zmrhal.QuotaVadis", dump: "").isEmpty)
+}
+
+@Test func everyOtherRegisteredCopyIsDroppedButNeverTheRunningOne() {
+    let home = URL(fileURLWithPath: "/Users/someone")
+    let onDisk: Set = ["/Applications/QuotaVadis.app", "/Users/someone/Applications/QuotaVadis.app", "/Volumes/QuotaVadis/QuotaVadis.app"]
+    let registered = [
+        "/Applications/QuotaVadis.app/",
+        "/Users/someone/Applications/QuotaVadis.app",
+        "/Volumes/QuotaVadis/QuotaVadis.app",
+        "/proj/dist/QuotaVadis.xcarchive/Products/Applications/QuotaVadis.app",  // ghost
+        "/Users/someone/Library/Caches/cz.zmrhal.QuotaVadis/org.sparkle-project.Sparkle/Installation/x/QuotaVadis.app",  // ghost
+    ]
+    let drop = { (running: String) in
+        WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: running), bundleID: "cz.zmrhal.QuotaVadis",
+                                              registered: registered, exists: onDisk.contains,
+                                              identifier: { _ in "cz.zmrhal.QuotaVadis" }, home: home)
+    }
+    // The other install stays registered whichever one runs, so the two never unregister each other in turn.
+    #expect(drop("/Applications/QuotaVadis.app") == Array(registered[2...]))
+    #expect(drop("/Users/someone/Applications/QuotaVadis.app") == Array(registered[2...]))
+    // An install whose files are gone is just another ghost.
+    #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  bundleID: "cz.zmrhal.QuotaVadis",
+                                                  registered: ["/Users/someone/Applications/QuotaVadis.app"],
+                                                  exists: { _ in false }, home: home) == ["/Users/someone/Applications/QuotaVadis.app"])
+    #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  bundleID: "cz.zmrhal.QuotaVadis",
+                                                  registered: ["/Applications/QuotaVadis.app"], home: home).isEmpty)
+}
+
+@Test func existingCopiesAreCheckedAsTheyAreNowNotAsLaunchServicesRemembersThem() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? fm.removeItem(at: root) }
+    func app(_ path: String, id: String?) throws -> String {
+        let contents = root.appendingPathComponent(path).appendingPathComponent("Contents")
+        try fm.createDirectory(at: contents, withIntermediateDirectories: true)
+        if let id {
+            try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": id], format: .xml, options: 0)
+                .write(to: contents.appendingPathComponent("Info.plist"))
+        }
+        return root.appendingPathComponent(path).path
+    }
+    let home = root.appendingPathComponent("home")
+    let otherInstall = try app("home/Applications/QuotaVadis.app", id: "cz.zmrhal.QuotaVadis")
+    let build = try app("dist/QuotaVadis.app", id: "cz.zmrhal.QuotaVadis")
+    let replaced = try app("Downloads/QuotaVadis.app", id: "com.example.Other")
+    let unreadable = try app("old/QuotaVadis.app", id: nil)
+    let alias = root.appendingPathComponent("alias/QuotaVadis.app").path
+    try fm.createDirectory(atPath: root.appendingPathComponent("alias").path, withIntermediateDirectories: true)
+    try fm.createSymbolicLink(atPath: alias, withDestinationPath: otherInstall)
+    let ghost = root.appendingPathComponent("gone/QuotaVadis.app").path
+
+    let drop = WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                     bundleID: "cz.zmrhal.QuotaVadis",
+                                                     registered: [otherInstall, build, replaced, unreadable, alias, ghost],
+                                                     home: home)
+    // Another app now at a remembered path, an unreadable bundle and an alias of the other install all stay.
+    #expect(drop == [build, ghost])
+}
+
+@Test func iOSBackgroundRefreshIsPermittedByItsInfoPlist() throws {
+    // A submit with an identifier missing from BGTaskSchedulerPermittedIdentifiers fails, and the widgets age silently.
+    let plistURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("Apps/iOS/Info.plist")
+    let plist = try #require(NSDictionary(contentsOf: plistURL) as? [String: Any])
+    #expect((plist["BGTaskSchedulerPermittedIdentifiers"] as? [String])?.contains(WidgetContent.backgroundRefreshID) == true)
+    #expect((plist["UIBackgroundModes"] as? [String])?.contains("fetch") == true)
+}
