@@ -32,18 +32,19 @@ enum MenuBarBarImage {
 
     static func render(percents: [Double?], icons: [MenuBarVendorMark?] = [], shortWindow: [Bool] = [], placement: MenuBarPercentPlacement?, isStale: Bool = false, style: MenuBarBadgeStyle = .circular) -> NSImage {
         let circular = style == .circular
-        let height = circular ? discSize : classicHeight
+        // Circular gets a half-point margin around the 18 pt disc so the anti-aliased rim isn't clipped at the image edge.
+        let height = circular ? discSize + 1 : classicHeight
         let iconSize: CGFloat = circular ? 12 : 11
         // Classic pills widen for inside text; circular badges are always a fixed disc.
-        let slot = circular ? discSize : height * (placement == .inside ? 0.85 : 0.6)
+        let slot = circular ? height : height * (placement == .inside ? 0.85 : 0.6)
         let bars = percents.isEmpty ? [nil] : percents
         let icons = icons.count == bars.count ? icons : Array(repeating: nil, count: bars.count)
         let shortWindow = shortWindow.count == bars.count ? shortWindow : Array(repeating: false, count: bars.count)
-        // Inside placement drops the "%" (just "72"); beside has room to spell it out. Missing data inside a
-        // circular badge shows an en dash so it never reads as 0 (a classic pill is just left empty).
+        // Inside placement drops the "%" (just "72"); beside has room to spell it out. Missing data on a circular
+        // badge shows an en dash (inside or beside) so it never reads as 0 (a classic pill is just left empty).
         let texts = bars.map { percent -> String? in
             guard let placement else { return nil }
-            guard let percent else { return placement == .inside && circular ? "–" : nil }
+            guard let percent else { return circular ? "–" : nil }
             return placement == .inside ? "\(Int(percent.rounded()))" : "\(Int(percent.rounded()))%"
         }
         let besideWidths = texts.map { placement == .beside ? ($0.map { ($0 as NSString).size(withAttributes: [.font: besideFont]).width } ?? 0) : 0 }
@@ -71,7 +72,7 @@ enum MenuBarBarImage {
                 }
                 x += slot
                 if placement == .beside, let text = texts[index] {
-                    let attrs: [NSAttributedString.Key: Any] = [.font: besideFont, .foregroundColor: nsColor(for: percent ?? 0)]
+                    let attrs: [NSAttributedString.Key: Any] = [.font: besideFont, .foregroundColor: percent.map { nsColor(for: $0) } ?? NSColor.secondaryLabelColor]
                     let size = (text as NSString).size(withAttributes: attrs)
                     (text as NSString).draw(at: NSPoint(x: x + besideTextGap, y: (height - size.height) / 2), withAttributes: attrs)
                     x += besideTextGap + size.width
@@ -81,7 +82,7 @@ enum MenuBarBarImage {
             if isStale {
                 NSColor.systemOrange.setFill()
                 // The loop left a trailing barGap; sit the dot inside the reserved dotSpace instead of past the edge.
-                NSBezierPath(ovalIn: NSRect(x: x - barGap + 2, y: height - 6, width: 5, height: 5)).fill()
+                NSBezierPath(ovalIn: NSRect(x: x - barGap + 1, y: height - 6, width: 5, height: 5)).fill()
             }
             return true
         }
@@ -104,11 +105,12 @@ enum MenuBarBarImage {
             icon.draw(in: rect.offsetBy(dx: dx, dy: 0), from: .zero, operation: .sourceOver, fraction: 1)
         }
         tint.setFill()
-        rect.insetBy(dx: -1, dy: 0).fill(using: .sourceAtop)
+        // The bold copies spill a hair past `rect`, so widen the tint to cover them; classic tints just `rect` as in 0.5.6.
+        (bold ? rect.insetBy(dx: -1, dy: 0) : rect).fill(using: .sourceAtop)
     }
 
     private static func drawBadge(percent: Double?, x: CGFloat, insideText: String?) {
-        let disc = NSRect(x: x, y: 0, width: discSize, height: discSize)
+        let disc = NSRect(x: x + 0.5, y: 0.5, width: discSize, height: discSize)
         charcoal.setFill()
         NSBezierPath(ovalIn: disc).fill()
         // Rim: faint full ring (keeps the badge outlined on dark bars), then the usage arc clockwise from 12 o'clock.
