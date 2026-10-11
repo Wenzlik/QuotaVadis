@@ -24,16 +24,29 @@ struct QuotaVadisApp: App {
                     if phase == .background { BackgroundRefresh.schedule() }
                 }
         }
-        // Widgets only know what this app last fetched; without this they age until the app is opened again.
-        .backgroundTask(.appRefresh(BackgroundRefresh.id)) {
-            BackgroundRefresh.schedule()
-            await DeviceStore.shared.refresh()
-        }
     }
 }
 
+/// Widgets only know what this app last fetched; without this they age until the app is opened again.
 enum BackgroundRefresh {
     static let id = WidgetContent.backgroundRefreshID
+
+    /// Called from `didFinishLaunching`, not via SwiftUI's `.backgroundTask(.appRefresh)`: on some iOS 18 releases
+    /// SwiftUI registers only after launch has finished, which throws "All launch handlers must be registered before
+    /// application finishes launching" on a background launch (Apple DTS, developer.apple.com/forums/thread/775182).
+    static func register() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: .main) { task in
+            // BGTask is not marked Sendable, but completing it from another thread is what its API is for.
+            nonisolated(unsafe) let task = task
+            schedule()
+            let work = Task { @MainActor in
+                let result = await DeviceStore.shared.refresh()
+                task.setTaskCompleted(success: result != .failed)
+            }
+            task.expirationHandler = { work.cancel() }
+        }
+    }
+
     /// iOS decides when it actually runs; this only asks for no sooner than every 30 minutes. A new request replaces
     /// the pending one.
     static func schedule() {
@@ -45,9 +58,11 @@ enum BackgroundRefresh {
     }
 }
 
-/// Silent pushes from the CloudKit subscription land here and trigger a refresh.
+/// Registers the background refresh before launch ends; silent pushes from the CloudKit subscription land here and
+/// trigger a refresh.
 @MainActor final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        BackgroundRefresh.register()
         application.registerForRemoteNotifications()
         return true
     }

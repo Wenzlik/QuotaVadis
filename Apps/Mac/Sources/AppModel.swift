@@ -720,22 +720,28 @@ final class AppModel {
     /// Runs on every launch, so the first launch after a Sparkle update re-binds the widgets to the new bundle.
     /// See `WidgetRegistration` for why other registered copies of the app break the desktop widgets.
     /// Everything runs off the main thread at background priority; the LaunchServices dump takes a few seconds.
+    /// A request while one is running joins it: that one still re-registers and reloads at its end.
     private func repairWidgetRegistration() {
         let bundle = Bundle.main.bundleURL
-        guard WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
-        Task.detached(priority: .background) {
-            let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-            // grep keeps the ~15 MB dump out of this process; only path/identifier lines come back.
-            let dump = Self.run("/bin/sh", ["-c", #""$0" -dump Bundle | grep -E '^(path|identifier):'"#, lsregister])
-            let registered = WidgetRegistration.registeredPaths(bundleID: id, dump: String(decoding: dump, as: UTF8.self))
-            for path in WidgetRegistration.copiesToUnregister(running: bundle, registered: registered) {
-                Self.run(lsregister, ["-u", path])
-            }
-            Self.run(lsregister, ["-f", bundle.path])
-            Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
-            WidgetCenter.shared.reloadAllTimelines()
+        guard widgetRepair == nil, WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
+        widgetRepair = Task {
+            await Task.detached(priority: .background) {
+                let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+                // grep keeps the ~15 MB dump out of this process; only path/identifier lines come back.
+                let dump = Self.run("/bin/sh", ["-c", #""$0" -dump Bundle | grep -E '^(path|identifier):'"#, lsregister])
+                let registered = WidgetRegistration.registeredPaths(bundleID: id, dump: String(decoding: dump, as: UTF8.self))
+                for path in WidgetRegistration.copiesToUnregister(running: bundle, bundleID: id, registered: registered) {
+                    Self.run(lsregister, ["-u", path])
+                }
+                Self.run(lsregister, ["-f", bundle.path])
+                Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
+                WidgetCenter.shared.reloadAllTimelines()
+            }.value
+            widgetRepair = nil
         }
     }
+
+    @ObservationIgnored private var widgetRepair: Task<Void, Never>?
 
     @discardableResult
     private nonisolated static func run(_ tool: String, _ arguments: [String]) -> Data {

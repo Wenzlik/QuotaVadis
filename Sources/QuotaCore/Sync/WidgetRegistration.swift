@@ -12,8 +12,8 @@ public enum WidgetRegistration {
     /// Only a copy installed in /Applications or ~/Applications may repair registrations: a build-folder run must not
     /// unregister the copy the user actually uses.
     public static func isInstalled(_ bundle: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
-        let folder = bundle.standardizedFileURL.deletingLastPathComponent().path
-        return folder == "/Applications" || folder == home.appendingPathComponent("Applications").standardizedFileURL.path
+        let folder = bundle.standardizedFileURL.deletingLastPathComponent().resolvingSymlinksInPath().path
+        return folder == "/Applications" || folder == home.appendingPathComponent("Applications").resolvingSymlinksInPath().path
     }
 
     /// Paths LaunchServices has registered for `bundleID`, read from `lsregister -dump Bundle` filtered to its
@@ -41,15 +41,25 @@ public enum WidgetRegistration {
     /// Registrations the running installed copy drops: every build product, archive, DMG and ghost. Another installed
     /// copy that still exists is left alone — the running one wins by registering itself last, and two installs
     /// don't unregister each other back and forth on every launch.
-    public static func copiesToUnregister(running bundle: URL, registered: [String],
+    ///
+    /// The dump's identifier is only trusted for ghosts. A path that exists is checked as it is now — LaunchServices
+    /// may remember a path whose files have since been replaced by another app — and through its symlinks, so an
+    /// alias of the running app or of the other install is protected like the app itself.
+    public static func copiesToUnregister(running bundle: URL, bundleID: String, registered: [String],
                                           exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                                          identifier: (String) -> String? = currentIdentifier,
                                           home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String] {
         let me = bundle.standardizedFileURL.resolvingSymlinksInPath().path
         return registered.filter { path in
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            guard url.resolvingSymlinksInPath().path != me else { return false }
-            return !(isInstalled(url, home: home) && exists(url.path))
+            let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+            guard exists(url.path) else { return true }
+            return url.path != me && !isInstalled(url, home: home) && identifier(url.path) == bundleID
         }
+    }
+
+    /// `CFBundleIdentifier` of the bundle at `path` as it is on disk now; nil when it cannot be read.
+    public static func currentIdentifier(_ path: String) -> String? {
+        NSDictionary(contentsOfFile: path + "/Contents/Info.plist")?["CFBundleIdentifier"] as? String
     }
 }
 #endif

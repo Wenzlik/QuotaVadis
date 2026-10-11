@@ -206,18 +206,52 @@ private func tempFile(_ name: String = "payload.json") -> URL {
         "/Users/someone/Library/Caches/cz.zmrhal.QuotaVadis/org.sparkle-project.Sparkle/Installation/x/QuotaVadis.app",  // ghost
     ]
     let drop = { (running: String) in
-        WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: running), registered: registered,
-                                              exists: onDisk.contains, home: home)
+        WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: running), bundleID: "cz.zmrhal.QuotaVadis",
+                                              registered: registered, exists: onDisk.contains,
+                                              identifier: { _ in "cz.zmrhal.QuotaVadis" }, home: home)
     }
     // The other install stays registered whichever one runs, so the two never unregister each other in turn.
     #expect(drop("/Applications/QuotaVadis.app") == Array(registered[2...]))
     #expect(drop("/Users/someone/Applications/QuotaVadis.app") == Array(registered[2...]))
     // An install whose files are gone is just another ghost.
     #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  bundleID: "cz.zmrhal.QuotaVadis",
                                                   registered: ["/Users/someone/Applications/QuotaVadis.app"],
                                                   exists: { _ in false }, home: home) == ["/Users/someone/Applications/QuotaVadis.app"])
     #expect(WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                  bundleID: "cz.zmrhal.QuotaVadis",
                                                   registered: ["/Applications/QuotaVadis.app"], home: home).isEmpty)
+}
+
+@Test func existingCopiesAreCheckedAsTheyAreNowNotAsLaunchServicesRemembersThem() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? fm.removeItem(at: root) }
+    func app(_ path: String, id: String?) throws -> String {
+        let contents = root.appendingPathComponent(path).appendingPathComponent("Contents")
+        try fm.createDirectory(at: contents, withIntermediateDirectories: true)
+        if let id {
+            try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": id], format: .xml, options: 0)
+                .write(to: contents.appendingPathComponent("Info.plist"))
+        }
+        return root.appendingPathComponent(path).path
+    }
+    let home = root.appendingPathComponent("home")
+    let otherInstall = try app("home/Applications/QuotaVadis.app", id: "cz.zmrhal.QuotaVadis")
+    let build = try app("dist/QuotaVadis.app", id: "cz.zmrhal.QuotaVadis")
+    let replaced = try app("Downloads/QuotaVadis.app", id: "com.example.Other")
+    let unreadable = try app("old/QuotaVadis.app", id: nil)
+    let alias = root.appendingPathComponent("alias/QuotaVadis.app").path
+    try fm.createDirectory(atPath: root.appendingPathComponent("alias").path, withIntermediateDirectories: true)
+    try fm.createSymbolicLink(atPath: alias, withDestinationPath: otherInstall)
+    let ghost = root.appendingPathComponent("gone/QuotaVadis.app").path
+
+    let drop = WidgetRegistration.copiesToUnregister(running: URL(fileURLWithPath: "/Applications/QuotaVadis.app"),
+                                                     bundleID: "cz.zmrhal.QuotaVadis",
+                                                     registered: [otherInstall, build, replaced, unreadable, alias, ghost],
+                                                     home: home)
+    // Another app now at a remembered path, an unreadable bundle and an alias of the other install all stay.
+    #expect(drop == [build, ghost])
 }
 
 @Test func iOSBackgroundRefreshIsPermittedByItsInfoPlist() throws {
