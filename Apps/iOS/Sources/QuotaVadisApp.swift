@@ -1,3 +1,4 @@
+import BackgroundTasks
 import SwiftUI
 import UIKit
 import QuotaCore
@@ -14,8 +15,24 @@ struct QuotaVadisApp: App {
                 .task { await store.start() }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await store.refreshIfNeeded() } }
+                    if phase == .background { BackgroundRefresh.schedule() }
                 }
         }
+        // Widgets only know what this app last fetched; without this they age until the app is opened again.
+        .backgroundTask(.appRefresh(BackgroundRefresh.id)) {
+            BackgroundRefresh.schedule()
+            await DeviceStore.shared.refresh()
+        }
+    }
+}
+
+enum BackgroundRefresh {
+    static let id = "cz.zmrhal.QuotaVadis.refresh"
+    /// iOS decides when it actually runs; this only asks for no sooner than every 30 minutes.
+    static func schedule() {
+        let request = BGAppRefreshTaskRequest(identifier: id)
+        request.earliestBeginDate = .now.addingTimeInterval(30 * 60)
+        try? BGTaskScheduler.shared.submit(request)
     }
 }
 
