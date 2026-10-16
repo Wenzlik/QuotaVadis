@@ -2,3 +2,7 @@
 "Bar look" = "Vzhled";
 "Circular" = "Kruhové";
 "Classic" = "Původní";
+
+/* Settings ▸ iCloud & Updates ▸ Widgets, shown only while an extension process from before an update still runs. */
+"The widget is still running build %@ from before the update." = "Widget pořád běží v buildu %@ z doby před aktualizací.";
+"Restart widget" = "Restartovat widget";
