@@ -23,7 +23,7 @@ extension SharedStore {
         let defaults = sharedDefaults
         guard let version = defaults.string(forKey: extensionVersionKey),
               let startedAt = defaults.object(forKey: extensionStartedAtKey) as? Date else { return nil }
-        return WidgetExtensionReport(version: version, pid: Int32(defaults.integer(forKey: extensionPIDKey)), startedAt: startedAt)
+        return WidgetExtensionReport(version: version, pid: Int32(truncatingIfNeeded: defaults.integer(forKey: extensionPIDKey)), startedAt: startedAt)
     }
 
     private static let launchRecorded: Void = {
