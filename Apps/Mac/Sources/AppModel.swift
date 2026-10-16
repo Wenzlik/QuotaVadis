@@ -733,7 +733,8 @@ final class AppModel {
 
     func checkWidgetExtension() {
         staleWidgetExtensionVersion = WidgetExtensionProcess.staleVersion(
-            Self.runningProcesses(), uid: getuid(), appVersion: Self.appBuild, report: SharedStore.widgetExtensionReport)
+            Self.runningProcesses(), uid: getuid(), executable: WidgetExtensionProcess.executable(inApp: Bundle.main.bundleURL),
+            appVersion: Self.appBuild, report: SharedStore.widgetExtensionReport)
     }
 
     /// Settings button: end our extension process whatever it reports, then re-register and reload.
@@ -756,9 +757,8 @@ final class AppModel {
                     Self.run(lsregister, ["-u", path])
                 }
                 Self.run(lsregister, ["-f", bundle.path])
-                let appex = bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex")
-                Self.endStaleWidgetExtension(appex: appex, force: force)
-                Self.run("/usr/bin/pluginkit", ["-a", appex.path])
+                Self.endStaleWidgetExtension(app: bundle, force: force)
+                Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
                 WidgetCenter.shared.reloadAllTimelines()
             }.value
             widgetRepair = nil
@@ -775,29 +775,36 @@ final class AppModel {
     /// ("Bundle version did not match") and the widgets stay black until it exits. End ours (never chronod or anyone
     /// else's) so WidgetKit starts it again from the current binary. See `WidgetExtensionProcess` for which ones.
     /// The build is remembered only once every targeted process is gone, so a failure is retried on the next launch.
-    private nonisolated static func endStaleWidgetExtension(appex: URL, force: Bool) {
+    private nonisolated static func endStaleWidgetExtension(app: URL, force: Bool) {
         let build = appBuild
         var info = stat()
-        let binary = appex.appendingPathComponent("Contents/MacOS/\(WidgetExtensionProcess.executableName)").path
+        let binary = WidgetExtensionProcess.executable(inApp: app)
         let changedAt = stat(binary, &info) == 0
             ? Date(timeIntervalSince1970: TimeInterval(info.st_ctimespec.tv_sec) + TimeInterval(info.st_ctimespec.tv_nsec) / 1e9) : nil
-        let pids = WidgetExtensionProcess.toRestart(
-            runningProcesses(), uid: getuid(), appVersion: build, lastSeenAppVersion: UserDefaults.standard.string(forKey: lastSeenBuildKey),
+        let stale = WidgetExtensionProcess.toRestart(
+            runningProcesses(), uid: getuid(), executable: binary, appVersion: build, lastSeenAppVersion: UserDefaults.standard.string(forKey: lastSeenBuildKey),
             binaryChangedAt: changedAt, report: SharedStore.widgetExtensionReport, force: force)
         var ended = true
-        for pid in pids where !end(pid) { ended = false }
+        for process in stale where !end(process) { ended = false }
         if ended { UserDefaults.standard.set(build, forKey: lastSeenBuildKey) }
     }
 
     /// SIGTERM, up to two seconds to exit, then SIGKILL. True once the process is gone.
-    private nonisolated static func end(_ pid: pid_t) -> Bool {
-        func gone() -> Bool { kill(pid, 0) != 0 && errno == ESRCH }
+    /// Before each signal the PID must still have the target's uid and start time, so a process that reused the PID
+    /// after ours exited is never signalled.
+    private nonisolated static func end(_ target: WidgetExtensionProcess.Candidate) -> Bool {
+        let pid = target.pid
+        // ponytail: a PID reused in the microseconds between this check and kill() would still be hit; that needs the
+        // PID space to wrap in between. macOS has no pidfd to close it fully.
+        func gone() -> Bool { candidate(pid).map { $0.uid != target.uid || $0.startedAt != target.startedAt } ?? true }
         widgetLog.notice("Ending stale widget extension process \(pid)")
+        guard !gone() else { return true }
         guard kill(pid, SIGTERM) == 0 else { return gone() }
         for _ in 0..<20 {
             if gone() { return true }
             usleep(100_000)
         }
+        guard !gone() else { return true }
         kill(pid, SIGKILL)
         usleep(200_000)
         if gone() { return true }
@@ -813,19 +820,23 @@ final class AppModel {
         var pids = [pid_t](repeating: 0, count: Int(needed) / MemoryLayout<pid_t>.stride + 32)
         let filled = pids.withUnsafeMutableBytes { proc_listpids(UInt32(PROC_UID_ONLY), uid, $0.baseAddress, Int32($0.count)) }
         guard filled > 0 else { return [] }
-        return pids.prefix(Int(filled) / MemoryLayout<pid_t>.stride).compactMap { pid in
-            var info = proc_bsdinfo()
-            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-            guard pid > 0, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
-            var name = withUnsafeBytes(of: info.pbi_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-            if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } }
-            let capacity = Int(MAXPATHLEN) * 4 // PROC_PIDPATHINFO_MAXSIZE
-            var path = [UInt8](repeating: 0, count: capacity)
-            let length = proc_pidpath(pid, &path, UInt32(capacity))
-            return WidgetExtensionProcess.Candidate(
-                pid: pid, uid: info.pbi_uid, path: length > 0 ? String(decoding: path.prefix(Int(length)), as: UTF8.self) : nil, name: name,
-                startedAt: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1e6))
-        }
+        return pids.prefix(Int(filled) / MemoryLayout<pid_t>.stride).compactMap(candidate)
+    }
+
+    /// One process with executable path (nil when its file is gone from disk), name and start time; nil once it exited.
+    private nonisolated static func candidate(_ pid: pid_t) -> WidgetExtensionProcess.Candidate? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard pid > 0, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        var name = withUnsafeBytes(of: info.pbi_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } }
+        let capacity = Int(MAXPATHLEN) * 4 // PROC_PIDPATHINFO_MAXSIZE
+        var path = [UInt8](repeating: 0, count: capacity)
+        let length = proc_pidpath(pid, &path, UInt32(capacity))
+        let executable = length > 0 ? String(decoding: path.prefix(Int(length)), as: UTF8.self) : nil
+        return WidgetExtensionProcess.Candidate(
+            pid: pid, uid: info.pbi_uid, path: executable.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }, name: name,
+            startedAt: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1e6))
     }
 
     @discardableResult

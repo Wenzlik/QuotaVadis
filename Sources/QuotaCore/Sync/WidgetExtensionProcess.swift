@@ -52,7 +52,7 @@ public enum WidgetExtensionProcess {
     public struct Candidate: Equatable, Sendable {
         public var pid: Int32
         public var uid: UInt32
-        /// Executable path; nil when the kernel no longer has one (the old binary was deleted by the update).
+        /// Executable path; nil when the kernel has none or no file is left there (the update deleted the old binary).
         public var path: String?
         /// Process name (`pbi_name`, or `pbi_comm` when that is empty).
         public var name: String
@@ -67,12 +67,16 @@ public enum WidgetExtensionProcess {
         }
     }
 
-    /// Our own extension processes: same user, and an executable inside a `QuotaWidgets-Mac.appex`. Only when the
-    /// kernel has no path left for it does the exact process name stand in for the path.
-    public static func ours(_ candidates: [Candidate], uid: UInt32) -> [Candidate] {
+    /// The extension's executable inside the app bundle at `app`.
+    public static func executable(inApp app: URL) -> String { app.path + "/Contents/PlugIns" + executableSuffix }
+
+    /// Our own extension processes: same user, and running `executable`, the one in this installation. Another
+    /// installed copy of the app keeps its extension. Only when the binary a process runs is gone from disk (the update
+    /// deleted this installation's old copy) does the exact process name stand in for the path.
+    public static func ours(_ candidates: [Candidate], uid: UInt32, executable: String) -> [Candidate] {
         candidates.filter { candidate in
             guard candidate.uid == uid else { return false }
-            return candidate.path.map { $0.hasSuffix(executableSuffix) } ?? (candidate.name == executableName)
+            return candidate.path.map { $0 == executable } ?? (candidate.name == executableName)
         }
     }
 
@@ -82,23 +86,25 @@ public enum WidgetExtensionProcess {
         return report.version
     }
 
-    /// PIDs to end so WidgetKit starts the extension from the current binary. All of ours on the first launch of a new
+    /// Processes to end so WidgetKit starts the extension from the current binary. All of ours on the first launch of a new
     /// app version (or when `force`d from Settings); otherwise those started before the binary on disk last changed
     /// or that reported another version than the app's.
-    public static func toRestart(_ candidates: [Candidate], uid: UInt32, appVersion: String, lastSeenAppVersion: String?,
-                                 binaryChangedAt: Date?, report: WidgetExtensionReport?, force: Bool = false) -> [Int32] {
-        let own = ours(candidates, uid: uid)
-        if force || appVersion != lastSeenAppVersion { return own.map(\.pid) }
+    public static func toRestart(_ candidates: [Candidate], uid: UInt32, executable: String, appVersion: String,
+                                 lastSeenAppVersion: String?, binaryChangedAt: Date?, report: WidgetExtensionReport?,
+                                 force: Bool = false) -> [Candidate] {
+        let own = ours(candidates, uid: uid, executable: executable)
+        if force || appVersion != lastSeenAppVersion { return own }
         return own.filter { process in
             if let binaryChangedAt, process.startedAt < binaryChangedAt { return true }
             if let version = reportedVersion(of: process, report: report), version != appVersion { return true }
             return false
-        }.map(\.pid)
+        }
     }
 
     /// The older version a running extension of ours reported, for Settings; nil when it matches or none is running.
-    public static func staleVersion(_ candidates: [Candidate], uid: UInt32, appVersion: String, report: WidgetExtensionReport?) -> String? {
-        ours(candidates, uid: uid).lazy.compactMap { reportedVersion(of: $0, report: report) }.first { $0 != appVersion }
+    public static func staleVersion(_ candidates: [Candidate], uid: UInt32, executable: String, appVersion: String,
+                                    report: WidgetExtensionReport?) -> String? {
+        ours(candidates, uid: uid, executable: executable).lazy.compactMap { reportedVersion(of: $0, report: report) }.first { $0 != appVersion }
     }
 }
 #endif
