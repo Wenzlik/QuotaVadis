@@ -727,11 +727,23 @@ final class AppModel {
         repairWidgetRegistration()
     }
 
+    /// Build of the widget extension still running from before an update, nil when it matches the app or none runs.
+    /// Checked when Settings shows the Widgets section and after each repair; nothing polls it.
+    private(set) var staleWidgetExtensionVersion: String?
+
+    func checkWidgetExtension() {
+        staleWidgetExtensionVersion = WidgetExtensionProcess.staleVersion(
+            Self.runningProcesses(), uid: getuid(), appVersion: Self.appBuild, report: SharedStore.widgetExtensionReport)
+    }
+
+    /// Settings button: end our extension process whatever it reports, then re-register and reload.
+    func restartWidgetExtension() { repairWidgetRegistration(restartExtension: true) }
+
     /// Runs on every launch, so the first launch after a Sparkle update re-binds the widgets to the new bundle.
     /// See `WidgetRegistration` for why other registered copies of the app break the desktop widgets.
     /// Everything runs off the main thread at background priority; the LaunchServices dump takes a few seconds.
     /// A request while one is running joins it: that one still re-registers and reloads at its end.
-    private func repairWidgetRegistration() {
+    private func repairWidgetRegistration(restartExtension force: Bool = false) {
         let bundle = Bundle.main.bundleURL
         guard widgetRepair == nil, WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
         widgetRepair = Task {
@@ -744,14 +756,77 @@ final class AppModel {
                     Self.run(lsregister, ["-u", path])
                 }
                 Self.run(lsregister, ["-f", bundle.path])
-                Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
+                let appex = bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex")
+                Self.endStaleWidgetExtension(appex: appex, force: force)
+                Self.run("/usr/bin/pluginkit", ["-a", appex.path])
                 WidgetCenter.shared.reloadAllTimelines()
             }.value
             widgetRepair = nil
+            checkWidgetExtension()
         }
     }
 
     @ObservationIgnored private var widgetRepair: Task<Void, Never>?
+
+    private nonisolated static var appBuild: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "" }
+    private nonisolated static let lastSeenBuildKey = "widgetExtensionLastSeenAppBuild"
+
+    /// A Sparkle update leaves the old extension process running the replaced binary; chronod rejects what it draws
+    /// ("Bundle version did not match") and the widgets stay black until it exits. End ours (never chronod or anyone
+    /// else's) so WidgetKit starts it again from the current binary. See `WidgetExtensionProcess` for which ones.
+    /// The build is remembered only once every targeted process is gone, so a failure is retried on the next launch.
+    private nonisolated static func endStaleWidgetExtension(appex: URL, force: Bool) {
+        let build = appBuild
+        var info = stat()
+        let binary = appex.appendingPathComponent("Contents/MacOS/\(WidgetExtensionProcess.executableName)").path
+        let changedAt = stat(binary, &info) == 0
+            ? Date(timeIntervalSince1970: TimeInterval(info.st_ctimespec.tv_sec) + TimeInterval(info.st_ctimespec.tv_nsec) / 1e9) : nil
+        let pids = WidgetExtensionProcess.toRestart(
+            runningProcesses(), uid: getuid(), appVersion: build, lastSeenAppVersion: UserDefaults.standard.string(forKey: lastSeenBuildKey),
+            binaryChangedAt: changedAt, report: SharedStore.widgetExtensionReport, force: force)
+        var ended = true
+        for pid in pids where !end(pid) { ended = false }
+        if ended { UserDefaults.standard.set(build, forKey: lastSeenBuildKey) }
+    }
+
+    /// SIGTERM, up to two seconds to exit, then SIGKILL. True once the process is gone.
+    private nonisolated static func end(_ pid: pid_t) -> Bool {
+        func gone() -> Bool { kill(pid, 0) != 0 && errno == ESRCH }
+        widgetLog.notice("Ending stale widget extension process \(pid)")
+        guard kill(pid, SIGTERM) == 0 else { return gone() }
+        for _ in 0..<20 {
+            if gone() { return true }
+            usleep(100_000)
+        }
+        kill(pid, SIGKILL)
+        usleep(200_000)
+        if gone() { return true }
+        widgetLog.error("Widget extension process \(pid) did not exit")
+        return false
+    }
+
+    /// This user's processes as the kernel lists them, with executable path, name and start time.
+    private nonisolated static func runningProcesses() -> [WidgetExtensionProcess.Candidate] {
+        let uid = getuid()
+        let needed = proc_listpids(UInt32(PROC_UID_ONLY), uid, nil, 0)
+        guard needed > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(needed) / MemoryLayout<pid_t>.stride + 32)
+        let filled = pids.withUnsafeMutableBytes { proc_listpids(UInt32(PROC_UID_ONLY), uid, $0.baseAddress, Int32($0.count)) }
+        guard filled > 0 else { return [] }
+        return pids.prefix(Int(filled) / MemoryLayout<pid_t>.stride).compactMap { pid in
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            guard pid > 0, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+            var name = withUnsafeBytes(of: info.pbi_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } }
+            let capacity = Int(MAXPATHLEN) * 4 // PROC_PIDPATHINFO_MAXSIZE
+            var path = [UInt8](repeating: 0, count: capacity)
+            let length = proc_pidpath(pid, &path, UInt32(capacity))
+            return WidgetExtensionProcess.Candidate(
+                pid: pid, uid: info.pbi_uid, path: length > 0 ? String(decoding: path.prefix(Int(length)), as: UTF8.self) : nil, name: name,
+                startedAt: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1e6))
+        }
+    }
 
     @discardableResult
     private nonisolated static func run(_ tool: String, _ arguments: [String]) -> Data {
