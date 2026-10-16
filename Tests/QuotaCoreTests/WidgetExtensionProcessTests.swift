@@ -101,6 +101,7 @@ private func process(_ pid: Int32, uid: UInt32 = me, path: String? = installed,
     }
     #expect(WidgetExtensionProcess.staleVersion([], uid: me, executable: installed, appVersion: "42", report: otherPID) == nil)
 }
+
 @Test func theReportIsStoredAndReadAsOneValue() {
     let report = WidgetExtensionReport(version: "42", pid: 7, startedAt: updatedAt, executable: installed)
     #expect(WidgetExtensionReport(encoded: report.encoded) == report)
