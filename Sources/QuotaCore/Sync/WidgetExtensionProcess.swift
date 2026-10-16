@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the widget extension process reports about itself when it starts, kept in the App Group defaults.
-public struct WidgetExtensionReport: Equatable, Sendable {
+public struct WidgetExtensionReport: Codable, Equatable, Sendable {
     public var version: String
     public var pid: Int32
     public var startedAt: Date
@@ -14,29 +14,29 @@ public struct WidgetExtensionReport: Equatable, Sendable {
         self.startedAt = startedAt
         self.executable = executable
     }
+
+    /// Stored as one value, so a reader never pairs one process's PID with another's executable.
+    var encoded: Data? { try? JSONEncoder().encode(self) }
+
+    init?(encoded data: Data?) {
+        guard let data, let report = try? JSONDecoder().decode(Self.self, from: data) else { return nil }
+        self = report
+    }
 }
 
 extension SharedStore {
-    static let extensionVersionKey = "widgetExtensionVersion"
-    static let extensionPIDKey = "widgetExtensionPID"
-    static let extensionStartedAtKey = "widgetExtensionStartedAt"
-    static let extensionExecutableKey = "widgetExtensionExecutable"
+    static let extensionReportKey = "widgetExtensionReport"
 
     /// The last widget extension process that started, as it reported itself; nil before any has.
     public static var widgetExtensionReport: WidgetExtensionReport? {
-        let defaults = sharedDefaults
-        guard let version = defaults.string(forKey: extensionVersionKey),
-              let startedAt = defaults.object(forKey: extensionStartedAtKey) as? Date else { return nil }
-        return WidgetExtensionReport(version: version, pid: Int32(truncatingIfNeeded: defaults.integer(forKey: extensionPIDKey)), startedAt: startedAt,
-                                     executable: defaults.string(forKey: extensionExecutableKey))
+        WidgetExtensionReport(encoded: sharedDefaults.data(forKey: extensionReportKey))
     }
 
     private static let launchRecorded: Void = {
-        let defaults = sharedDefaults
-        defaults.set(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "", forKey: extensionVersionKey)
-        defaults.set(Int(ProcessInfo.processInfo.processIdentifier), forKey: extensionPIDKey)
-        defaults.set(Date.now, forKey: extensionStartedAtKey)
-        defaults.set(Bundle.main.executablePath, forKey: extensionExecutableKey)
+        let report = WidgetExtensionReport(version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
+                                           pid: ProcessInfo.processInfo.processIdentifier, startedAt: .now,
+                                           executable: Bundle.main.executablePath)
+        sharedDefaults.set(report.encoded, forKey: extensionReportKey)
     }()
 
     /// Called by the widget extension at start; records its `CFBundleVersion`, PID, start and executable once per process.
