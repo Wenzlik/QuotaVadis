@@ -812,7 +812,7 @@ final class AppModel {
         return false
     }
 
-    /// This user's processes as the kernel lists them, with executable path, name and start time.
+    /// This user's processes as the kernel lists them, with executable path and start time.
     private nonisolated static func runningProcesses() -> [WidgetExtensionProcess.Candidate] {
         let uid = getuid()
         let needed = proc_listpids(UInt32(PROC_UID_ONLY), uid, nil, 0)
@@ -823,19 +823,17 @@ final class AppModel {
         return pids.prefix(Int(filled) / MemoryLayout<pid_t>.stride).compactMap(candidate)
     }
 
-    /// One process with executable path (nil when its file is gone from disk), name and start time; nil once it exited.
+    /// One process with executable path and start time; nil once it exited.
     private nonisolated static func candidate(_ pid: pid_t) -> WidgetExtensionProcess.Candidate? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard pid > 0, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
-        var name = withUnsafeBytes(of: info.pbi_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-        if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } }
         let capacity = Int(MAXPATHLEN) * 4 // PROC_PIDPATHINFO_MAXSIZE
         var path = [UInt8](repeating: 0, count: capacity)
         let length = proc_pidpath(pid, &path, UInt32(capacity))
         let executable = length > 0 ? String(decoding: path.prefix(Int(length)), as: UTF8.self) : nil
         return WidgetExtensionProcess.Candidate(
-            pid: pid, uid: info.pbi_uid, path: executable.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }, name: name,
+            pid: pid, uid: info.pbi_uid, path: executable,
             startedAt: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1e6))
     }
 

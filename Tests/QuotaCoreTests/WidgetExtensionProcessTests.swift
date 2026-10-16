@@ -11,9 +11,9 @@ private let me: UInt32 = 501
 private let installed = WidgetExtensionProcess.executable(inApp: URL(fileURLWithPath: "/Applications/QuotaVadis.app"))
 private let updatedAt = Date(timeIntervalSince1970: 1_000_000)
 
-private func process(_ pid: Int32, uid: UInt32 = me, path: String? = installed, name: String = "QuotaWidgets-Mac",
+private func process(_ pid: Int32, uid: UInt32 = me, path: String? = installed,
                      startedAt: Date = updatedAt.addingTimeInterval(60)) -> WidgetExtensionProcess.Candidate {
-    .init(pid: pid, uid: uid, path: path, name: name, startedAt: startedAt)
+    .init(pid: pid, uid: uid, path: path, startedAt: startedAt)
 }
 
 @Test func onlyOurOwnExtensionProcessesAreCandidates() {
@@ -21,19 +21,43 @@ private func process(_ pid: Int32, uid: UInt32 = me, path: String? = installed, 
         process(1),
         process(2, uid: 502),                                                  // another user's widget
         process(3, path: "/Applications/Other.app/Contents/MacOS/QuotaWidgets-Mac"), // same name, other bundle
-        process(4, path: "/System/Library/CoreServices/chronod", name: "chronod"),
+        process(4, path: "/System/Library/CoreServices/chronod"),
         // Another installed copy of the app keeps its widget.
         process(5, path: "/Users/me/Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac"),
-        process(6, path: nil),                                                 // binary deleted by the update
-        process(7, path: nil, name: "QuotaWidgets"),
-        process(8, name: "QuotaWidgets-Ma"),                                   // pbi_comm cut to 15 characters
+        process(6, path: nil),                                                 // no path: nothing ties it to us
+        // Same name, its own binary deleted by its own update: still not ours.
+        process(7, path: "/private/var/folders/x/T/Other.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac"),
     ]
     #expect(installed == "/Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac")
-    #expect(WidgetExtensionProcess.ours(candidates, uid: me, executable: installed).map(\.pid) == [1, 6, 8])
+    #expect(WidgetExtensionProcess.ours(candidates, uid: me, executable: installed, report: nil).map(\.pid) == [1])
+}
+
+@Test func aProcessThatReportedOurExecutableIsOursWhereverTheKernelSaysItRuns() {
+    // Sparkle moved this installation's old bundle away and deleted it; the kernel path no longer says where it came from.
+    let moved = process(1, path: "/private/var/folders/x/T/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac")
+    let pathless = process(2, path: nil)
+    let mine = { (p: WidgetExtensionProcess.Candidate) in WidgetExtensionReport(version: "41", pid: p.pid, startedAt: p.startedAt, executable: installed) }
+    for p in [moved, pathless] {
+        #expect(WidgetExtensionProcess.ours([p], uid: me, executable: installed, report: mine(p)).map(\.pid) == [p.pid])
+        // A report from another copy, from a build that did not say, or from another process proves nothing.
+        var other = mine(p)
+        other.executable = "/Users/me/Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac"
+        var silent = mine(p)
+        silent.executable = nil
+        var elsewhere = mine(p)
+        elsewhere.pid = 99
+        for report in [other, silent, elsewhere] {
+            #expect(WidgetExtensionProcess.ours([p], uid: me, executable: installed, report: report).isEmpty)
+        }
+    }
+    #expect(WidgetExtensionProcess.toRestart([moved], uid: me, executable: installed, appVersion: "42", lastSeenAppVersion: "41",
+                                             binaryChangedAt: nil, report: mine(moved)).map(\.pid) == [1])
+    #expect(WidgetExtensionProcess.toRestart([moved], uid: me, executable: installed, appVersion: "42", lastSeenAppVersion: "41",
+                                             binaryChangedAt: nil, report: nil).isEmpty)
 }
 
 @Test func aNewAppVersionRestartsEveryOwnExtensionProcess() {
-    let candidates = [process(1), process(2, uid: 502), process(4, path: "/usr/libexec/chronod", name: "chronod"),
+    let candidates = [process(1), process(2, uid: 502), process(4, path: "/usr/libexec/chronod"),
                       process(5, path: "/Users/me/Applications/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac")]
     #expect(WidgetExtensionProcess.toRestart(candidates, uid: me, executable: installed, appVersion: "42", lastSeenAppVersion: "41",
                                              binaryChangedAt: nil, report: nil).map(\.pid) == [1])
