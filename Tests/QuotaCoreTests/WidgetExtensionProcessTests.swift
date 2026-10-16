@@ -25,8 +25,9 @@ private func process(_ pid: Int32, uid: UInt32 = me, path: String? = installed, 
         process(5, path: "/private/var/folders/x/QuotaVadis.app/Contents/PlugIns/QuotaWidgets-Mac.appex/Contents/MacOS/QuotaWidgets-Mac"),
         process(6, path: nil),                                                 // binary deleted by the update
         process(7, path: nil, name: "QuotaWidgets"),
+        process(8, name: "QuotaWidgets-Ma"),                                   // pbi_comm cut to 15 characters
     ]
-    #expect(WidgetExtensionProcess.ours(candidates, uid: me).map(\.pid) == [1, 5, 6])
+    #expect(WidgetExtensionProcess.ours(candidates, uid: me).map(\.pid) == [1, 5, 6, 8])
 }
 
 @Test func aNewAppVersionRestartsEveryOwnExtensionProcess() {

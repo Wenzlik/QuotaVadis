@@ -54,7 +54,7 @@ public enum WidgetExtensionProcess {
         public var uid: UInt32
         /// Executable path; nil when the kernel no longer has one (the old binary was deleted by the update).
         public var path: String?
-        /// Short process name (`pbi_comm`).
+        /// Process name (`pbi_name`, or `pbi_comm` when that is empty).
         public var name: String
         public var startedAt: Date
 
@@ -71,8 +71,8 @@ public enum WidgetExtensionProcess {
     /// kernel has no path left for it does the exact process name stand in for the path.
     public static func ours(_ candidates: [Candidate], uid: UInt32) -> [Candidate] {
         candidates.filter { candidate in
-            guard candidate.uid == uid, candidate.name == executableName else { return false }
-            return candidate.path.map { $0.hasSuffix(executableSuffix) } ?? true
+            guard candidate.uid == uid else { return false }
+            return candidate.path.map { $0.hasSuffix(executableSuffix) } ?? (candidate.name == executableName)
         }
     }
 
