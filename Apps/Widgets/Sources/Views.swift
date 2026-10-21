@@ -3,10 +3,10 @@ import WidgetKit
 import QuotaCore
 
 func levelColor(_ percent: Double) -> Color {
-    switch percent {
-    case ..<50: Color(red: 0.16, green: 0.62, blue: 0.36)
-    case ..<80: Color(red: 0.85, green: 0.55, blue: 0.05)
-    default: Color(red: 0.88, green: 0.22, blue: 0.22)
+    switch UsageLevel(percent) {
+    case .ok: Color(red: 0.16, green: 0.62, blue: 0.36)
+    case .warning: Color(red: 0.85, green: 0.55, blue: 0.05)
+    case .critical: Color(red: 0.88, green: 0.22, blue: 0.22)
     }
 }
 
