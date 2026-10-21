@@ -136,7 +136,6 @@ struct CursorUsageSummary: Decodable {
     }
     let billingCycleEnd: String?
     let membershipType: String?
-    let limitType: String?
     let individualUsage: Individual?
 }
 

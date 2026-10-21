@@ -156,9 +156,7 @@ struct AntigravityQuotaSummary: Decodable {
 }
 
 struct AntigravityUserStatus: Decodable {
-    struct PlanInfo: Decodable { let planName: String? }
-    struct PlanStatus: Decodable { let planInfo: PlanInfo? }
     struct Tier: Decodable { let id: String?; let name: String? }
-    struct UserStatus: Decodable { let email: String?; let planStatus: PlanStatus?; let userTier: Tier? }
+    struct UserStatus: Decodable { let email: String?; let userTier: Tier? }
     let userStatus: UserStatus?
 }

@@ -4,6 +4,12 @@ import Foundation
 /// `gemini`'s raw value stays "antigravity" (its data still comes from Antigravity.app's language server;
 /// see `AntigravityUsageFetcher`) so no migration is needed for anything already persisted under that key —
 /// UserDefaults arrays, CloudKit sync payloads, cost report JSON, widget shared-store files.
+/// Usage severity: under 50% ok, under 80% warning, else critical. Every UI colours by this.
+public enum UsageLevel: Sendable {
+    case ok, warning, critical
+    public init(_ percent: Double) { self = percent < 50 ? .ok : percent < 80 ? .warning : .critical }
+}
+
 public enum ProviderID: String, Codable, CaseIterable, Sendable, Identifiable {
     case claude, codex, cursor
     case gemini = "antigravity"

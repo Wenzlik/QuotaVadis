@@ -1,4 +1,5 @@
 import AppKit
+import QuotaCore
 
 /// A vendor mark for one bar. `isTemplate` marks that `image` is a colourless alpha shape to be tinted;
 /// `false` is a real, full-colour icon (e.g. an installed app's own `.icns`) drawn as-is.
@@ -173,10 +174,10 @@ enum MenuBarBarImage {
 
     /// Same thresholds as `usageTint`, using the dark-mode (more vivid) values that read on both appearances.
     private static func nsColor(for percent: Double) -> NSColor {
-        switch percent {
-        case ..<50: NSColor(red: 0.30, green: 0.78, blue: 0.47, alpha: 1)
-        case ..<80: NSColor(red: 0.98, green: 0.75, blue: 0.25, alpha: 1)
-        default: NSColor(red: 0.96, green: 0.36, blue: 0.34, alpha: 1)
+        switch UsageLevel(percent) {
+        case .ok: NSColor(red: 0.30, green: 0.78, blue: 0.47, alpha: 1)
+        case .warning: NSColor(red: 0.98, green: 0.75, blue: 0.25, alpha: 1)
+        case .critical: NSColor(red: 0.96, green: 0.36, blue: 0.34, alpha: 1)
         }
     }
 }

@@ -8,7 +8,7 @@ import QuotaCore
 //   quotavadis --watch [sec]   refresh in place (default 60 s)
 //   quotavadis --provider claude|codex|cursor|gemini
 //   quotavadis cost            30-day cost & tokens (--fast-2x prices Codex Fast mode at 2x)
-//   quotavadis raw | profile | keychain | claude-web | codex-cli   diagnostics
+//   quotavadis raw | keychain | codex-cli   diagnostics
 //   --web forces the claude.ai web session, --no-color disables ANSI colours
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -19,7 +19,9 @@ func value(after name: String) -> String? {
 }
 let color = !flag("--no-color") && isatty(STDOUT_FILENO) != 0 && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
 func paint(_ text: String, _ code: String) -> String { color ? "\u{1B}[\(code)m\(text)\u{1B}[0m" : text }
-func tint(_ pct: Double) -> String { pct < 50 ? "32" : pct < 80 ? "33" : "31" }
+func tint(_ pct: Double) -> String {
+    switch UsageLevel(pct) { case .ok: "32"; case .warning: "33"; case .critical: "31" }
+}
 func bar(_ pct: Double, width: Int = 20) -> String {
     let filled = Int((min(100, max(0, pct)) / 100 * Double(width)).rounded())
     return paint(String(repeating: "█", count: filled), tint(pct)) + paint(String(repeating: "░", count: width - filled), "90")
@@ -44,7 +46,7 @@ if flag("--help") || flag("-h") || args.first == "help" {
       quotavadis --watch [sec]    refresh in place (default 60 s)
       quotavadis --provider NAME  claude | codex | cursor | gemini
       quotavadis cost [--fast-2x] 30-day cost & token estimates
-      quotavadis raw | profile | keychain | claude-web | codex-cli
+      quotavadis raw | keychain | codex-cli
       --web        use the claude.ai web session instead of the Claude Code login
       --no-color   plain output (NO_COLOR is honoured too)
     """)
@@ -68,16 +70,6 @@ if command == "cost" || flag("--cost") {
     exit(0)
 }
 
-if command == "claude-web" || flag("--claude-web") {
-    for (name, data) in try await DebugProbes.claudeWeb() {
-        print("=== \(name)")
-        if let obj = try? JSONSerialization.jsonObject(with: data),
-           let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
-            print(String(decoding: pretty, as: UTF8.self).prefix(1600))
-        } else { print(String(decoding: data, as: UTF8.self).prefix(300)) }
-    }
-    exit(0)
-}
 if command == "codex-cli" || flag("--codex-cli") {
     let result = try await CodexCLI.readRateLimits()
     print(result.map { String(decoding: $0, as: UTF8.self) } ?? "codex CLI not found")
@@ -86,16 +78,6 @@ if command == "codex-cli" || flag("--codex-cli") {
 if command == "keychain" || flag("--keychain") {
     for e in ClaudeCredentials.keychainEntries() {
         print("\(e.service)  created \(e.created?.formatted() ?? "?")  modified \(e.modified?.formatted() ?? "?")")
-    }
-    exit(0)
-}
-if command == "profile" || flag("--profile") {
-    for (name, data) in await DebugProbes.profiles() {
-        print("=== \(name)")
-        if let obj = try? JSONSerialization.jsonObject(with: data),
-           let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
-            print(String(decoding: pretty, as: UTF8.self))
-        } else { print(String(decoding: data, as: UTF8.self)) }
     }
     exit(0)
 }

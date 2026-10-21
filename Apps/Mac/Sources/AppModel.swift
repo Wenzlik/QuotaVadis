@@ -421,13 +421,8 @@ final class AppModel {
         }
     }
 
-    var worstPercent: Double? {
-        visibleInstances.compactMap { states[$0.id]?.snapshot?.worstWindow?.usedPercent }.max()
-    }
-
     /// The number shown in the menu bar, per the user's `menuBarSource` choice.
     var menuBarPercent: Double? { percent(for: menuBarSource) }
-    var menuBarMeasurement: (snapshot: UsageSnapshot, window: UsageWindow)? { measurement(for: menuBarSource) }
     var menuBarIsStale: Bool { isStale(for: menuBarSource) }
     var menuBarAccessibilityLabel: String {
         guard percent(for: menuBarSource) != nil else { return "QuotaVadis, no usage data. Open to set up tools." }

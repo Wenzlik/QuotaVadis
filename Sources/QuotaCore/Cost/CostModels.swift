@@ -60,7 +60,6 @@ public struct CostReport: Codable, Sendable, Hashable {
     }
     public var totalCostUSD: Double { days.reduce(0) { $0 + $1.costUSD } }
     public var totalTokens: Int { days.reduce(0) { $0 + $1.tokens.total } }
-    public var topModel: CostBucket? { byModel.max { $0.costUSD < $1.costUSD } }
 }
 
 /// Accumulates raw usage rows into a CostReport.
@@ -69,7 +68,6 @@ struct CostAccumulator {
     private var models: [String: CostBucket] = [:]
     private var projects: [String: CostBucket] = [:]
     private let calendar = CostAccumulator.bucketCalendar
-    private static let dayFormat: Date.FormatStyle = .init().year().month(.twoDigits).day(.twoDigits)
 
     /// Day buckets always use the Gregorian calendar in the local time zone, matching `CostReport.day(at:)`.
     static var bucketCalendar: Calendar {
