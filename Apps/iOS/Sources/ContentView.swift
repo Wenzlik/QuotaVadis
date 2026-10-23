@@ -12,6 +12,9 @@ struct ContentView: View {
             IOSSettingsView(store: store)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        // The tab bar too stays off the Duo's side status column. The fold is left to each tab's own content, so the
+        // two panes are not squeezed onto one half.
+        .avoidsReservedRegions(includingFold: false)
     }
 }
 
@@ -36,17 +39,24 @@ struct OverviewView: View {
     }
 
     var body: some View {
-        if isTwoPane, let id = selectedID {
-            SplitPanes {
-                NavigationStack { overview }
-            } secondary: {
-                NavigationStack { detail(id).id(id) }
+        Group {
+            if isTwoPane, let id = selectedID {
+                SplitPanes {
+                    NavigationStack { overview }
+                } secondary: {
+                    NavigationStack { detail(id).id(id) }
+                }
+            } else {
+                NavigationStack(path: $path) {
+                    overview.navigationDestination(for: String.self) { detail($0) }
+                }
+                .avoidsReservedRegions()
             }
-        } else {
-            NavigationStack(path: $path) {
-                overview.navigationDestination(for: String.self) { detail($0) }
-            }
-            .avoidsReservedRegions()
+        }
+        // A provider that is gone (refresh, other Mac) leaves the path, so the panes and a later fold agree on what
+        // is selected: back to the default first provider, or the list.
+        .onChange(of: store.selectedDevice?.snapshots.map(\.instanceID) ?? []) { _, ids in
+            path.removeAll { !ids.contains($0) }
         }
     }
 
@@ -66,7 +76,7 @@ struct OverviewView: View {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         ForEach(device.snapshots) { snapshot in
-                            let card = ProviderCard(snapshot: snapshot, status: device.status(for: snapshot))
+                            let card = ProviderCard(snapshot: snapshot, status: device.status(for: snapshot), showsChevron: !isTwoPane)
                             if isTwoPane {
                                 let selected = snapshot.instanceID == selectedID
                                 Button { path = [snapshot.instanceID] } label: {
@@ -79,6 +89,7 @@ struct OverviewView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(selected ? .isSelected : [])
+                                .accessibilityRemoveTraits(selected ? [] : .isSelected)
                             } else {
                                 NavigationLink(value: snapshot.instanceID) { card }
                                     .buttonStyle(.plain)

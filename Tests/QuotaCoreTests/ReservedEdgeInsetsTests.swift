@@ -3,7 +3,7 @@ import Testing
 @testable import QuotaCore
 
 // iPhone Duo reserves screen regions (outer display's side status column, the inner display's fold). Content pads
-// the edge a region sits on; a region in the middle is left to the two-pane split.
+// the edge a region sits on; a fold through the middle leaves content on the larger side.
 
 private let size = CGSize(width: 400, height: 800)
 
@@ -25,9 +25,18 @@ private let size = CGSize(width: 400, height: 800)
     #expect(insets.top == 30 && insets.bottom == 20)
 }
 
-@Test func regionsInTheMiddleOrOutsideAreIgnored() {
-    let fold = CGRect(x: 0, y: 390, width: 400, height: 20)
-    let column = CGRect(x: 190, y: 0, width: 20, height: 800)
+@Test func foldKeepsContentOnTheLargerSide() {
+    // Vertical fold just right of centre: content keeps the leading side.
+    let fold = ReservedEdgeInsets(avoiding: [CGRect(x: 210, y: 0, width: 20, height: 800)], in: size)
+    #expect(fold.trailing == 190 && fold.leading == 0)
+    // Equal halves: leading side; tabletop band through the middle: top half.
+    let centred = ReservedEdgeInsets(avoiding: [CGRect(x: 190, y: 0, width: 20, height: 800)], in: size)
+    #expect(centred.trailing == 210 && centred.leading == 0)
+    let tabletop = ReservedEdgeInsets(avoiding: [CGRect(x: 0, y: 390, width: 400, height: 20)], in: size)
+    #expect(tabletop.bottom == 410 && tabletop.top == 0)
+}
+
+@Test func regionsOutsideAreIgnored() {
     let outside = CGRect(x: 420, y: 0, width: 40, height: 800)
-    #expect(ReservedEdgeInsets(avoiding: [fold, column, outside], in: size) == ReservedEdgeInsets(avoiding: [], in: size))
+    #expect(ReservedEdgeInsets(avoiding: [outside], in: size) == ReservedEdgeInsets(avoiding: [], in: size))
 }

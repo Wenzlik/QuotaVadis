@@ -39,13 +39,17 @@ extension View {
     /// included, keeps the full width it had.
     func readableWidth(_ maxWidth: CGFloat) -> some View { modifier(ReadableWidth(maxWidth: maxWidth)) }
 
-    /// Keeps text and controls off regions the system reserves at this view's edges (iOS 27.1): iPhone Duo's side
-    /// status column, the fold beside a pane. Pads the safe area, so backgrounds still run to the edge. Changes
-    /// nothing where the system reserves nothing, or before iOS 27.1.
-    func avoidsReservedRegions() -> some View { modifier(AvoidsReservedRegions()) }
+    /// Keeps text and controls off regions the system reserves (iOS 27.1): iPhone Duo's side status column and, with
+    /// `includingFold`, the fold: beside a pane it pads that edge, through a full-window screen it keeps the content
+    /// on the larger side. Pads the safe area, so backgrounds still run to the edge. Changes nothing where the system
+    /// reserves nothing, or before iOS 27.1.
+    func avoidsReservedRegions(includingFold: Bool = true) -> some View {
+        modifier(AvoidsReservedRegions(includingFold: includingFold))
+    }
 }
 
 private struct AvoidsReservedRegions: ViewModifier {
+    let includingFold: Bool
     @State private var insets = EdgeInsets()
 
     func body(content: Content) -> some View {
@@ -54,8 +58,9 @@ private struct AvoidsReservedRegions: ViewModifier {
             // Measured outside the padding, so the padding never feeds back into the measurement.
             content
                 .safeAreaPadding(insets)
-                .onGeometryChange(for: ReservedEdgeInsets.self) { proxy in
-                    let regions = proxy.reservedRegions(kind: .occlusion) + proxy.reservedRegions(kind: .division)
+                .onGeometryChange(for: ReservedEdgeInsets.self) { [includingFold] proxy in
+                    let regions = proxy.reservedRegions(kind: .occlusion)
+                        + (includingFold ? proxy.reservedRegions(kind: .division) : [])
                     return ReservedEdgeInsets(avoiding: regions.map(\.frame), in: proxy.size)
                 } action: { edges in
                     insets = EdgeInsets(top: edges.top, leading: edges.leading, bottom: edges.bottom, trailing: edges.trailing)

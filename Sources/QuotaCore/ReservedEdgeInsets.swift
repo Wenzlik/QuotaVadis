@@ -1,9 +1,10 @@
-import Foundation
+import CoreGraphics
 
-/// How far content must stay off each edge of a view so no text or control sits under a region the system reserves
-/// there: iPhone Duo's side status column on the outer display, or the fold along a pane's edge. Frames are in the
-/// view's own layout-direction-aware space (x = 0 is the leading edge). A region crossing the middle of the view gives
-/// no inset; there the two-pane split is what keeps content off the fold.
+/// How far content must stay off each edge of a view so no text or control sits under a region the system reserves:
+/// iPhone Duo's side status column on the outer display, or the fold. Frames are in the view's own
+/// layout-direction-aware space (x = 0 is the leading edge). Each region gives up the smaller side of the view along
+/// with the region itself, so content keeps the larger side: a column at an edge pads that edge, a fold through a
+/// full-window screen leaves it on one half (the leading one, or the top one in tabletop, when the halves are equal).
 public struct ReservedEdgeInsets: Equatable, Sendable {
     public var top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0
 
@@ -13,13 +14,13 @@ public struct ReservedEdgeInsets: Equatable, Sendable {
             let r = region.intersection(bounds)
             guard !r.isNull, r.width > 0, r.height > 0 else { continue }
             if r.height >= r.width {
-                // A column along a side.
-                if r.minX <= 0.5 { leading = max(leading, r.maxX) }
-                else if r.maxX >= size.width - 0.5 { trailing = max(trailing, size.width - r.minX) }
+                // A column: keep the wider side of it.
+                if r.minX < size.width - r.maxX { leading = max(leading, r.maxX) }
+                else { trailing = max(trailing, size.width - r.minX) }
             } else {
-                // A band across the top or bottom.
-                if r.minY <= 0.5 { top = max(top, r.maxY) }
-                else if r.maxY >= size.height - 0.5 { bottom = max(bottom, size.height - r.minY) }
+                // A band: keep the taller side of it.
+                if r.minY < size.height - r.maxY { top = max(top, r.maxY) }
+                else { bottom = max(bottom, size.height - r.minY) }
             }
         }
     }
