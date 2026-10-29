@@ -264,12 +264,28 @@ private let en = Locale(identifier: "en_US")
 
 @Test func resetLabelShapes() {
     var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Prague")!
+    cal.locale = Locale(identifier: "en_US_POSIX")
     let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 6, hour: 12, minute: 0))!
     let today = cal.date(byAdding: .hour, value: 1, to: now)!
     let label = today.resetLabel(now: now, calendar: cal)
     #expect(label.contains("·"))
+    var todayStyle = Date.FormatStyle(date: .omitted, time: .shortened)
+    todayStyle.calendar = cal; todayStyle.timeZone = cal.timeZone; todayStyle.locale = cal.locale!
+    #expect(today.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == today.formatted(todayStyle))
+    let twoDays = cal.date(byAdding: .day, value: 2, to: now)!
+    var weekdayStyle: Date.FormatStyle = .dateTime.weekday(.abbreviated).hour().minute()
+    weekdayStyle.calendar = cal; weekdayStyle.timeZone = cal.timeZone; weekdayStyle.locale = cal.locale!
+    #expect(twoDays.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == twoDays.formatted(weekdayStyle))
+    #expect(twoDays.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("Tue"))
+    let sameDayLabel = today.resetClockLabel(now: now, calendar: cal, locale: cal.locale!)
+    #expect(!sameDayLabel.contains("Sun") && !sameDayLabel.contains("Mon") && !sameDayLabel.contains("Tue"))
     let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
     #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
+    var dateStyle: Date.FormatStyle = .dateTime.day().month(.abbreviated).hour().minute()
+    dateStyle.calendar = cal; dateStyle.timeZone = cal.timeZone; dateStyle.locale = cal.locale!
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == nextWeek.formatted(dateStyle))
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("Sep"))
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("16"))
     // Mid-day, a reset ~5.2 days away must not round up to "6 days".
     let grok = now.addingTimeInterval(5 * 86400 + 4 * 3600 + 33 * 60)
     #expect(grok.remainingLabel(now: now) == "in 5d 4h")

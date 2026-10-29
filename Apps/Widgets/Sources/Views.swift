@@ -103,7 +103,7 @@ struct ProviderWidgetView: View {
                 .frame(maxWidth: .infinity)
                 Text("\(w.title) · used").font(.caption2).foregroundStyle(.secondary)
                 if let reset = w.resetsAt {
-                    Text("resets \(reset, style: .relative)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
         }
@@ -119,7 +119,7 @@ struct ProviderWidgetView: View {
             }
             measurement(s)
             ForEach(s.compactWindows.prefix(3)) { w in
-                BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
             }
         }
     }
@@ -182,7 +182,7 @@ struct OverviewWidgetView: View {
                             Text("\(s.provider.shortName) · \(payload.status(for: s).freshness(now: entry.date).rawValue)").font(.caption.weight(.semibold))
                             Text(w.title).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
-                            if let r = w.resetsAt { Text(r, style: .relative).font(.caption2).foregroundStyle(.tertiary) }
+                            if let r = w.resetsAt { Text("\(r, style: .relative) · \(r.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary) }
                             Text("\(Int(w.usedPercent.rounded()))% used").font(.caption.monospacedDigit()).foregroundStyle(levelColor(w.usedPercent))
                         }
                         GeometryReader { geo in
@@ -209,11 +209,11 @@ struct OverviewWidgetView: View {
                         if let plan = s.plan { Text(plan).font(.caption2).foregroundStyle(.secondary) }
                         Spacer()
                         if let w = s.worstWindow, let r = w.resetsAt {
-                            Text("resets \(r, style: .relative)").font(.caption2).foregroundStyle(.tertiary)
+                            Text("resets \(r, style: .relative) · \(r.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                     ForEach(s.compactWindows.prefix(3)) { w in
-                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
                     }
                 }
             }
@@ -227,13 +227,14 @@ struct BarLine: View {
     let title: String
     let percent: Double
     let resetsAt: Date?
+    let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.caption2)
                 Spacer()
-                if let resetsAt { Text(resetsAt.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
+                if let resetsAt { Text("\(resetsAt, style: .relative) · \(resetsAt.resetClockLabel(now: now))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
                 Text("\(Int(percent.rounded()))% used").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
             }
             GeometryReader { geo in
