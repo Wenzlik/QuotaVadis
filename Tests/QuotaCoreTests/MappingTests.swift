@@ -268,8 +268,12 @@ private let en = Locale(identifier: "en_US")
     let today = cal.date(byAdding: .hour, value: 1, to: now)!
     let label = today.resetLabel(now: now, calendar: cal)
     #expect(label.contains("·"))
+    #expect(today.resetClockLabel(now: now, calendar: cal) == today.formatted(date: .omitted, time: .shortened))
+    let twoDays = cal.date(byAdding: .day, value: 2, to: now)!
+    #expect(twoDays.resetClockLabel(now: now, calendar: cal).contains(twoDays.formatted(.dateTime.weekday(.abbreviated))))
     let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
     #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal) != nextWeek.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
     // Mid-day, a reset ~5.2 days away must not round up to "6 days".
     let grok = now.addingTimeInterval(5 * 86400 + 4 * 3600 + 33 * 60)
     #expect(grok.remainingLabel(now: now) == "in 5d 4h")

@@ -165,7 +165,7 @@ struct SwitcherWidgetView: View {
             Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             Spacer(minLength: 0)
             if let w = s.worstWindow, let reset = w.resetsAt {
-                Text("resets \(reset, style: .relative)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
     }

@@ -307,18 +307,30 @@ public extension Date {
         return "in \(max(m, 1))m"
     }
 
+    /// "14:35" today, weekday+time within 7 days, day+month+time beyond — formatted with the given
+    /// calendar and its time zone, respecting the user's locale and 12/24h setting.
+    func resetClockLabel(now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(self, inSameDayAs: now) {
+            var style = Date.FormatStyle(date: .omitted, time: .shortened)
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return self.formatted(style)
+        } else if let week = calendar.date(byAdding: .day, value: 7, to: now), self < week {
+            var style = Date.FormatStyle(.dateTime.weekday(.abbreviated).hour().minute())
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return self.formatted(style)
+        } else {
+            var style = Date.FormatStyle(.dateTime.day().month(.abbreviated).hour().minute())
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return self.formatted(style)
+        }
+    }
+
     /// "in 1h 5m · 14:35" — time left plus the exact clock time; adds the weekday when it is not today,
     /// and the date when it is more than a week away.
     func resetLabel(now: Date = .now, calendar: Calendar = .current) -> String {
-        let relative = remainingLabel(now: now)
-        let exact: String
-        if calendar.isDate(self, inSameDayAs: now) {
-            exact = formatted(date: .omitted, time: .shortened)
-        } else if let week = calendar.date(byAdding: .day, value: 7, to: now), self < week {
-            exact = formatted(.dateTime.weekday(.abbreviated).hour().minute())
-        } else {
-            exact = formatted(.dateTime.day().month(.abbreviated).hour().minute())
-        }
-        return "\(relative) · \(exact)"
+        "\(remainingLabel(now: now)) · \(resetClockLabel(now: now, calendar: calendar))"
     }
 }

@@ -195,11 +195,11 @@ struct ResetLabel: View {
     let reset: Date
 
     var body: some View {
-        // Short in the row ("Resets in 5d 4h"); the exact time is one hover away.
+        // "Resets in 5d 4h · 13:30"; the tooltip shows the full date/time.
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            Text(reset <= context.date ? "Reset passed" : "Resets \(reset.remainingLabel(now: context.date))")
+            Text(reset <= context.date ? "Reset passed" : "Resets \(reset.resetLabel(now: context.date))")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                .help(reset.resetLabel(now: context.date))
+                .help(reset.formatted(date: .abbreviated, time: .shortened))
         }
     }
 }
