@@ -187,10 +187,10 @@ public struct CreditsLine: View {
     private var tint: Color { usageTint(credits.usedPercent ?? 0) }
 }
 
-/// The "in 2 hours · 13:30" line next to a bar. A plain `Text` of the formatted string goes stale: SwiftUI
-/// only re-evaluates a row whose data changed, so a window sitting at the same percentage for hours keeps the
-/// relative distance it was first drawn with (a 13:30 reset still claiming "in 5 hours"). The timeline makes
-/// the clock, not the usage numbers, the thing that drives this label.
+/// The "Resets in 2 hours · 13:30" line next to a bar. A plain `Text` of the formatted string goes stale:
+/// SwiftUI only re-evaluates a row whose data changed, so a window sitting at the same percentage for hours
+/// keeps the relative distance it was first drawn with (a 13:30 reset still claiming "in 5 hours"). The
+/// timeline makes the clock, not the usage numbers, the thing that drives this label.
 struct ResetLabel: View {
     let reset: Date
 

@@ -123,7 +123,7 @@ struct SwitcherWidgetView: View {
                     compact(snapshot)
                 } else {
                     ForEach(snapshot.compactWindows.prefix(3)) { w in
-                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
                     }
                     Text(entry.payload?.status(for: snapshot).label(now: entry.date) ?? "Stale")
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
@@ -160,7 +160,7 @@ struct SwitcherWidgetView: View {
     private func compact(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(s.compactWindows.prefix(2)) { w in
-                BarLine(title: w.title, percent: w.usedPercent, resetsAt: nil)
+                BarLine(title: w.title, percent: w.usedPercent, resetsAt: nil, now: entry.date)
             }
             Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             Spacer(minLength: 0)

@@ -119,7 +119,7 @@ struct ProviderWidgetView: View {
             }
             measurement(s)
             ForEach(s.compactWindows.prefix(3)) { w in
-                BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
             }
         }
     }
@@ -213,7 +213,7 @@ struct OverviewWidgetView: View {
                         }
                     }
                     ForEach(s.compactWindows.prefix(3)) { w in
-                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt)
+                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
                     }
                 }
             }
@@ -227,13 +227,14 @@ struct BarLine: View {
     let title: String
     let percent: Double
     let resetsAt: Date?
+    let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.caption2)
                 Spacer()
-                if let resetsAt { Text(resetsAt.resetLabel()).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
+                if let resetsAt { Text(resetsAt.resetLabel(now: now)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
                 Text("\(Int(percent.rounded()))% used").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
             }
             GeometryReader { geo in
