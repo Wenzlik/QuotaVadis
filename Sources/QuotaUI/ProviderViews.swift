@@ -199,7 +199,7 @@ struct ResetLabel: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             Text(reset <= context.date ? "Reset passed" : "Resets \(reset.resetLabel(now: context.date))")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                .help(reset.formatted(date: .abbreviated, time: .shortened))
+                .help(reset.formatted(date: .complete, time: .shortened))
         }
     }
 }

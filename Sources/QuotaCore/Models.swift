@@ -307,7 +307,7 @@ public extension Date {
         return "in \(max(m, 1))m"
     }
 
-    /// "14:35" today, weekday+time within 7 days, day+month+time beyond — formatted with the given
+    /// "14:35" today, weekday+time within 6 days, day+month+time beyond — formatted with the given
     /// calendar and its time zone, respecting the user's locale and 12/24h setting.
     func resetClockLabel(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
         let nowDay = calendar.startOfDay(for: now)
@@ -320,15 +320,14 @@ public extension Date {
             style.timeZone = calendar.timeZone
             style.locale = locale
             return self.formatted(style)
-        } else if dayDistance >= 1 && dayDistance <= 7 {
-            var style = Date.FormatStyle(date: .omitted, time: .shortened)
+        } else if dayDistance >= 1 && dayDistance <= 6 {
+            var style: Date.FormatStyle = .dateTime.weekday(.abbreviated).hour().minute()
             style.calendar = calendar
             style.timeZone = calendar.timeZone
             style.locale = locale
-            style.weekday = .abbreviated
             return self.formatted(style)
         } else {
-            var style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+            var style: Date.FormatStyle = .dateTime.day().month(.abbreviated).hour().minute()
             style.calendar = calendar
             style.timeZone = calendar.timeZone
             style.locale = locale
@@ -336,8 +335,8 @@ public extension Date {
         }
     }
 
-    /// "in 1h 5m · 14:35" — time left plus the exact clock time; adds the weekday when it is not today,
-    /// and the date when it is more than a week away.
+    /// "in 1h 5m · 14:35" — time left plus the exact clock time; adds the weekday when it is not today
+    /// (within 6 days), and the date when it is more than a week away.
     func resetLabel(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
         "\(remainingLabel(now: now)) · \(resetClockLabel(now: now, calendar: calendar, locale: locale))"
     }

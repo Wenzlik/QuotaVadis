@@ -273,15 +273,19 @@ private let en = Locale(identifier: "en_US")
     todayStyle.calendar = cal; todayStyle.timeZone = cal.timeZone; todayStyle.locale = cal.locale!
     #expect(today.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == today.formatted(todayStyle))
     let twoDays = cal.date(byAdding: .day, value: 2, to: now)!
-    var weekdayStyle = Date.FormatStyle(date: .omitted, time: .shortened)
+    var weekdayStyle: Date.FormatStyle = .dateTime.weekday(.abbreviated).hour().minute()
     weekdayStyle.calendar = cal; weekdayStyle.timeZone = cal.timeZone; weekdayStyle.locale = cal.locale!
-    weekdayStyle.weekday = .abbreviated
     #expect(twoDays.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == twoDays.formatted(weekdayStyle))
+    #expect(twoDays.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("Tue"))
+    let sameDayLabel = today.resetClockLabel(now: now, calendar: cal, locale: cal.locale!)
+    #expect(!sameDayLabel.contains("Sun") && !sameDayLabel.contains("Mon") && !sameDayLabel.contains("Tue"))
     let nextWeek = cal.date(byAdding: .day, value: 10, to: now)!
     #expect(nextWeek.resetLabel(now: now, calendar: cal).contains("·"))
-    var dateStyle = Date.FormatStyle(date: .abbreviated, time: .shortened)
+    var dateStyle: Date.FormatStyle = .dateTime.day().month(.abbreviated).hour().minute()
     dateStyle.calendar = cal; dateStyle.timeZone = cal.timeZone; dateStyle.locale = cal.locale!
     #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!) == nextWeek.formatted(dateStyle))
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("Sep"))
+    #expect(nextWeek.resetClockLabel(now: now, calendar: cal, locale: cal.locale!).contains("16"))
     // Mid-day, a reset ~5.2 days away must not round up to "6 days".
     let grok = now.addingTimeInterval(5 * 86400 + 4 * 3600 + 33 * 60)
     #expect(grok.remainingLabel(now: now) == "in 5d 4h")
