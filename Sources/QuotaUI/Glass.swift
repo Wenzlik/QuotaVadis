@@ -57,6 +57,41 @@ public func usageTint(_ percent: Double) -> Color {
     }
 }
 
+/// Colour for a limit's risk (bar, percentage, headline): fits green, tight orange, runs out / reached red.
+/// Pair with `UsageForecast.Risk(usedPercent:forecast:)`, which falls back to the usage level without a forecast.
+public func riskTint(_ risk: UsageForecast.Risk) -> Color { usageTint(riskTintPercent(risk)) }
+
+/// `riskTint` as a percentage for `GlowBar(tintPercent:)`.
+public func riskTintPercent(_ risk: UsageForecast.Risk) -> Double {
+    switch risk {
+    case .safe: 0
+    case .watch: 60
+    case .atRisk, .exhausted: 100
+    }
+}
+
+/// Small risk-coloured text. Red text sits on a light/dark backdrop in a deeper (light) or paler (dark) red:
+/// the bar red on tinted glass falls well under 4.5:1, this clears it on any card.
+struct RiskTextStyle: ViewModifier {
+    let risk: UsageForecast.Risk
+
+    func body(content: Content) -> some View {
+        if risk >= .atRisk {
+            content
+                .foregroundStyle(adaptiveColor(light: (0.66, 0.07, 0.07), dark: (1.00, 0.62, 0.59)))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(opaqueCardBackground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        } else {
+            content.foregroundStyle(riskTint(risk))
+        }
+    }
+}
+
+public extension View {
+    func riskTextStyle(_ risk: UsageForecast.Risk) -> some View { modifier(RiskTextStyle(risk: risk)) }
+}
+
 /// Rounded, glowing progress bar used everywhere a window or credit line is drawn.
 public struct GlowBar: View {
     let percent: Double
