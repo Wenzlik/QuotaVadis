@@ -592,17 +592,16 @@ final class AppModel {
             let windows = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
             for window in windows {
                 limitCount += 1
-                let forecast = forecast(instanceID: instance.id, window: window, now: now)
-                if (forecast?.risk ?? .safe) >= .atRisk { atRiskCount += 1 }
-                if let closest {
-                    if window.usedPercent > closest.window.usedPercent ||
-                       (window.usedPercent == closest.window.usedPercent &&
-                        (window.resetsAt ?? .distantFuture) < (closest.window.resetsAt ?? .distantFuture)) {
-                        closest = (instance, window, forecast)
-                    }
-                } else {
-                    closest = (instance, window, forecast)
+                let projection = self.forecast(instanceID: instance.id, window: window, now: now)
+                if (projection?.risk ?? .safe) >= .atRisk { atRiskCount += 1 }
+                // Highest usage wins; on a tie, the window that resets sooner.
+                if let current = closest?.window,
+                   window.usedPercent < current.usedPercent ||
+                   (window.usedPercent == current.usedPercent &&
+                    (window.resetsAt ?? .distantFuture) >= (current.resetsAt ?? .distantFuture)) {
+                    continue
                 }
+                closest = (instance, window, projection)
             }
         }
         guard let closest else { return nil }

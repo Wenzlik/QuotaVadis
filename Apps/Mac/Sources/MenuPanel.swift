@@ -26,10 +26,11 @@ struct MenuPanel: View {
                             ContentUnavailableView("Nothing to track on this Mac", systemImage: "flame",
                                                    description: Text("Log in to a provider on this Mac, then Refresh."))
                         } else {
-                            if let summary = model.riskSummary() {
-                                TimelineView(.periodic(from: .now, by: 60)) { context in
-                                    let now = context.date
-                                    riskSummaryCard(summary, now: now)
+                            // Recomputed on every tick: forecasts and "N limits at risk" move with the clock, not only
+                            // with refreshes. No card while nothing has a snapshot yet.
+                            TimelineView(.periodic(from: .now, by: 60)) { context in
+                                if let summary = model.riskSummary(now: context.date) {
+                                    riskSummaryCard(summary, now: context.date)
                                 }
                             }
                             Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -143,7 +144,7 @@ struct MenuPanel: View {
                         state: model.states[instance.id] ?? .unavailable,
                         cost: instance.id == instance.provider.rawValue ? model.costs[instance.provider] : nil,
                         isExpanded: model.expanded.contains(instance.id),
-                        forecast: { model.forecast(instanceID: instance.id, window: $0) },
+                        forecast: { model.forecast(instanceID: instance.id, window: $0, now: $1) },
                         action: action(for: instance),
                         showDetails: { bringToFront { openWindow(id: "dashboard", value: instance.id) } }) {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
