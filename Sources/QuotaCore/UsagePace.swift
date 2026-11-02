@@ -429,3 +429,20 @@ public struct UsageHistory: Codable, Sendable, Hashable {
         try data.write(to: url, options: .atomic)
     }
 }
+
+/// iOS: saves history off the main thread one at a time. Callers number their saves; one older than the last
+/// written is skipped, so a late save can never put back an older history over a newer one.
+public actor UsageHistoryWriter {
+    private let url: URL
+    private var writtenRevision = 0
+
+    public init(url: URL = UsageHistory.defaultURL) {
+        self.url = url
+    }
+
+    public func save(_ history: UsageHistory, revision: Int) throws {
+        guard revision > writtenRevision else { return }
+        try history.save(to: url)
+        writtenRevision = revision
+    }
+}

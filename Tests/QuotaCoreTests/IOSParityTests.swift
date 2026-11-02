@@ -77,4 +77,23 @@ struct IOSParityTests {
         let stale = later.addingTimeInterval(ProviderSyncStatus.minimumStaleAfter + 60)
         #expect(history.forecast(for: newer.windows[0], snapshot: newer, in: payload, now: stale) == nil)
     }
+
+    @Test func historyWriterNeverPutsBackAnOlderRevision() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("usage-history.json")
+        let writer = UsageHistoryWriter(url: url)
+        var older = UsageHistory()
+        older.record(snapshot(10, fetchedAt: now), at: now)
+        var newer = older
+        newer.record(snapshot(20, fetchedAt: now.addingTimeInterval(1_800)), at: now.addingTimeInterval(1_800))
+
+        // The newer save lands first; the older one arriving late is skipped.
+        try await writer.save(newer, revision: 2)
+        try await writer.save(older, revision: 1)
+        #expect(UsageHistory.load(from: url) == newer)
+
+        try await writer.save(older, revision: 3)
+        #expect(UsageHistory.load(from: url) == older)
+    }
 }

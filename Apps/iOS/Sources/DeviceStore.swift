@@ -21,6 +21,8 @@ final class DeviceStore {
     /// Samples of what the Macs measured, recorded here as payloads arrive (foreground, push, background refresh).
     /// The Mac's own history is not synced; see `recordHistory`.
     private(set) var history = UsageHistory.load()
+    private let historyWriter = UsageHistoryWriter()
+    @ObservationIgnored private var historyRevision = 0
     /// Big-bar pick per provider instance, same key and format as the Mac app (its own defaults, not synced).
     var primaryWindowIDs: [String: String] {
         didSet { UserDefaults.standard.set(primaryWindowIDs, forKey: "primaryWindowIDs") }
@@ -155,7 +157,7 @@ final class DeviceStore {
             let data = try JSONEncoder.iso.encode(fetched)
             try data.write(to: Self.cacheURL, options: .atomic)
             devices = fetched
-            recordHistory()
+            await recordHistory()
             updateWidgets()
             await evaluateAlerts()
             lastRefresh = .now
@@ -171,13 +173,13 @@ final class DeviceStore {
 }
 
 extension DeviceStore {
-    /// Each Mac's snapshots at their measurement time. Saved off the main thread; the file is a few hundred KB at most
-    /// (600 samples per window, pruned to the window's length).
-    private func recordHistory() {
+    /// Each Mac's snapshots at their measurement time. Saved off the main thread by one writer, newest revision wins;
+    /// the refresh waits for the save, so a background refresh reports completion only once it is on disk. The file
+    /// is a few hundred KB at most (600 samples per window, pruned to the window's length).
+    private func recordHistory() async {
         history.record(payloads: devices)
-        let snapshot = history
-        // ponytail: unordered detached writes; refreshes are serialized, so an older one landing last is unlikely.
-        Task.detached(priority: .utility) { try? snapshot.save() }
+        historyRevision += 1
+        try? await historyWriter.save(history, revision: historyRevision)
     }
 
     func forecast(_ window: UsageWindow, of snapshot: UsageSnapshot, in device: DevicePayload, now: Date) -> UsageForecast? {
