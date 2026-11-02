@@ -75,7 +75,10 @@ public struct ProviderRow: View {
                 if let notice = snapshot.modelLimitNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
-                let layout = snapshot.overviewLayout(primaryWindowID: primaryWindowID)
+                // A sub-window that runs out before its reset is a card even when the provider marks it minor.
+                let layout = snapshot.overviewLayout(primaryWindowID: primaryWindowID) { w in
+                    UsageForecast.Risk(usedPercent: w.usedPercent, forecast: forecast?(w, .now)) >= .atRisk
+                }
                 let others = layout.cards
                 if let main = layout.main {
                     LimitBar(window: main, forecast: { forecast?(main, $0) }, style: .main)
@@ -176,7 +179,8 @@ public struct LimitBar: View {
             let pace = window.pace(now: now)
             let projection = forecast(now)
             // Bar and percentage follow the forecast's risk (usage level without one); pace text keeps its own colour.
-            let tint = riskTintPercent(UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection))
+            let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection)
+            let tint = riskTintPercent(risk)
 
             switch style {
             case .main:
@@ -186,7 +190,7 @@ public struct LimitBar: View {
                         Spacer()
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .font(.callout.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(usageTint(tint))
+                            .riskTextStyle(risk)
                     }
                     GlowBar(percent: window.usedPercent, height: 10, marker: pace?.expectedPercent, tintPercent: tint)
                     HStack {
@@ -208,7 +212,7 @@ public struct LimitBar: View {
                         Spacer()
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(usageTint(tint))
+                            .riskTextStyle(risk)
                     }
                     GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: tint)
                     // Card width: short labels, and room for a second line rather than an ellipsis.

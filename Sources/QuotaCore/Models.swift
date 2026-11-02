@@ -159,8 +159,11 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
 
     /// The collapsed card: one big bar, the rest as small cards. `primaryWindowID` (the user's pick) wins while
     /// the snapshot still has that window, even a sub-window; otherwise the session, else the first overview window.
-    public func overviewLayout(primaryWindowID: String? = nil) -> (main: UsageWindow?, cards: [UsageWindow]) {
-        let overview = overviewWindows
+    /// `promote` adds a window the overview would hide (a non-prominent sub-window whose forecast runs out) as a card.
+    public func overviewLayout(primaryWindowID: String? = nil,
+                               promote: (UsageWindow) -> Bool = { _ in false }) -> (main: UsageWindow?, cards: [UsageWindow]) {
+        let base = overviewWindows
+        let overview = base + windows.filter { w in !base.contains { $0.id == w.id } && promote(w) }
         let main = primaryWindowID.flatMap { id in windows.first { $0.id == id } }
             ?? overview.first { $0.kind == .session } ?? overview.first
         return (main, overview.filter { $0.id != main?.id })

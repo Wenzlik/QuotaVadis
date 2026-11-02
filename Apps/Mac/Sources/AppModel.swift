@@ -582,11 +582,14 @@ final class AppModel {
         for instance in visibleInstances {
             guard let snapshot = states[instance.id]?.snapshot else { continue }
             let name = title(for: instance)
-            for window in (snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows) {
+            let alert = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
+            for window in snapshot.windows {
                 let projection = forecast(instanceID: instance.id, window: window, now: now)
+                let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection)
+                // A minor sub-window (Cursor Auto just under the total) still counts once it runs out before its reset.
+                guard alert.contains(where: { $0.id == window.id }) || risk >= .atRisk else { continue }
                 items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
-                                      risk: UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection),
-                                      detail: projection?.label(now: now)))
+                                      risk: risk, detail: projection?.label(now: now)))
             }
             // ponytail: only spend already over its cap counts; a "likely over budget" projection needs spend history.
             for credits in snapshot.credits where credits.isOverLimit && !snapshot.windows.contains(where: { $0.id == credits.id }) {

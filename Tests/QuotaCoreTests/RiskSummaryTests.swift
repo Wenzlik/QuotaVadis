@@ -124,4 +124,20 @@ struct RiskSummaryTests {
         #expect(claude.overviewLayout().main?.id == "session")
         #expect(claude.overviewLayout().cards.map(\.id) == ["weekly"])
     }
+
+    @Test func atRiskSubWindowBecomesACard() {
+        let reset = now.addingTimeInterval(86_400)
+        // Auto just under the total: the provider marks it minor, so the overview alone hides it.
+        let cursor = UsageSnapshot(provider: .cursor, account: nil, plan: nil, windows: [
+            UsageWindow(id: "plan", kind: .monthly, title: "Included total", usedPercent: 32, resetsAt: reset),
+            UsageWindow(id: "auto", kind: .model, title: "Auto", usedPercent: 30, resetsAt: reset, prominent: false),
+            UsageWindow(id: "grok-bot", kind: .weekly, title: "Grok Bot", usedPercent: 53, resetsAt: reset),
+        ], deviceName: "test")
+        #expect(cursor.overviewLayout().cards.map(\.id) == ["grok-bot"])
+        let promoted = cursor.overviewLayout { $0.id == "auto" }
+        #expect(promoted.main?.id == "plan")
+        #expect(promoted.cards.map(\.id) == ["grok-bot", "auto"])
+        // Promoting an already shown window does not duplicate it.
+        #expect(cursor.overviewLayout { _ in true }.cards.map(\.id) == ["grok-bot", "auto"])
+    }
 }
