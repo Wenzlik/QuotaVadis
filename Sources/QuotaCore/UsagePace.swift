@@ -106,7 +106,7 @@ public struct UsageForecast: Sendable, Hashable {
     public func label(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
         if risk == .exhausted { return "limit reached" }
         if let runsOutAt {
-            let gap = shortDuration(resetsAt.timeIntervalSince(runsOutAt))
+            let gap = Self.shortDuration(resetsAt.timeIntervalSince(runsOutAt))
             return "runs out at \(runsOutAt.resetClockLabel(now: now, calendar: calendar, locale: locale)) · \(gap) before reset"
         }
         return "fits, ends at ~\(Int(min(projectedPercent, 100).rounded()))%"
@@ -140,7 +140,10 @@ public enum UsageForecaster {
         let start = window.windowStart(calendar: calendar)
 
         // Relevant samples: at <= now, at >= start (when known), sorted ascending.
-        var relevant = samples.filter { $0.at <= now && (start == nil || $0.at >= start) }.sorted { $0.at < $1.at }
+        // Samples from a previous window fall before `start` (resetsAt moved), so this is the primary reset detection.
+        var relevant = samples.filter { sample in
+            sample.at <= now && (start.map { $0 <= sample.at } ?? true)
+        }.sorted { $0.at < $1.at }
         // Ensure a sample at `now` with the current used percent.
         if let last = relevant.last, last.at > now.addingTimeInterval(-1), abs(last.percent - used) < 0.01 {
             // already covered
@@ -148,11 +151,10 @@ public enum UsageForecaster {
             relevant.append(UsageSample(at: now, percent: used))
         }
 
-        // Drop everything before the last reset (a sharp percent drop).
+        // Fallback for windows without a known start: drop everything before the last reset-sized drop.
         var dropIndex = relevant.startIndex
         for i in relevant.indices where i > relevant.startIndex {
-            let prev = relevant[i - 1].percent
-            if relevant[i].percent < prev - 0.5 {
+            if UsageForecaster.isReset(from: relevant[i - 1].percent, to: relevant[i].percent) {
                 dropIndex = i
             }
         }
@@ -161,10 +163,11 @@ public enum UsageForecaster {
         // Recent rate over the last `recentInterval`.
         let recentCutoff = now.addingTimeInterval(-recentInterval)
         let recent = relevant.filter { $0.at >= recentCutoff }
-        var rate: Double?
-        var basis: UsageForecast.Basis = .recent
+        let rate: Double
+        let basis: UsageForecast.Basis
         if recent.count >= 2, let first = recent.first, let last = recent.last, last.at.timeIntervalSince(first.at) >= 600 {
             rate = max(0, (last.percent - first.percent) / last.at.timeIntervalSince(first.at))
+            basis = .recent
         } else if let start, now.timeIntervalSince(start) >= 300 {
             rate = max(0, used / now.timeIntervalSince(start))
             basis = .windowAverage
@@ -173,10 +176,10 @@ public enum UsageForecaster {
         }
 
         let remaining = reset.timeIntervalSince(now)
-        let projected = used + rate! * remaining
+        let projected = used + rate * remaining
         var runsOutAt: Date?
-        if rate! > 0, projected >= 100 {
-            let candidate = now.addingTimeInterval((100 - used) / rate!)
+        if rate > 0, projected >= 100 {
+            let candidate = now.addingTimeInterval((100 - used) / rate)
             if candidate < reset { runsOutAt = candidate }
         }
 
@@ -186,7 +189,13 @@ public enum UsageForecaster {
         else { risk = .safe }
 
         return UsageForecast(projectedPercent: projected, runsOutAt: runsOutAt, resetsAt: reset,
-                             ratePerHour: rate! * 3600, basis: basis, risk: risk)
+                             ratePerHour: rate * 3600, basis: basis, risk: risk)
+    }
+
+    /// A drop that means the window reset rather than rounding jitter: integer providers (Codex) can dip by
+    /// one point at the same reset, so require more than 5 points, or a fall to ~0.
+    static func isReset(from previous: Double, to current: Double) -> Bool {
+        previous - current > 5 || (current < 1 && previous - current > 1)
     }
 }
 
@@ -208,9 +217,14 @@ public struct UsageHistory: Codable, Sendable, Hashable {
             } else {
                 list.append(UsageSample(at: now, percent: window.usedPercent))
             }
-            // Reset detection: new percent far below previous last -> keep only the new sample.
-            if let previous = list.dropLast().last, list.last!.percent < previous.percent - 0.5 {
-                list = [list.last!]
+            // Reset detection: samples from before the current window's start (resetsAt moved on),
+            // or, without a known start, a reset-sized drop -> keep only the new sample.
+            if let start = window.windowStart() {
+                list.removeAll { $0.at < start }
+            }
+            if let newest = list.last, let previous = list.dropLast().last,
+               UsageForecaster.isReset(from: previous.percent, to: newest.percent) {
+                list = [newest]
             }
             // Prune by window length.
             let keepSeconds = window.windowLength() ?? 8 * 86400
