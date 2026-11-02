@@ -21,13 +21,14 @@ public struct ProviderRow: View {
     let state: ProviderState
     let cost: CostReport?
     let isExpanded: Bool
-    let forecast: ((UsageWindow) -> UsageForecast?)?
+    /// Forecast for a window at a given moment; called on every timeline tick so the projection stays current.
+    let forecast: ((UsageWindow, Date) -> UsageForecast?)?
     let toggle: () -> Void
     let action: ProviderRowAction?
     let showDetails: (() -> Void)?
 
     public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool,
-                forecast: ((UsageWindow) -> UsageForecast?)? = nil,
+                forecast: ((UsageWindow, Date) -> UsageForecast?)? = nil,
                 action: ProviderRowAction? = nil, showDetails: (() -> Void)? = nil, toggle: @escaping () -> Void) {
         self.provider = provider; self.title = title ?? provider.displayName; self.state = state; self.cost = cost
         self.isExpanded = isExpanded; self.forecast = forecast; self.toggle = toggle; self.action = action; self.showDetails = showDetails
@@ -76,14 +77,18 @@ public struct ProviderRow: View {
                 let main = overview.first { $0.kind == .session } ?? overview.first
                 let others = overview.filter { $0.id != main?.id }
                 if let main {
-                    LimitBar(window: main, forecast: forecast?(main), style: .main)
+                    LimitBar(window: main, forecast: { forecast?(main, $0) }, style: .main)
                 }
+                // Two cards per row. Plain stacks, not a lazy grid: the menu panel sizes itself from intrinsic
+                // content height (fixedSize), which a lazy container does not report.
                 if !others.isEmpty {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8, alignment: .top),
-                                        GridItem(.flexible(), spacing: 8, alignment: .top)],
-                              alignment: .leading, spacing: 8) {
-                        ForEach(others) { window in
-                            LimitBar(window: window, forecast: forecast?($0), style: .card)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(stride(from: 0, to: others.count, by: 2)), id: \.self) { row in
+                            HStack(alignment: .top, spacing: 8) {
+                                ForEach(others[row..<min(row + 2, others.count)]) { window in
+                                    LimitBar(window: window, forecast: { forecast?(window, $0) }, style: .card)
+                                }
+                            }
                         }
                     }
                 }
@@ -176,10 +181,11 @@ internal func barTint(usedPercent: Double, forecast: UsageForecast?) -> Double {
 public struct LimitBar: View {
     public enum Style: Sendable { case main, card }
     let window: UsageWindow
-    let forecast: UsageForecast?
+    /// Evaluated inside the timeline, so "runs out at…" and the projected % move with the clock.
+    let forecast: (Date) -> UsageForecast?
     let style: Style
 
-    public init(window: UsageWindow, forecast: UsageForecast? = nil, style: Style = .main) {
+    public init(window: UsageWindow, forecast: @escaping (Date) -> UsageForecast? = { _ in nil }, style: Style = .main) {
         self.window = window; self.forecast = forecast; self.style = style
     }
 
@@ -187,7 +193,8 @@ public struct LimitBar: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = context.date
             let pace = window.pace(now: now)
-            let tint = barTint(usedPercent: window.usedPercent, forecast: forecast)
+            let projection = forecast(now)
+            let tint = barTint(usedPercent: window.usedPercent, forecast: projection)
 
             switch style {
             case .main:
@@ -207,8 +214,8 @@ public struct LimitBar: View {
                             Text(pace.label).font(.caption2.weight(.medium)).foregroundStyle(paceTint(pace))
                         }
                     }
-                    if let forecast {
-                        forecastLine(forecast, now)
+                    if let projection {
+                        forecastLine(projection, now)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -226,8 +233,8 @@ public struct LimitBar: View {
                     if let pace {
                         Text(pace.label).font(.caption2.weight(.medium)).foregroundStyle(paceTint(pace))
                     }
-                    if let forecast {
-                        forecastLine(forecast, now)
+                    if let projection {
+                        forecastLine(projection, now)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
