@@ -262,9 +262,7 @@ extension AppModel {
     /// as Default (a Picker with no matching tag would write its first tag back) but stays saved for its return.
     func primaryWindowBinding(_ instanceID: String) -> Binding<String?> {
         Binding(get: {
-            guard let id = self.primaryWindowIDs[instanceID],
-                  self.states[instanceID]?.snapshot?.windows.contains(where: { $0.id == id }) == true else { return nil }
-            return id
+            self.states[instanceID]?.snapshot?.reportedWindowID(self.primaryWindowIDs[instanceID])
         }, set: { self.primaryWindowIDs[instanceID] = $0 })
     }
 }

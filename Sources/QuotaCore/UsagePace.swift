@@ -169,6 +169,31 @@ public struct RiskItem: Sendable, Hashable {
         self.missingForecast = missingForecast
     }
 
+    /// One provider's limits for the summary: every alert window by its forecast risk (usage level without one),
+    /// plus spend already at or past its cap. Spend that mirrors a window (Cursor's included usage) is that window,
+    /// not a second limit. `name` prefixes each title ("Codex · Weekly").
+    public static func items(for snapshot: UsageSnapshot, name: String, now: Date = .now,
+                             forecast: (UsageWindow) -> UsageForecast?) -> [RiskItem] {
+        var items: [RiskItem] = []
+        let alert = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
+        for window in snapshot.windows {
+            let projection = forecast(window)
+            let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection)
+            // A minor sub-window (Cursor Auto just under the total) still counts once it runs out before its reset.
+            guard alert.contains(where: { $0.id == window.id }) || risk >= .atRisk else { continue }
+            items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
+                                  risk: risk, detail: projection?.label(now: now) ?? UsageForecast.notEnoughDataLabel,
+                                  missingForecast: projection == nil))
+        }
+        // ponytail: only spend already over its cap counts; a "likely over budget" projection needs spend history.
+        for credits in snapshot.credits where credits.isOverLimit && !snapshot.windows.contains(where: { $0.id == credits.id }) {
+            let percent = credits.usedPercent ?? 100
+            items.append(RiskItem(title: "\(name) · \(credits.title)", usedPercent: percent, resetsAt: credits.resetsAt,
+                                  risk: UsageForecast.Risk(usedPercent: percent, forecast: nil), detail: credits.valueLabel()))
+        }
+        return items
+    }
+
     /// Header order: worse risk first, then higher usage, then the sooner reset.
     public func outranks(_ other: RiskItem) -> Bool {
         if risk != other.risk { return risk > other.risk }
@@ -354,6 +379,33 @@ public struct UsageHistory: Codable, Sendable, Hashable {
                          staleAfter: TimeInterval = ProviderSyncStatus.minimumStaleAfter) -> UsageForecast? {
         UsageForecaster.forecast(window: window, samples: samples(instanceID: instanceID, windowID: window.id), now: now,
                                  measuredAt: measuredAt, staleAfter: staleAfter)
+    }
+
+    /// History identity of a snapshot received from a Mac (iOS): two Macs reporting the same instance keep apart.
+    public static func instanceID(deviceID: String, instanceID: String) -> String { "\(deviceID)/\(instanceID)" }
+
+    /// iOS: records every received snapshot at its measurement time (`fetchedAt`, not arrival), so a payload read
+    /// twice or an older one arriving late adds nothing. Windows no longer reported are pruned as on the Mac.
+    public mutating func record(payloads: [DevicePayload]) {
+        var validKeys: Set<String> = []
+        for payload in payloads {
+            for var snapshot in payload.snapshots {
+                snapshot.instanceID = Self.instanceID(deviceID: payload.deviceID, instanceID: snapshot.instanceID)
+                let keys = snapshot.windows.map { Self.key(instanceID: snapshot.instanceID, windowID: $0.id) }
+                validKeys.formUnion(keys)
+                if let newest = keys.compactMap({ samples[$0]?.last?.at }).max(), snapshot.fetchedAt <= newest { continue }
+                record(snapshot, at: snapshot.fetchedAt)
+            }
+        }
+        prune(keeping: validKeys)
+    }
+
+    /// iOS: forecast for a window of a Mac's snapshot, from the samples `record(payloads:)` kept. Stale after the
+    /// Mac's own threshold (two missed refreshes), as its sync status says.
+    public func forecast(for window: UsageWindow, snapshot: UsageSnapshot, in payload: DevicePayload,
+                         now: Date = .now) -> UsageForecast? {
+        forecast(for: window, instanceID: Self.instanceID(deviceID: payload.deviceID, instanceID: snapshot.instanceID),
+                 now: now, measuredAt: snapshot.fetchedAt, staleAfter: payload.status(for: snapshot).staleAfter)
     }
 
     public static var defaultURL: URL {
