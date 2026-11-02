@@ -191,47 +191,9 @@ struct MenuPanel: View {
     private var riskSummary: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             if let summary = model.riskSummary(now: context.date) {
-                riskSummaryCard(summary, now: context.date)
+                RiskSummaryCard(summary: summary, now: context.date)
             }
         }
-    }
-
-    private func riskSummaryCard(_ summary: RiskSummary, now: Date) -> some View {
-        let top = summary.top
-        return HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(top.risk >= .atRisk ? "Most at risk" : "Closest limit").font(.caption).foregroundStyle(.secondary)
-                Text("\(Int(top.usedPercent.rounded()))%")
-                    .font(.title.weight(.semibold).monospacedDigit())
-                    .riskTextStyle(top.risk)
-                Text(top.title).font(.caption).lineLimit(1)
-                if let reset = top.resetsAt, reset > now {
-                    Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                if summary.atRiskCount > 0 {
-                    Label(summary.statusLabel, systemImage: "exclamationmark.triangle.fill")
-                        .riskTextStyle(.atRisk)
-                } else if summary.allOnTrack {
-                    Label(summary.statusLabel, systemImage: "checkmark.circle.fill")
-                        .riskTextStyle(.safe)
-                } else {
-                    // Unknown forecast: neither green nor a warning.
-                    Label(summary.statusLabel, systemImage: "questionmark.circle")
-                        .foregroundStyle(.secondary)
-                }
-                if let detail = top.detail {
-                    Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-                }
-            }
-            .font(.caption)
-        }
-        .padding(12)
-        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     private var footer: some View {

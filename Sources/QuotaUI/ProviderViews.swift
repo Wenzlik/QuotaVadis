@@ -75,26 +75,10 @@ public struct ProviderRow: View {
                 if let notice = snapshot.modelLimitNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
-                // A sub-window that runs out before its reset is a card even when the provider marks it minor.
-                let layout = snapshot.overviewLayout(primaryWindowID: primaryWindowID) { w in
-                    UsageForecast.Risk(usedPercent: w.usedPercent, forecast: forecast?(w, .now)) >= .atRisk
-                }
+                let layout = LimitOverview.layout(snapshot, primaryWindowID: primaryWindowID, forecast: forecast)
                 let others = layout.cards
-                if let main = layout.main {
-                    LimitBar(window: main, forecast: { forecast?(main, $0) }, style: .main)
-                }
-                // Two cards per row. Plain stacks, not a lazy grid: the menu panel sizes itself from intrinsic
-                // content height (fixedSize), which a lazy container does not report.
-                if !others.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(stride(from: 0, to: others.count, by: 2)), id: \.self) { row in
-                            HStack(alignment: .top, spacing: 8) {
-                                ForEach(others[row..<min(row + 2, others.count)]) { window in
-                                    LimitBar(window: window, forecast: { forecast?(window, $0) }, style: .card)
-                                }
-                            }
-                        }
-                    }
+                if layout.main != nil || !others.isEmpty {
+                    LimitOverview(main: layout.main, cards: others, forecast: forecast)
                 }
                 // Money spent shows up front whenever there is any; zero-spend lines stay in the detail.
                 ForEach(snapshot.credits.filter { $0.used > 0 }) { credits in
@@ -149,6 +133,99 @@ public struct ProviderRow: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// The collapsed card's limits: one big bar (session by default, or the user's pick), the rest as small cards,
+/// two per row. Shared by the Mac panel and the iPhone overview and detail.
+public struct LimitOverview: View {
+    let main: UsageWindow?
+    let cards: [UsageWindow]
+    let forecast: ((UsageWindow, Date) -> UsageForecast?)?
+
+    public init(main: UsageWindow?, cards: [UsageWindow], forecast: ((UsageWindow, Date) -> UsageForecast?)?) {
+        self.main = main; self.cards = cards; self.forecast = forecast
+    }
+
+    public init(snapshot: UsageSnapshot, primaryWindowID: String?, forecast: ((UsageWindow, Date) -> UsageForecast?)?) {
+        let layout = Self.layout(snapshot, primaryWindowID: primaryWindowID, forecast: forecast)
+        self.init(main: layout.main, cards: layout.cards, forecast: forecast)
+    }
+
+    /// A sub-window that runs out before its reset is a card even when the provider marks it minor.
+    public static func layout(_ snapshot: UsageSnapshot, primaryWindowID: String?,
+                              forecast: ((UsageWindow, Date) -> UsageForecast?)?) -> (main: UsageWindow?, cards: [UsageWindow]) {
+        snapshot.overviewLayout(primaryWindowID: primaryWindowID) { w in
+            UsageForecast.Risk(usedPercent: w.usedPercent, forecast: forecast?(w, .now)) >= .atRisk
+        }
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if let main {
+                LimitBar(window: main, forecast: { forecast?(main, $0) }, style: .main)
+            }
+            // Plain stacks, not a lazy grid: the menu panel sizes itself from intrinsic content height (fixedSize),
+            // which a lazy container does not report.
+            if !cards.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(stride(from: 0, to: cards.count, by: 2)), id: \.self) { row in
+                        HStack(alignment: .top, spacing: 8) {
+                            ForEach(cards[row..<min(row + 2, cards.count)]) { window in
+                                LimitBar(window: window, forecast: { forecast?(window, $0) }, style: .card)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// "Most at risk" / "Closest limit": the most threatened limit and the "N limits at risk" count. Text-only risk
+/// colours on a faint neutral backdrop, as everywhere else.
+public struct RiskSummaryCard: View {
+    let summary: RiskSummary
+    let now: Date
+
+    public init(summary: RiskSummary, now: Date) { self.summary = summary; self.now = now }
+
+    public var body: some View {
+        let top = summary.top
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(top.risk >= .atRisk ? "Most at risk" : "Closest limit").font(.caption).foregroundStyle(.secondary)
+                Text("\(Int(top.usedPercent.rounded()))%")
+                    .font(.title.weight(.semibold).monospacedDigit())
+                    .riskTextStyle(top.risk)
+                Text(top.title).font(.caption).lineLimit(1)
+                if let reset = top.resetsAt, reset > now {
+                    Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                if summary.atRiskCount > 0 {
+                    Label(summary.statusLabel, systemImage: "exclamationmark.triangle.fill")
+                        .riskTextStyle(.atRisk)
+                } else if summary.allOnTrack {
+                    Label(summary.statusLabel, systemImage: "checkmark.circle.fill")
+                        .riskTextStyle(.safe)
+                } else {
+                    // Unknown forecast: neither green nor a warning.
+                    Label(summary.statusLabel, systemImage: "questionmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                if let detail = top.detail {
+                    Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                }
+            }
+            .font(.caption)
+        }
+        .padding(12)
+        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 
