@@ -198,7 +198,7 @@ struct MenuPanel: View {
                 Text(top.risk >= .atRisk ? "Most at risk" : "Closest limit").font(.caption).foregroundStyle(.secondary)
                 Text("\(Int(top.usedPercent.rounded()))%")
                     .font(.title.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(riskTint(top.risk))
+                    .riskTextStyle(top.risk)
                 Text(top.title).font(.caption).lineLimit(1)
                 if let reset = top.resetsAt, reset > now {
                     Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
