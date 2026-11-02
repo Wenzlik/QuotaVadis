@@ -593,10 +593,14 @@ final class AppModel {
             for window in windows {
                 limitCount += 1
                 let forecast = forecast(instanceID: instance.id, window: window, now: now)
-                if forecast?.risk ?? .safe >= .atRisk { atRiskCount += 1 }
-                if let closest, let current = closest?.window.usedPercent, window.usedPercent > current {
-                    closest = (instance, window, forecast)
-                } else if closest == nil {
+                if (forecast?.risk ?? .safe) >= .atRisk { atRiskCount += 1 }
+                if let closest {
+                    if window.usedPercent > closest.window.usedPercent ||
+                       (window.usedPercent == closest.window.usedPercent &&
+                        (window.resetsAt ?? .distantFuture) < (closest.window.resetsAt ?? .distantFuture)) {
+                        closest = (instance, window, forecast)
+                    }
+                } else {
                     closest = (instance, window, forecast)
                 }
             }
