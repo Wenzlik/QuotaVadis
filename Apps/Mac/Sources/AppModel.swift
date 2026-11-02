@@ -576,8 +576,12 @@ final class AppModel {
     }
 
     func forecast(instanceID: String, window: UsageWindow, now: Date = .now) -> UsageForecast? {
-        let key = states[instanceID]?.snapshot?.instanceID ?? instanceID
-        return usageHistory.forecast(for: window, instanceID: key, now: now)
+        let snapshot = states[instanceID]?.snapshot
+        // Stale = two missed refreshes, as in the sync status; adaptive refresh waits up to 30 min between ticks.
+        let interval = isAdaptiveRefresh ? 30 * 60 : TimeInterval(refreshIntervalSeconds)
+        return usageHistory.forecast(for: window, instanceID: snapshot?.instanceID ?? instanceID, now: now,
+                                     measuredAt: snapshot?.fetchedAt,
+                                     staleAfter: ProviderSyncStatus.staleAfter(refreshInterval: interval))
     }
 
     /// The panel header: every alert window by its forecast risk (usage level without one), plus spend already

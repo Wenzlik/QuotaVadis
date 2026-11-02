@@ -203,6 +203,27 @@ struct PaceForecastTests {
         #expect(UsageForecast.Risk(usedPercent: 95, forecast: nil) == .atRisk)
     }
 
+    @Test func staleMeasurementGivesNoForecast() throws {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let start = reset.addingTimeInterval(-7 * 86_400)
+        let measured = start.addingTimeInterval(86_400) // 50% one day into the week
+        let weekly = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 50, resetsAt: reset)
+        // Refreshes failing for 2 h: the old 50% is not current usage, so no projection (and no warning).
+        #expect(UsageForecaster.forecast(window: weekly, samples: [], now: measured.addingTimeInterval(7_200),
+                                         measuredAt: measured, staleAfter: 900, calendar: cal) == nil)
+        // Fresh enough: the window average runs to the measurement, not to the clock (50% per 24 h).
+        let f = try #require(UsageForecaster.forecast(window: weekly, samples: [], now: measured.addingTimeInterval(600),
+                                                      measuredAt: measured, staleAfter: 900, calendar: cal))
+        #expect(f.basis == .windowAverage)
+        #expect(abs(f.ratePerHour - 50.0 / 24) < 0.000_1)
+        // A stale 100% is still exhausted: usage never drops within a window.
+        let full = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 100, resetsAt: reset)
+        let e = try #require(UsageForecaster.forecast(window: full, samples: [], now: measured.addingTimeInterval(7_200),
+                                                      measuredAt: measured, staleAfter: 900, calendar: cal))
+        #expect(e.risk == .exhausted)
+        #expect(ProviderSyncStatus.staleAfter(refreshInterval: 1_800) == 3_660)
+    }
+
     @Test func resetInThePastOrNowGivesNoForecast() {
         let reset = Date(timeIntervalSince1970: 1_735_689_600)
         let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 40, resetsAt: reset)

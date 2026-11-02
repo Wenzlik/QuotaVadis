@@ -41,7 +41,10 @@ public struct ProviderSyncStatus: Codable, Sendable, Hashable, Identifiable {
     public var refreshInterval: TimeInterval?
     public var id: String { instanceID }
     public static let minimumStaleAfter: TimeInterval = 15 * 60
-    public var staleAfter: TimeInterval { max(Self.minimumStaleAfter, (refreshInterval ?? 0) * 2 + 60) }
+    public var staleAfter: TimeInterval { Self.staleAfter(refreshInterval: refreshInterval) }
+    public static func staleAfter(refreshInterval: TimeInterval?) -> TimeInterval {
+        max(minimumStaleAfter, (refreshInterval ?? 0) * 2 + 60)
+    }
 
     public init(instanceID: String, provider: ProviderID, state: ProviderState, lastAttemptAt: Date?, refreshInterval: TimeInterval? = nil) {
         self.instanceID = instanceID
