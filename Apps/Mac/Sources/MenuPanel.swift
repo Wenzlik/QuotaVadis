@@ -250,9 +250,14 @@ struct MenuPanel: View {
 }
 
 extension AppModel {
-    /// Big-bar pick for one card; nil clears it back to the default.
+    /// Big-bar pick for one card; nil clears it back to the default. A pick the snapshot no longer reports reads
+    /// as Default (a Picker with no matching tag would write its first tag back) but stays saved for its return.
     func primaryWindowBinding(_ instanceID: String) -> Binding<String?> {
-        Binding(get: { self.primaryWindowIDs[instanceID] }, set: { self.primaryWindowIDs[instanceID] = $0 })
+        Binding(get: {
+            guard let id = self.primaryWindowIDs[instanceID],
+                  self.states[instanceID]?.snapshot?.windows.contains(where: { $0.id == id }) == true else { return nil }
+            return id
+        }, set: { self.primaryWindowIDs[instanceID] = $0 })
     }
 }
 
