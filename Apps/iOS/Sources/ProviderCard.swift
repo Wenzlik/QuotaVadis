@@ -6,6 +6,8 @@ import QuotaUI
 struct ProviderCard: View {
     let snapshot: UsageSnapshot
     let status: ProviderSyncStatus
+    /// Off where tapping selects in place instead of pushing (two panes).
+    var showsChevron = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,9 +28,11 @@ struct ProviderCard: View {
                         .foregroundStyle(usageTint(worst.usedPercent))
                         .accessibilityLabel("\(Int(worst.usedPercent.rounded())) percent used")
                 }
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             MeasurementStatusView(status: status)

@@ -12,70 +12,132 @@ struct ContentView: View {
             IOSSettingsView(store: store)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        // The tab bar too stays off the Duo's side status column. The fold is left to each tab's own content, so the
+        // two panes are not squeezed onto one half.
+        .avoidsReservedRegions(includingFold: false)
     }
 }
 
 struct OverviewView: View {
     @Bindable var store: DeviceStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// Provider instance IDs. One column: the pushed detail. Two panes: the last one is the selection. Shared, so a
+    /// fold or unfold keeps the provider: a provider picked on the inner display opens pushed on the outer one.
+    @State private var path: [String] = []
+
+    /// Regular in both axes (iPad, iPhone Duo's inner display) and something to show beside the list. Every other
+    /// iPhone has a compact axis, so it keeps the single column.
+    private var isTwoPane: Bool {
+        horizontalSizeClass == .regular && verticalSizeClass == .regular && store.selectedDevice?.snapshots.isEmpty == false
+    }
+
+    /// The tapped provider, or the first one so the detail pane is never empty.
+    private var selectedID: String? {
+        guard let snapshots = store.selectedDevice?.snapshots else { return nil }
+        return (snapshots.first { $0.instanceID == path.last } ?? snapshots.first)?.instanceID
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let device = store.selectedDevice {
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            ForEach(device.snapshots) { snapshot in
-                                NavigationLink {
-                                    ProviderDetailView(snapshot: snapshot,
-                                                       cost: snapshot.instanceID == snapshot.provider.rawValue ? device.cost(for: snapshot.provider) : nil,
-                                                       deviceName: device.deviceName)
-                                } label: {
-                                    ProviderCard(snapshot: snapshot, status: device.status(for: snapshot))
+        Group {
+            if isTwoPane, let id = selectedID {
+                SplitPanes {
+                    NavigationStack { overview }
+                } secondary: {
+                    NavigationStack { detail(id).id(id) }
+                }
+            } else {
+                NavigationStack(path: $path) {
+                    overview.navigationDestination(for: String.self) { detail($0) }
+                }
+                .avoidsReservedRegions()
+            }
+        }
+        // A provider that is gone (refresh, other Mac) leaves the path, so the panes and a later fold agree on what
+        // is selected: back to the default first provider, or the list.
+        .onChange(of: store.selectedDevice?.snapshots.map(\.instanceID) ?? []) { _, ids in
+            path.removeAll { !ids.contains($0) }
+        }
+    }
+
+    @ViewBuilder private func detail(_ id: String) -> some View {
+        if let device = store.selectedDevice, let snapshot = device.snapshots.first(where: { $0.instanceID == id }) {
+            ProviderDetailView(snapshot: snapshot,
+                               cost: snapshot.instanceID == snapshot.provider.rawValue ? device.cost(for: snapshot.provider) : nil,
+                               deviceName: device.deviceName)
+        } else {
+            ContentUnavailableView("Not shared by this Mac", systemImage: "questionmark.circle")
+        }
+    }
+
+    private var overview: some View {
+        Group {
+            if let device = store.selectedDevice {
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(device.snapshots) { snapshot in
+                            let card = ProviderCard(snapshot: snapshot, status: device.status(for: snapshot), showsChevron: !isTwoPane)
+                            if isTwoPane {
+                                let selected = snapshot.instanceID == selectedID
+                                Button { path = [snapshot.instanceID] } label: {
+                                    card.overlay {
+                                        if selected {
+                                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                                .strokeBorder(snapshot.provider.accent, lineWidth: 2)
+                                        }
+                                    }
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityAddTraits(selected ? .isSelected : [])
+                                .accessibilityRemoveTraits(selected ? [] : .isSelected)
+                            } else {
+                                NavigationLink(value: snapshot.instanceID) { card }
+                                    .buttonStyle(.plain)
                             }
-                            // Tools the Mac tracks but could not read. Tools not installed on the Mac are not the phone's problem.
-                            ForEach((device.providerStatuses ?? []).filter { status in
-                                !device.snapshots.contains { $0.instanceID == status.instanceID } && status.freshness() != .unavailable
-                            }) { status in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        ProviderMark(provider: status.provider, size: 28)
-                                        Text(status.provider.displayName).font(.headline)
-                                        Spacer()
-                                    }
-                                    MeasurementStatusView(status: status)
-                                    Text(status.errorCode?.nextStep ?? "Open the tool on your Mac, sign in, then refresh.")
-                                        .font(.callout).foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                                .accentCard(status.provider.accent, cornerRadius: 18)
-                            }
-                            if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
-                                Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
-                                    .font(.callout).padding()
-                            }
-                            footer(device)
                         }
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                        .padding(.bottom, 24)
+                        // Tools the Mac tracks but could not read. Tools not installed on the Mac are not the phone's problem.
+                        ForEach((device.providerStatuses ?? []).filter { status in
+                            !device.snapshots.contains { $0.instanceID == status.instanceID } && status.freshness() != .unavailable
+                        }) { status in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    ProviderMark(provider: status.provider, size: 28)
+                                    Text(status.provider.displayName).font(.headline)
+                                    Spacer()
+                                }
+                                MeasurementStatusView(status: status)
+                                Text(status.errorCode?.nextStep ?? "Open the tool on your Mac, sign in, then refresh.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .accentCard(status.provider.accent, cornerRadius: 18)
+                        }
+                        if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
+                            Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
+                                .font(.callout).padding()
+                        }
+                        footer(device)
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
+                    // A wide window with nothing to show beside the list keeps it readable.
+                    .readableWidth(680)
+                }
+                .background(Color(.systemGroupedBackground))
+            } else {
+                ScrollView { EmptyStateView(store: store).readableWidth(480).frame(minHeight: 420) }
                     .background(Color(.systemGroupedBackground))
-                } else {
-                    ScrollView { EmptyStateView(store: store).frame(maxWidth: .infinity, minHeight: 420) }
-                        .background(Color(.systemGroupedBackground))
-                }
             }
-            .navigationTitle("QuotaVadis")
-            .toolbar {
-                if !store.devices.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) { devicePicker }
-                }
-            }
-            .refreshable { await store.refresh() }
         }
+        .navigationTitle("QuotaVadis")
+        .toolbar {
+            if !store.devices.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) { devicePicker }
+            }
+        }
+        .refreshable { await store.refresh() }
     }
 
     private func footer(_ device: DevicePayload) -> some View {
@@ -179,7 +241,11 @@ struct IOSSettingsView: View {
                     Link(destination: URL(string: "https://zmrhal.cz")!) { Label("Made by Václav Zmrhal", systemImage: "person") }
                 }
             }
+            // Readable on iPad and other wide windows instead of running edge to edge.
+            .readableWidth(680)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Settings")
         }
+        .avoidsReservedRegions()
     }
 }
