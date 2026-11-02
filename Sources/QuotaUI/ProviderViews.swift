@@ -21,14 +21,16 @@ public struct ProviderRow: View {
     let state: ProviderState
     let cost: CostReport?
     let isExpanded: Bool
+    let forecast: ((UsageWindow) -> UsageForecast?)?
     let toggle: () -> Void
     let action: ProviderRowAction?
     let showDetails: (() -> Void)?
 
     public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool,
+                forecast: ((UsageWindow) -> UsageForecast?)? = nil,
                 action: ProviderRowAction? = nil, showDetails: (() -> Void)? = nil, toggle: @escaping () -> Void) {
         self.provider = provider; self.title = title ?? provider.displayName; self.state = state; self.cost = cost
-        self.isExpanded = isExpanded; self.toggle = toggle; self.action = action; self.showDetails = showDetails
+        self.isExpanded = isExpanded; self.forecast = forecast; self.toggle = toggle; self.action = action; self.showDetails = showDetails
     }
 
     public var body: some View {
@@ -70,8 +72,20 @@ public struct ProviderRow: View {
                 if let notice = snapshot.modelLimitNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
-                ForEach(mainWindows(snapshot)) { window in
-                    UsageBar(window: window)
+                let overview = mainWindows(snapshot)
+                let main = overview.first { $0.kind == .session } ?? overview.first
+                let others = overview.filter { $0.id != main?.id }
+                if let main {
+                    LimitBar(window: main, forecast: forecast?(main), style: .main)
+                }
+                if !others.isEmpty {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8, alignment: .top),
+                                        GridItem(.flexible(), spacing: 8, alignment: .top)],
+                              alignment: .leading, spacing: 8) {
+                        ForEach(others) { window in
+                            LimitBar(window: window, forecast: forecast?($0), style: .card)
+                        }
+                    }
                 }
                 // Money spent shows up front whenever there is any; zero-spend lines stay in the detail.
                 ForEach(snapshot.credits.filter { $0.used > 0 }) { credits in
@@ -131,6 +145,122 @@ public struct ProviderRow: View {
     /// Keep the overview compact while retaining every binding exception.
     private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
         snapshot.overviewWindows
+    }
+}
+
+/// Pace and forecast helpers for per-window bars.
+internal func paceTint(_ pace: UsagePace) -> Color {
+    switch pace.status {
+    case .under, .onPace: usageTint(0)
+    case .over where pace.deltaPercent < 15: usageTint(60)
+    default: usageTint(100)
+    }
+}
+
+internal func riskTint(_ risk: UsageForecast.Risk) -> Color {
+    switch risk {
+    case .safe: usageTint(0)
+    case .watch: usageTint(60)
+    default: usageTint(100)
+    }
+}
+
+/// Bar tint for a window with an optional forecast: the worse of usage-based tint and risk-based tint.
+internal func barTint(usedPercent: Double, forecast: UsageForecast?) -> Double {
+    if let forecast, forecast.risk >= .atRisk { return 100 }
+    if let forecast, forecast.risk == .watch { return max(usedPercent, 60) }
+    return usedPercent
+}
+
+/// A per-window bar: main (session) style or compact card style.
+public struct LimitBar: View {
+    public enum Style: Sendable { case main, card }
+    let window: UsageWindow
+    let forecast: UsageForecast?
+    let style: Style
+
+    public init(window: UsageWindow, forecast: UsageForecast? = nil, style: Style = .main) {
+        self.window = window; self.forecast = forecast; self.style = style
+    }
+
+    public var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let now = context.date
+            let pace = window.pace(now: now)
+            let tint = barTint(usedPercent: window.usedPercent, forecast: forecast)
+
+            switch style {
+            case .main:
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(window.title).font(.callout)
+                        Spacer()
+                        Text("\(Int(window.usedPercent.rounded()))%")
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(usageTint(tint))
+                    }
+                    GlowBar(percent: window.usedPercent, height: 10, marker: pace?.expectedPercent, tintPercent: tint)
+                    HStack {
+                        resetLine(now)
+                        Spacer(minLength: 6)
+                        if let pace {
+                            Text(pace.label).font(.caption2.weight(.medium)).foregroundStyle(paceTint(pace))
+                        }
+                    }
+                    if let forecast {
+                        forecastLine(forecast, now)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            case .card:
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(window.title).font(.caption)
+                        Spacer()
+                        Text("\(Int(window.usedPercent.rounded()))%")
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(usageTint(tint))
+                    }
+                    GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: tint)
+                    resetLine(now)
+                    if let pace {
+                        Text(pace.label).font(.caption2.weight(.medium)).foregroundStyle(paceTint(pace))
+                    }
+                    if let forecast {
+                        forecastLine(forecast, now)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    private func resetLine(_ now: Date) -> some View {
+        Group {
+            if let reset = window.resetsAt {
+                Label {
+                    Text(reset <= now ? "reset passed" : "resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
+                } icon: {
+                    Image(systemName: "clock")
+                }
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                .help(reset.formatted(date: .complete, time: .shortened))
+            } else {
+                EmptyView()
+            }
+        }
+    }
+
+    private func forecastLine(_ forecast: UsageForecast, _ now: Date) -> some View {
+        Label(forecast.label(now: now),
+              systemImage: forecast.risk >= .atRisk ? "exclamationmark.triangle.fill" : "chart.line.uptrend.xyaxis")
+        .font(.caption2).foregroundStyle(riskTint(forecast.risk))
+        .help(forecast.basis == .recent ? "Forecast from the last hour of usage" : "Forecast from the average since the window started")
     }
 }
 

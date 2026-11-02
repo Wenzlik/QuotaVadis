@@ -26,6 +26,12 @@ struct MenuPanel: View {
                             ContentUnavailableView("Nothing to track on this Mac", systemImage: "flame",
                                                    description: Text("Log in to a provider on this Mac, then Refresh."))
                         } else {
+                            if let summary = model.riskSummary() {
+                                TimelineView(.periodic(from: .now, by: 60)) { context in
+                                    let now = context.date
+                                    riskSummaryCard(summary, now: now)
+                                }
+                            }
                             Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             providerRows
                         }
@@ -137,6 +143,7 @@ struct MenuPanel: View {
                         state: model.states[instance.id] ?? .unavailable,
                         cost: instance.id == instance.provider.rawValue ? model.costs[instance.provider] : nil,
                         isExpanded: model.expanded.contains(instance.id),
+                        forecast: { model.forecast(instanceID: instance.id, window: $0) },
                         action: action(for: instance),
                         showDetails: { bringToFront { openWindow(id: "dashboard", value: instance.id) } }) {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
@@ -174,6 +181,40 @@ struct MenuPanel: View {
     private func openAccounts() {
         model.settingsSection = .accounts
         bringToFront { openSettings() }
+    }
+
+    private func riskSummaryCard(_ summary: AppModel.RiskSummary, now: Date) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Closest limit").font(.caption).foregroundStyle(.secondary)
+                Text("\(Int(summary.closestWindow.usedPercent.rounded()))%")
+                    .font(.title.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(usageTint(summary.closestWindow.usedPercent))
+                Text(summary.closestTitle).font(.caption).lineLimit(1)
+                if let reset = summary.closestWindow.resetsAt, reset > now {
+                    Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                if summary.atRiskCount > 0 {
+                    Label(summary.atRiskCount == 1 ? "1 limit at risk" : "\(summary.atRiskCount) limits at risk",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(usageTint(100))
+                } else {
+                    Label("All \(summary.limitCount) limits on track", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(usageTint(0))
+                }
+                if let f = summary.closestForecast {
+                    Text(f.label(now: now)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                }
+            }
+            .font(.caption)
+        }
+        .padding(12)
+        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
     private var footer: some View {
