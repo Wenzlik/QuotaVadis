@@ -63,7 +63,9 @@ private struct AvoidsReservedRegions: ViewModifier {
                         + (includingFold ? proxy.reservedRegions(kind: .division) : [])
                     return ReservedEdgeInsets(avoiding: regions.map(\.frame), in: proxy.size)
                 } action: { edges in
-                    insets = EdgeInsets(top: edges.top, leading: edges.leading, bottom: edges.bottom, trailing: edges.trailing)
+                    // Written only on a real change, so the layout pass it triggers settles.
+                    let new = EdgeInsets(top: edges.top, leading: edges.leading, bottom: edges.bottom, trailing: edges.trailing)
+                    if new != insets { insets = new }
                 }
         } else {
             content

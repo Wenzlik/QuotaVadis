@@ -328,6 +328,12 @@ public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
 }
 
 public extension Date {
+    /// Seconds from here to the next whole minute (60 on the minute), so a minute clock ticks with the wall clock.
+    var secondsToNextMinute: TimeInterval {
+        let into = timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 60)
+        return 60 - (into < 0 ? into + 60 : into)
+    }
+
     /// "in 5d 4h" — real time left, floored. Calendar-relative formatting would say "in 6 days" for 5.2 days.
     func remainingLabel(now: Date = .now) -> String {
         guard self > now else { return "passed" }

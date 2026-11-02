@@ -5,17 +5,27 @@ import QuotaUI
 struct ContentView: View {
     @Bindable var store: DeviceStore
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
+    @Environment(\.scenePhase) private var scenePhase
+    /// One clock for the badge and the summary card, so the two never disagree as measurements age. Plain state ticked
+    /// by a task, not a TimelineView: one wrapped around the TabView (navigation stacks, badge) re-rendered without
+    /// end on launch and the watchdog killed the app (0x8BADF00D, 0.6.0).
+    @State private var now = Date.now
 
     var body: some View {
-        // One clock for the badge and the summary card, so the two never disagree as measurements age.
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            TabView {
-                OverviewView(store: store, now: context.date)
-                    .tabItem { Label("Limits", systemImage: "flame") }
-                    // "N limits at risk" as on the summary card; Hidden = no card and no badge, as on the Mac.
-                    .badge(riskPlacement == .hidden ? 0 : store.riskSummary(now: context.date)?.atRiskCount ?? 0)
-                IOSSettingsView(store: store)
-                    .tabItem { Label("Settings", systemImage: "gearshape") }
+        TabView {
+            OverviewView(store: store, now: now)
+                .tabItem { Label("Limits", systemImage: "flame") }
+                // "N limits at risk" as on the summary card; Hidden = no card and no badge, as on the Mac.
+                .badge(riskPlacement == .hidden ? 0 : store.riskSummary(now: now)?.atRiskCount ?? 0)
+            IOSSettingsView(store: store)
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+        }
+        // Ticks on each whole minute while the scene is active; restarts, and so catches up, on return to the foreground.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                now = .now
+                try? await Task.sleep(for: .seconds(Date.now.secondsToNextMinute))
             }
         }
         // The tab bar too stays off the Duo's side status column. The fold is left to each tab's own content, so the
