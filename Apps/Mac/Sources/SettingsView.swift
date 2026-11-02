@@ -351,11 +351,20 @@ struct SettingsView: View {
                     Text("Nothing written for the widgets yet. Refresh once and come back.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                // After a Sparkle update the old extension process can linger and chronod drops what it draws.
+                if let stale = model.staleWidgetExtensionVersion {
+                    Label("The widget is still running build \(stale) from before the update.", systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 HStack {
                     Button("Refresh widgets now") { model.refreshWidgetsNow() }
+                    if model.staleWidgetExtensionVersion != nil {
+                        Button("Restart widget") { model.restartWidgetExtension() }
+                    }
                     Spacer()
                 }
             }
+            .onAppear { model.checkWidgetExtension() }
         }
     }
 
