@@ -7,13 +7,16 @@ struct ContentView: View {
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
 
     var body: some View {
-        TabView {
-            OverviewView(store: store)
-                .tabItem { Label("Limits", systemImage: "flame") }
-                // "N limits at risk" as on the summary card; Hidden = no card and no badge, as on the Mac.
-                .badge(riskPlacement == .hidden ? 0 : store.riskSummary()?.atRiskCount ?? 0)
-            IOSSettingsView(store: store)
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+        // One clock for the badge and the summary card, so the two never disagree as measurements age.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            TabView {
+                OverviewView(store: store, now: context.date)
+                    .tabItem { Label("Limits", systemImage: "flame") }
+                    // "N limits at risk" as on the summary card; Hidden = no card and no badge, as on the Mac.
+                    .badge(riskPlacement == .hidden ? 0 : store.riskSummary(now: context.date)?.atRiskCount ?? 0)
+                IOSSettingsView(store: store)
+                    .tabItem { Label("Settings", systemImage: "gearshape") }
+            }
         }
         // The tab bar too stays off the Duo's side status column. The fold is left to each tab's own content, so the
         // two panes are not squeezed onto one half.
@@ -23,6 +26,8 @@ struct ContentView: View {
 
 struct OverviewView: View {
     @Bindable var store: DeviceStore
+    /// The tab bar's clock, shared with the Limits badge.
+    let now: Date
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
@@ -154,13 +159,11 @@ struct OverviewView: View {
         .refreshable { await store.refresh() }
     }
 
-    /// Moves with the clock like the bars' forecasts. Nothing without a measured limit; Hidden in Settings = no card.
-    private var riskSummary: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            if let summary = store.riskSummary(now: context.date) {
-                RiskSummaryCard(summary: summary, now: context.date)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
+    /// Moves with the badge's clock. Nothing without a measured limit; Hidden in Settings = no card.
+    @ViewBuilder private var riskSummary: some View {
+        if let summary = store.riskSummary(now: now) {
+            RiskSummaryCard(summary: summary, now: now)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
