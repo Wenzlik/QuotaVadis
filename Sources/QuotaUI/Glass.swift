@@ -75,28 +75,34 @@ public struct GlowBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.primary.opacity(0.08))
-                    .frame(height: height)
                 // Exactly zero is an empty track; anything above keeps a visible nub so 0.4 % is not "nothing".
                 if percent > 0 {
                     Capsule()
                         .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(height, geo.size.width * min(1, percent / 100)), height: height)
+                        .frame(width: max(height, geo.size.width * min(1, percent / 100)))
                         .shadow(color: tint.opacity(0.22), radius: 2, y: 1)
-                }
-                if let marker {
-                    let x = geo.size.width * min(1, max(0, marker / 100))
-                    Capsule()
-                        .fill(.primary.opacity(0.75))
-                        .frame(width: 1.5, height: height)
-                        .position(x: x, y: 6 + height / 2)
-                    PaceTriangle()
-                        .fill(.primary.opacity(0.85))
-                        .frame(width: 7, height: 5)
-                        .position(x: min(max(x, 3.5), geo.size.width - 3.5), y: 6 / 2 - 0.5)
                 }
             }
         }
-        .frame(height: height + 6)
+        .frame(height: height)
+        // The pace marker sits on top of the track without changing its height: a tick across the bar and a
+        // small triangle in the 6 pt reserved above it. Without a marker the bar is exactly `height` tall.
+        .overlay {
+            if let marker {
+                GeometryReader { geo in
+                    let x = geo.size.width * min(1, max(0, marker / 100))
+                    Capsule()
+                        .fill(.primary.opacity(0.75))
+                        .frame(width: 1.5, height: height + 2)
+                        .position(x: x, y: height / 2)
+                    PaceTriangle()
+                        .fill(.primary.opacity(0.85))
+                        .frame(width: 7, height: 5)
+                        .position(x: min(max(x, 3.5), max(3.5, geo.size.width - 3.5)), y: -3.5)
+                }
+            }
+        }
+        .padding(.top, marker == nil ? 0 : 6)
         .accessibilityHidden(true)
     }
 
