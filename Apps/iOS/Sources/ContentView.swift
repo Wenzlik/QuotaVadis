@@ -4,11 +4,14 @@ import QuotaUI
 
 struct ContentView: View {
     @Bindable var store: DeviceStore
+    @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
 
     var body: some View {
         TabView {
             OverviewView(store: store)
                 .tabItem { Label("Limits", systemImage: "flame") }
+                // "N limits at risk" as on the summary card; Hidden = no card and no badge, as on the Mac.
+                .badge(riskPlacement == .hidden ? 0 : store.riskSummary()?.atRiskCount ?? 0)
             IOSSettingsView(store: store)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
@@ -22,6 +25,7 @@ struct OverviewView: View {
     @Bindable var store: DeviceStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
     /// Provider instance IDs. One column: the pushed detail. Two panes: the last one is the selection. Shared, so a
     /// fold or unfold keeps the provider: a provider picked on the inner display opens pushed on the outer one.
     @State private var path: [String] = []
@@ -64,7 +68,9 @@ struct OverviewView: View {
         if let device = store.selectedDevice, let snapshot = device.snapshots.first(where: { $0.instanceID == id }) {
             ProviderDetailView(snapshot: snapshot,
                                cost: snapshot.instanceID == snapshot.provider.rawValue ? device.cost(for: snapshot.provider) : nil,
-                               deviceName: device.deviceName)
+                               deviceName: device.deviceName,
+                               forecast: { store.forecast($0, of: snapshot, in: device, now: $1) },
+                               primaryWindowID: store.primaryWindowIDs[snapshot.instanceID])
         } else {
             ContentUnavailableView("Not shared by this Mac", systemImage: "questionmark.circle")
         }
@@ -75,8 +81,15 @@ struct OverviewView: View {
             if let device = store.selectedDevice {
                 ScrollView {
                     LazyVStack(spacing: 14) {
+                        if riskPlacement == .top { riskSummary }
                         ForEach(device.snapshots) { snapshot in
-                            let card = ProviderCard(snapshot: snapshot, status: device.status(for: snapshot), showsChevron: !isTwoPane)
+                            let card = ProviderCard(snapshot: snapshot, status: device.status(for: snapshot),
+                                                    forecast: { store.forecast($0, of: snapshot, in: device, now: $1) },
+                                                    primaryWindowID: store.primaryWindowIDs[snapshot.instanceID],
+                                                    showsChevron: !isTwoPane)
+                                // Main-bar pick, as in the Mac card's right-click menu.
+                                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                .contextMenu { mainBarPicker(snapshot) }
                             if isTwoPane {
                                 let selected = snapshot.instanceID == selectedID
                                 Button { path = [snapshot.instanceID] } label: {
@@ -117,6 +130,7 @@ struct OverviewView: View {
                             Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
                                 .font(.callout).padding()
                         }
+                        if riskPlacement == .bottom { riskSummary }
                         footer(device)
                     }
                     .padding(.horizontal)
@@ -138,6 +152,25 @@ struct OverviewView: View {
             }
         }
         .refreshable { await store.refresh() }
+    }
+
+    /// Moves with the clock like the bars' forecasts. Nothing without a measured limit; Hidden in Settings = no card.
+    private var riskSummary: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let summary = store.riskSummary(now: context.date) {
+                RiskSummaryCard(summary: summary, now: context.date)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    @ViewBuilder private func mainBarPicker(_ snapshot: UsageSnapshot) -> some View {
+        if snapshot.windows.count > 1 {
+            Picker("Show as main bar", selection: store.primaryWindowBinding(snapshot)) {
+                Text("Default").tag(String?.none)
+                ForEach(snapshot.windows) { Text($0.title).tag(Optional($0.id)) }
+            }
+        }
     }
 
     private func footer(_ device: DevicePayload) -> some View {
@@ -194,6 +227,7 @@ struct EmptyStateView: View {
 
 struct IOSSettingsView: View {
     @Bindable var store: DeviceStore
+    @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -220,6 +254,22 @@ struct IOSSettingsView: View {
                     Button("Refresh now") { Task { await store.refresh() } }.disabled(store.isRefreshing)
                 } header: { Text("Mac") } footer: {
                     Text("Numbers come from QuotaVadis on your Mac through your iCloud private database. This phone reads them; it never talks to the providers.")
+                }
+
+                Section {
+                    Picker("Most at risk", selection: $riskPlacement) {
+                        Text("Below the providers").tag(RiskSummaryPlacement.bottom)
+                        Text("Above the providers").tag(RiskSummaryPlacement.top)
+                        Text("Hidden").tag(RiskSummaryPlacement.hidden)
+                    }
+                    ForEach((store.selectedDevice?.snapshots ?? []).filter { $0.windows.count > 1 }) { snapshot in
+                        Picker("Main bar · \(snapshot.displayTitle)", selection: store.primaryWindowBinding(snapshot)) {
+                            Text("Default").tag(String?.none)
+                            ForEach(snapshot.windows) { Text($0.title).tag(Optional($0.id)) }
+                        }
+                    }
+                } header: { Text("Overview") } footer: {
+                    Text("“Most at risk” summarises the limit closest to running out and badges the Limits tab with the number at risk. The main bar is the limit drawn large on each card; also in the card’s long-press menu. Forecasts use the measurements this phone has received from the Mac.")
                 }
 
                 Section {
