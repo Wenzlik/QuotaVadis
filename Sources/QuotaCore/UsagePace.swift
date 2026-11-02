@@ -112,6 +112,9 @@ public struct UsageForecast: Sendable, Hashable {
         return "fits, ends at ~\(Int(min(projectedPercent, 100).rounded()))%"
     }
 
+    /// Shown instead of a projection when `UsageForecaster` returns nil for an active window.
+    public static let notEnoughDataLabel = "forecast: not enough data yet"
+
     /// Card-width variant: "runs out Sun 10:47" without the gap to the reset; `label` goes in the tooltip.
     public func compactLabel(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
         guard risk != .exhausted, let runsOutAt else { return label(now: now, calendar: calendar, locale: locale) }
@@ -219,17 +222,20 @@ public enum UsageForecaster {
         // Recent rate over the last `recentInterval`.
         let recentCutoff = now.addingTimeInterval(-recentInterval)
         let recent = relevant.filter { $0.at >= recentCutoff }
-        let rate: Double
-        let basis: UsageForecast.Basis
+        var rate: Double?
+        var basis = UsageForecast.Basis.recent
+        // A flat last hour (idle, or an integer provider that has not ticked) says nothing about the rest of the
+        // window: projecting rate 0 would show the current value as the projection. Fall back to the window average.
         if recent.count >= 2, let first = recent.first, let last = recent.last, last.at.timeIntervalSince(first.at) >= 600 {
-            rate = max(0, (last.percent - first.percent) / last.at.timeIntervalSince(first.at))
-            basis = .recent
-        } else if let start, now.timeIntervalSince(start) >= 300 {
+            let recentRate = (last.percent - first.percent) / last.at.timeIntervalSince(first.at)
+            if recentRate > 0 { rate = recentRate }
+        }
+        if rate == nil, let start, now.timeIntervalSince(start) >= 300 {
             rate = max(0, used / now.timeIntervalSince(start))
             basis = .windowAverage
-        } else {
-            return nil
         }
+        // Not enough data: no projection rather than the current value dressed up as one.
+        guard let rate else { return nil }
 
         let remaining = reset.timeIntervalSince(now)
         let projected = used + rate * remaining
