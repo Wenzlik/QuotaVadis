@@ -176,6 +176,10 @@ final class AppModel {
     var expanded: Set<String> {
         didSet { defaults.set(expanded.sorted(), forKey: "expandedInstances") }
     }
+    /// The window drawn as the big bar on a card, instance id → window id. No entry = the default (session, else first).
+    var primaryWindowIDs: [String: String] {
+        didSet { defaults.set(primaryWindowIDs, forKey: "primaryWindowIDs") }
+    }
     /// Where Claude limits come from: Claude Code login, claude.ai web session (desktop app / Chrome / pasted key), or both.
     var claudeSource: UsageService.ClaudeSource {
         didSet { defaults.set(claudeSource.rawValue, forKey: "claudeSource"); rebuildFetchers() }
@@ -310,6 +314,7 @@ final class AppModel {
         lastSyncPush = defaults.object(forKey: "lastSyncPush") as? Date
         lastSyncError = defaults.string(forKey: "lastSyncError")
         expanded = Set(defaults.stringArray(forKey: "expandedInstances") ?? [])
+        primaryWindowIDs = defaults.dictionary(forKey: "primaryWindowIDs") as? [String: String] ?? [:]
         extraClaudeServices = defaults.stringArray(forKey: "extraClaudeServices") ?? []
         claudeSource = UsageService.ClaudeSource(rawValue: defaults.string(forKey: "claudeSource") ?? "") ?? .automatic
         manualClaudeSessionKey = ClaudeWebSession.manualKey() ?? ""
@@ -570,39 +575,27 @@ final class AppModel {
         return usageHistory.forecast(for: window, instanceID: key, now: now)
     }
 
-    struct RiskSummary: Equatable {
-        var atRiskCount: Int
-        var limitCount: Int
-        var closestTitle: String
-        var closestWindow: UsageWindow
-        var closestForecast: UsageForecast?
-    }
-
+    /// The panel header: every alert window by its forecast risk (usage level without one), plus spend already
+    /// at or past its cap. Spend that mirrors a window (Cursor's included usage) is that window, not a second limit.
     func riskSummary(now: Date = .now) -> RiskSummary? {
-        var atRiskCount = 0
-        var limitCount = 0
-        var closest: (instance: Instance, window: UsageWindow, forecast: UsageForecast?)?
+        var items: [RiskItem] = []
         for instance in visibleInstances {
             guard let snapshot = states[instance.id]?.snapshot else { continue }
-            let windows = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
-            for window in windows {
-                limitCount += 1
-                let projection = self.forecast(instanceID: instance.id, window: window, now: now)
-                if (projection?.risk ?? .safe) >= .atRisk { atRiskCount += 1 }
-                // Highest usage wins; on a tie, the window that resets sooner.
-                if let current = closest?.window,
-                   window.usedPercent < current.usedPercent ||
-                   (window.usedPercent == current.usedPercent &&
-                    (window.resetsAt ?? .distantFuture) >= (current.resetsAt ?? .distantFuture)) {
-                    continue
-                }
-                closest = (instance, window, projection)
+            let name = title(for: instance)
+            for window in snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows {
+                let projection = forecast(instanceID: instance.id, window: window, now: now)
+                items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
+                                      risk: UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection),
+                                      detail: projection?.label(now: now)))
+            }
+            // ponytail: only spend already over its cap counts; a "likely over budget" projection needs spend history.
+            for credits in snapshot.credits where credits.isOverLimit && !snapshot.windows.contains(where: { $0.id == credits.id }) {
+                let percent = credits.usedPercent ?? 100
+                items.append(RiskItem(title: "\(name) · \(credits.title)", usedPercent: percent, resetsAt: credits.resetsAt,
+                                      risk: UsageForecast.Risk(usedPercent: percent, forecast: nil), detail: credits.valueLabel()))
             }
         }
-        guard let closest else { return nil }
-        return RiskSummary(atRiskCount: atRiskCount, limitCount: limitCount,
-                           closestTitle: "\(title(for: closest.instance)) · \(closest.window.title)",
-                           closestWindow: closest.window, closestForecast: closest.forecast)
+        return RiskSummary(items: items)
     }
 
     /// Every window that can feed "Highest usage", for the Settings checklist.

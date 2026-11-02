@@ -145,6 +145,7 @@ struct MenuPanel: View {
                         cost: instance.id == instance.provider.rawValue ? model.costs[instance.provider] : nil,
                         isExpanded: model.expanded.contains(instance.id),
                         forecast: { model.forecast(instanceID: instance.id, window: $0, now: $1) },
+                        primaryWindowID: model.primaryWindowIDs[instance.id],
                         action: action(for: instance),
                         showDetails: { bringToFront { openWindow(id: "dashboard", value: instance.id) } }) {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
@@ -155,6 +156,12 @@ struct MenuPanel: View {
             .accentCard(instance.provider.accent)
             .contextMenu {
                 Button("View details") { bringToFront { openWindow(id: "dashboard", value: instance.id) } }
+                if let windows = model.states[instance.id]?.snapshot?.windows, windows.count > 1 {
+                    Picker("Show as main bar", selection: model.primaryWindowBinding(instance.id)) {
+                        Text("Default").tag(String?.none)
+                        ForEach(windows) { Text($0.title).tag(Optional($0.id)) }
+                    }
+                }
             }
             }
         }
@@ -184,15 +191,16 @@ struct MenuPanel: View {
         bringToFront { openSettings() }
     }
 
-    private func riskSummaryCard(_ summary: AppModel.RiskSummary, now: Date) -> some View {
-        HStack(alignment: .top) {
+    private func riskSummaryCard(_ summary: RiskSummary, now: Date) -> some View {
+        let top = summary.top
+        return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Closest limit").font(.caption).foregroundStyle(.secondary)
-                Text("\(Int(summary.closestWindow.usedPercent.rounded()))%")
+                Text(top.risk >= .atRisk ? "Most at risk" : "Closest limit").font(.caption).foregroundStyle(.secondary)
+                Text("\(Int(top.usedPercent.rounded()))%")
                     .font(.title.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(usageTint(summary.closestWindow.usedPercent))
-                Text(summary.closestTitle).font(.caption).lineLimit(1)
-                if let reset = summary.closestWindow.resetsAt, reset > now {
+                    .foregroundStyle(riskTint(top.risk))
+                Text(top.title).font(.caption).lineLimit(1)
+                if let reset = top.resetsAt, reset > now {
                     Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -202,13 +210,13 @@ struct MenuPanel: View {
                 if summary.atRiskCount > 0 {
                     Label(summary.atRiskCount == 1 ? "1 limit at risk" : "\(summary.atRiskCount) limits at risk",
                           systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(usageTint(100))
+                        .riskTextStyle(.atRisk)
                 } else {
                     Label("All \(summary.limitCount) limits on track", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(usageTint(0))
                 }
-                if let f = summary.closestForecast {
-                    Text(f.label(now: now)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                if let detail = top.detail {
+                    Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }
             }
             .font(.caption)
@@ -238,6 +246,13 @@ struct MenuPanel: View {
         .font(.callout)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+extension AppModel {
+    /// Big-bar pick for one card; nil clears it back to the default.
+    func primaryWindowBinding(_ instanceID: String) -> Binding<String?> {
+        Binding(get: { self.primaryWindowIDs[instanceID] }, set: { self.primaryWindowIDs[instanceID] = $0 })
     }
 }
 
