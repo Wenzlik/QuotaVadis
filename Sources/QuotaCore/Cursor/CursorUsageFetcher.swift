@@ -62,18 +62,19 @@ public struct CursorUsageFetcher: UsageFetcher {
         let cycleEnd = ISO8601DateFormatter.parseAny(r.billingCycleEnd)
         // Cursor is money-metered: the plan's included allowance is both the "window" and the credit figure.
         // The monthly total splits into Auto (Cursor's own models) and named/API models.
+        let cycleLength = cycleEnd.flatMap { end in Calendar.current.date(byAdding: .month, value: -1, to: end).map { end.timeIntervalSince($0) } }
         if let plan = r.individualUsage?.plan {
             if let pct = plan.totalPercentUsed ?? percent(used: plan.used, limit: plan.limit) {
-                windows.append(UsageWindow(id: "plan", kind: .monthly, title: "Included total", usedPercent: pct, resetsAt: cycleEnd))
+                windows.append(UsageWindow(id: "plan", kind: .monthly, title: "Included total", usedPercent: pct, resetsAt: cycleEnd, windowSeconds: cycleLength))
             }
             // Auto and named-model usage have their own included allowances. Keep them as sub-rows unless one of
             // them is the binding constraint (higher than the total): then it must be visible and alertable.
             let total = plan.totalPercentUsed ?? percent(used: plan.used, limit: plan.limit) ?? 0
             if let pct = plan.autoPercentUsed {
-                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5))
+                windows.append(UsageWindow(id: "auto", kind: .model, title: "Auto (Cursor models)", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5, windowSeconds: cycleLength))
             }
             if let pct = plan.apiPercentUsed {
-                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5))
+                windows.append(UsageWindow(id: "api", kind: .model, title: "Other models", usedPercent: pct, resetsAt: cycleEnd, prominent: pct > total + 0.5, windowSeconds: cycleLength))
             }
             // On team/enterprise seats `used`/`limit` (cents) disagree with Cursor's own `totalPercentUsed`
             // (e.g. 713/2000 = 36% vs 2.85%): the seat draws on a pooled team allowance and `limit` is a placeholder.
@@ -97,7 +98,8 @@ public struct CursorUsageFetcher: UsageFetcher {
             let start = ISO8601DateFormatter.parseAny(bot.currentPeriodStart)
             let kind = reset.flatMap { r in start.map { UsageWindow.kind(forSeconds: Int(r.timeIntervalSince($0))) } } ?? .weekly
             windows.append(UsageWindow(id: "grok-bot", kind: kind, title: "Grok Bot", usedPercent: pct,
-                                       resetsAt: reset, prominent: pct > 0))
+                                       resetsAt: reset, prominent: pct > 0,
+                                       windowSeconds: reset.flatMap { r in start.map { r.timeIntervalSince($0) } }))
         }
         // Cursor reports Teams workspaces as `enterprise`; the API exposes no seat type, so none is shown.
         let plan = r.membershipType.map(Self.planLabel)
