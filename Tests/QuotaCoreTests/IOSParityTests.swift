@@ -96,4 +96,12 @@ struct IOSParityTests {
         try await writer.save(older, revision: 3)
         #expect(UsageHistory.load(from: url) == older)
     }
+
+    /// The tab bar's minute clock sleeps to the next whole minute.
+    @Test func secondsToNextMinute() {
+        #expect(now.secondsToNextMinute == 60)
+        #expect(now.addingTimeInterval(15).secondsToNextMinute == 45)
+        #expect(now.addingTimeInterval(59.5).secondsToNextMinute == 0.5)
+        #expect(Date(timeIntervalSinceReferenceDate: -15).secondsToNextMinute == 15)
+    }
 }
