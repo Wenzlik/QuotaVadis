@@ -70,14 +70,14 @@ public func riskTintPercent(_ risk: UsageForecast.Risk) -> Double {
     }
 }
 
-/// Risk-coloured text, colour only (no backdrop). Orange and red use a deeper (light) or paler (dark) shade than
+/// Risk-coloured text, colour only (no backdrop). Green, orange and red use a deeper (light) or paler (dark) shade than
 /// the bars: ≥ 4.5:1 on the grey popover glass (#e5e5ea light, #3a3a3c–#48484a dark), the bar colours are not.
 struct RiskTextStyle: ViewModifier {
     let risk: UsageForecast.Risk
 
     func body(content: Content) -> some View {
         switch risk {
-        case .safe: content.foregroundStyle(riskTint(risk))
+        case .safe: content.foregroundStyle(adaptiveColor(light: (0.08, 0.45, 0.24), dark: (0.36, 0.82, 0.52)))
         case .watch: content.foregroundStyle(adaptiveColor(light: (0.55, 0.31, 0.00), dark: (1.00, 0.76, 0.40)))
         case .atRisk, .exhausted: content.foregroundStyle(adaptiveColor(light: (0.66, 0.07, 0.07), dark: (1.00, 0.64, 0.60)))
         }

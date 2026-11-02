@@ -213,7 +213,7 @@ struct MenuPanel: View {
                         .riskTextStyle(.atRisk)
                 } else {
                     Label("All \(summary.limitCount) limits on track", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(usageTint(0))
+                        .riskTextStyle(.safe)
                 }
                 if let detail = top.detail {
                     Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
