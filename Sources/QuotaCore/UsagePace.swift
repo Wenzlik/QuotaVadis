@@ -112,6 +112,9 @@ public struct UsageForecast: Sendable, Hashable {
         return "fits, ends at ~\(Int(min(projectedPercent, 100).rounded()))%"
     }
 
+    /// Shown instead of a projection when `UsageForecaster` returns nil for an active window.
+    public static let notEnoughDataLabel = "forecast: not enough data yet"
+
     /// Card-width variant: "runs out Sun 10:47" without the gap to the reset; `label` goes in the tooltip.
     public func compactLabel(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
         guard risk != .exhausted, let runsOutAt else { return label(now: now, calendar: calendar, locale: locale) }
@@ -156,9 +159,14 @@ public struct RiskItem: Sendable, Hashable {
     public var risk: UsageForecast.Risk
     /// Forecast label for a window, "$1.04 / $1.00" for spend.
     public var detail: String?
+    /// A window that should have a forecast but has none (not enough data, stale measurement): its risk is
+    /// only the usage level, so it must not count as "on track".
+    public var missingForecast: Bool
 
-    public init(title: String, usedPercent: Double, resetsAt: Date?, risk: UsageForecast.Risk, detail: String? = nil) {
+    public init(title: String, usedPercent: Double, resetsAt: Date?, risk: UsageForecast.Risk, detail: String? = nil,
+                missingForecast: Bool = false) {
         self.title = title; self.usedPercent = usedPercent; self.resetsAt = resetsAt; self.risk = risk; self.detail = detail
+        self.missingForecast = missingForecast
     }
 
     /// Header order: worse risk first, then higher usage, then the sooner reset.
@@ -173,6 +181,8 @@ public struct RiskItem: Sendable, Hashable {
 public struct RiskSummary: Sendable, Hashable {
     public var atRiskCount: Int
     public var limitCount: Int
+    /// Limits below "at risk" whose forecast is unknown.
+    public var noForecastCount: Int
     public var top: RiskItem
 
     public init?(items: [RiskItem]) {
@@ -181,30 +191,62 @@ public struct RiskSummary: Sendable, Hashable {
         self.top = top
         limitCount = items.count
         atRiskCount = items.filter { $0.risk >= .atRisk }.count
+        noForecastCount = items.filter { $0.risk < .atRisk && $0.missingForecast }.count
+    }
+
+    /// True only when every limit has a forecast and none is at risk.
+    public var allOnTrack: Bool { atRiskCount == 0 && noForecastCount == 0 }
+
+    /// "2 limits at risk", "All 3 limits on track", or with unknown forecasts "2 on track · 1 without forecast".
+    public var statusLabel: String {
+        if atRiskCount > 0 { return atRiskCount == 1 ? "1 limit at risk" : "\(atRiskCount) limits at risk" }
+        if noForecastCount == 0 { return "All \(limitCount) limits on track" }
+        let onTrack = limitCount - noForecastCount
+        let unknown = noForecastCount == 1 ? "1 limit without forecast" : "\(noForecastCount) limits without forecast"
+        return onTrack == 0 ? unknown : "\(onTrack) on track · \(unknown)"
+    }
+}
+
+/// Where the panel shows the "Most at risk / Closest limit" summary. Raw values are stored in UserDefaults.
+public enum RiskSummaryPlacement: String, CaseIterable, Sendable {
+    case bottom, top, hidden
+
+    /// Stored value, or `.bottom` when missing or unknown.
+    public init(storedValue: String?) {
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? .bottom
     }
 }
 
 public enum UsageForecaster {
-    public static func forecast(window: UsageWindow, samples: [UsageSample], now: Date = .now, recentInterval: TimeInterval = 3600, calendar: Calendar = .current) -> UsageForecast? {
+    /// `measuredAt` is when `window.usedPercent` was measured (the snapshot's `fetchedAt`); nil means `now`.
+    /// A measurement older than `staleAfter` (refreshes failing) is not current usage: no projection.
+    public static func forecast(window: UsageWindow, samples: [UsageSample], now: Date = .now, measuredAt: Date? = nil,
+                                staleAfter: TimeInterval = ProviderSyncStatus.minimumStaleAfter,
+                                recentInterval: TimeInterval = 3600, calendar: Calendar = .current) -> UsageForecast? {
         guard let reset = window.resetsAt, reset > now else { return nil }
         let used = window.usedPercent
 
+        // Usage never drops within a window, so a stale 100% is still exhausted.
         if used >= 100 {
             return UsageForecast(projectedPercent: used, runsOutAt: nil, resetsAt: reset, ratePerHour: 0, basis: .recent, risk: .exhausted)
         }
+        if let measuredAt, now.timeIntervalSince(measuredAt) > staleAfter { return nil }
+        // Everything below is "as of the measurement": the window average and the current sample belong to
+        // `measuredAt`, not to the clock (a few refresh intervals at most, given the guard above).
+        let asOf = min(measuredAt ?? now, now)
 
         let start = window.windowStart(calendar: calendar)
 
-        // Relevant samples: at <= now, at >= start (when known), sorted ascending.
+        // Relevant samples: at <= asOf, at >= start (when known), sorted ascending.
         // Samples from a previous window fall before `start` (resetsAt moved), so this is the primary reset detection.
         var relevant = samples.filter { sample in
-            sample.at <= now && (start.map { $0 <= sample.at } ?? true)
+            sample.at <= asOf && (start.map { $0 <= sample.at } ?? true)
         }.sorted { $0.at < $1.at }
-        // Ensure a sample at `now` with the current used percent.
-        if let last = relevant.last, last.at > now.addingTimeInterval(-1), abs(last.percent - used) < 0.01 {
+        // Ensure a sample at `asOf` with the current used percent.
+        if let last = relevant.last, last.at > asOf.addingTimeInterval(-1), abs(last.percent - used) < 0.01 {
             // already covered
         } else {
-            relevant.append(UsageSample(at: now, percent: used))
+            relevant.append(UsageSample(at: asOf, percent: used))
         }
 
         // Fallback for windows without a known start: drop everything before the last reset-sized drop.
@@ -217,25 +259,28 @@ public enum UsageForecaster {
         relevant = Array(relevant[dropIndex...])
 
         // Recent rate over the last `recentInterval`.
-        let recentCutoff = now.addingTimeInterval(-recentInterval)
+        let recentCutoff = asOf.addingTimeInterval(-recentInterval)
         let recent = relevant.filter { $0.at >= recentCutoff }
-        let rate: Double
-        let basis: UsageForecast.Basis
+        var rate: Double?
+        var basis = UsageForecast.Basis.recent
+        // A flat last hour (idle, or an integer provider that has not ticked) says nothing about the rest of the
+        // window: projecting rate 0 would show the current value as the projection. Fall back to the window average.
         if recent.count >= 2, let first = recent.first, let last = recent.last, last.at.timeIntervalSince(first.at) >= 600 {
-            rate = max(0, (last.percent - first.percent) / last.at.timeIntervalSince(first.at))
-            basis = .recent
-        } else if let start, now.timeIntervalSince(start) >= 300 {
-            rate = max(0, used / now.timeIntervalSince(start))
-            basis = .windowAverage
-        } else {
-            return nil
+            let recentRate = (last.percent - first.percent) / last.at.timeIntervalSince(first.at)
+            if recentRate > 0 { rate = recentRate }
         }
+        if rate == nil, let start, asOf.timeIntervalSince(start) >= 300 {
+            rate = max(0, used / asOf.timeIntervalSince(start))
+            basis = .windowAverage
+        }
+        // Not enough data: no projection rather than the current value dressed up as one.
+        guard let rate else { return nil }
 
-        let remaining = reset.timeIntervalSince(now)
+        let remaining = reset.timeIntervalSince(asOf)
         let projected = used + rate * remaining
         var runsOutAt: Date?
         if rate > 0, projected >= 100 {
-            let candidate = now.addingTimeInterval((100 - used) / rate)
+            let candidate = asOf.addingTimeInterval((100 - used) / rate)
             if candidate < reset { runsOutAt = candidate }
         }
 
@@ -305,8 +350,10 @@ public struct UsageHistory: Codable, Sendable, Hashable {
         samples[Self.key(instanceID: instanceID, windowID: windowID)] ?? []
     }
 
-    public func forecast(for window: UsageWindow, instanceID: String, now: Date = .now) -> UsageForecast? {
-        UsageForecaster.forecast(window: window, samples: samples(instanceID: instanceID, windowID: window.id), now: now)
+    public func forecast(for window: UsageWindow, instanceID: String, now: Date = .now, measuredAt: Date? = nil,
+                         staleAfter: TimeInterval = ProviderSyncStatus.minimumStaleAfter) -> UsageForecast? {
+        UsageForecaster.forecast(window: window, samples: samples(instanceID: instanceID, windowID: window.id), now: now,
+                                 measuredAt: measuredAt, staleAfter: staleAfter)
     }
 
     public static var defaultURL: URL {

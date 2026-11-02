@@ -70,21 +70,16 @@ public func riskTintPercent(_ risk: UsageForecast.Risk) -> Double {
     }
 }
 
-/// Small risk-coloured text. Orange and red text sit on a light/dark backdrop in a deeper (light) or paler (dark)
-/// shade: the bar colours on tinted glass fall well under 4.5:1, this clears it on any card.
+/// Risk-coloured text, colour only (no backdrop). Green, orange and red use a deeper (light) or paler (dark) shade than
+/// the bars: ≥ 4.5:1 on the grey popover glass (#e5e5ea light, #3a3a3c–#48484a dark), the bar colours are not.
 struct RiskTextStyle: ViewModifier {
     let risk: UsageForecast.Risk
 
     func body(content: Content) -> some View {
-        if risk >= .watch {
-            content
-                .foregroundStyle(risk == .watch ? adaptiveColor(light: (0.55, 0.31, 0.00), dark: (1.00, 0.82, 0.45))
-                                                : adaptiveColor(light: (0.66, 0.07, 0.07), dark: (1.00, 0.62, 0.59)))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .background(opaqueCardBackground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-        } else {
-            content.foregroundStyle(riskTint(risk))
+        switch risk {
+        case .safe: content.foregroundStyle(adaptiveColor(light: (0.08, 0.45, 0.24), dark: (0.36, 0.82, 0.52)))
+        case .watch: content.foregroundStyle(adaptiveColor(light: (0.55, 0.31, 0.00), dark: (1.00, 0.76, 0.40)))
+        case .atRisk, .exhausted: content.foregroundStyle(adaptiveColor(light: (0.66, 0.07, 0.07), dark: (1.00, 0.64, 0.60)))
         }
     }
 }

@@ -26,15 +26,10 @@ struct MenuPanel: View {
                             ContentUnavailableView("Nothing to track on this Mac", systemImage: "flame",
                                                    description: Text("Log in to a provider on this Mac, then Refresh."))
                         } else {
-                            // Recomputed on every tick: forecasts and "N limits at risk" move with the clock, not only
-                            // with refreshes. No card while nothing has a snapshot yet.
-                            TimelineView(.periodic(from: .now, by: 60)) { context in
-                                if let summary = model.riskSummary(now: context.date) {
-                                    riskSummaryCard(summary, now: context.date)
-                                }
-                            }
+                            if model.riskSummaryPlacement == .top { riskSummary }
                             Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             providerRows
+                            if model.riskSummaryPlacement == .bottom { riskSummary }
                         }
                     }
                     .padding(10)
@@ -191,6 +186,16 @@ struct MenuPanel: View {
         bringToFront { openSettings() }
     }
 
+    /// Recomputed on every tick: forecasts and "N limits at risk" move with the clock, not only with refreshes.
+    /// No card while nothing has a snapshot yet. Hidden in Settings ▸ General = no card and no badge anywhere.
+    private var riskSummary: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let summary = model.riskSummary(now: context.date) {
+                riskSummaryCard(summary, now: context.date)
+            }
+        }
+    }
+
     private func riskSummaryCard(_ summary: RiskSummary, now: Date) -> some View {
         let top = summary.top
         return HStack(alignment: .top) {
@@ -198,7 +203,7 @@ struct MenuPanel: View {
                 Text(top.risk >= .atRisk ? "Most at risk" : "Closest limit").font(.caption).foregroundStyle(.secondary)
                 Text("\(Int(top.usedPercent.rounded()))%")
                     .font(.title.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(riskTint(top.risk))
+                    .riskTextStyle(top.risk)
                 Text(top.title).font(.caption).lineLimit(1)
                 if let reset = top.resetsAt, reset > now {
                     Text("resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
@@ -208,12 +213,15 @@ struct MenuPanel: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 if summary.atRiskCount > 0 {
-                    Label(summary.atRiskCount == 1 ? "1 limit at risk" : "\(summary.atRiskCount) limits at risk",
-                          systemImage: "exclamationmark.triangle.fill")
+                    Label(summary.statusLabel, systemImage: "exclamationmark.triangle.fill")
                         .riskTextStyle(.atRisk)
+                } else if summary.allOnTrack {
+                    Label(summary.statusLabel, systemImage: "checkmark.circle.fill")
+                        .riskTextStyle(.safe)
                 } else {
-                    Label("All \(summary.limitCount) limits on track", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(usageTint(0))
+                    // Unknown forecast: neither green nor a warning.
+                    Label(summary.statusLabel, systemImage: "questionmark.circle")
+                        .foregroundStyle(.secondary)
                 }
                 if let detail = top.detail {
                     Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)

@@ -140,6 +140,114 @@ struct PaceForecastTests {
         #expect(f.runsOutAt == nil)
     }
 
+    /// Regression: Session 16% / Weekly 2% / Codex 26% showed "fits, ends at ~16/2/26%". A flat last hour gave a
+    /// recent rate of 0, so the "projection" was the current value. It must fall back to the window average.
+    @Test func flatLastHourIsNotAProjectionOfCurrent() throws {
+        let locale = Locale(identifier: "en_US_POSIX")
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let now = reset.addingTimeInterval(-7_200) // session: 3 h elapsed, 2 h left
+        let flat = (0...12).map { UsageSample(at: now.addingTimeInterval(Double(-300 * $0)), percent: 16) }
+        let session = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 16, resetsAt: reset)
+        let f = try #require(UsageForecaster.forecast(window: session, samples: flat, now: now, calendar: cal))
+        #expect(f.basis == .windowAverage)
+        #expect(abs(f.ratePerHour - 16.0 / 3) < 0.01)
+        #expect(abs(f.projectedPercent - (16 + 16.0 / 3 * 2)) < 0.01) // ~26.7
+        #expect(f.label(now: now, calendar: cal, locale: locale) == "fits, ends at ~27%")
+
+        // Weekly 2% one day in, flat for the last hour: 2 + 2 pt/day * 6 days = 14.
+        let weekReset = now.addingTimeInterval(6 * 86_400)
+        let weekly = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 2, resetsAt: weekReset)
+        let flat2 = flat.map { UsageSample(at: $0.at, percent: 2) }
+        let w = try #require(UsageForecaster.forecast(window: weekly, samples: flat2, now: now, calendar: cal))
+        #expect(abs(w.projectedPercent - 14) < 0.01)
+        #expect(w.projectedPercent > weekly.usedPercent)
+    }
+
+    @Test func projectionIsCurrentPlusRateTimesRemaining() throws {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let now = reset.addingTimeInterval(-3 * 86_400)
+        let window = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 30, resetsAt: reset)
+        let samples = [UsageSample(at: now.addingTimeInterval(-3_600), percent: 29), UsageSample(at: now, percent: 30)]
+        let f = try #require(UsageForecaster.forecast(window: window, samples: samples, now: now, calendar: cal))
+        #expect(f.basis == .recent)
+        #expect(abs(f.ratePerHour - 1) < 0.001)
+        #expect(abs(f.projectedPercent - (30 + 1 * 72)) < 0.01)
+        #expect(f.risk == .atRisk) // 30 + 72 > 100: runs out ~70 h from now
+    }
+
+    @Test func zeroRateIsAMeasurementNotMissingData() throws {
+        // Nothing used one hour into a session: a measured rate of 0 projects 0, honestly.
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let now = reset.addingTimeInterval(-4 * 3_600)
+        let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 0, resetsAt: reset)
+        let f = try #require(UsageForecaster.forecast(window: window, samples: [], now: now, calendar: cal))
+        #expect(f.basis == .windowAverage)
+        #expect(f.ratePerHour == 0)
+        #expect(f.projectedPercent == 0)
+        #expect(f.risk == .safe)
+    }
+
+    @Test func notEnoughDataGivesNoForecast() {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let now = reset.addingTimeInterval(-7_200)
+        // No known start (model window) and a flat hour: used to project the current 26%, now no forecast.
+        let model = UsageWindow(id: "m", kind: .model, title: "Model", usedPercent: 26, resetsAt: reset)
+        let flat = (0...12).map { UsageSample(at: now.addingTimeInterval(Double(-300 * $0)), percent: 26) }
+        #expect(UsageForecaster.forecast(window: model, samples: flat, now: now, calendar: cal) == nil)
+        // Window just started (< 5 min) and no history.
+        let session = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 3, resetsAt: reset)
+        let justStarted = reset.addingTimeInterval(-18_000 + 120)
+        #expect(UsageForecaster.forecast(window: session, samples: [], now: justStarted, calendar: cal) == nil)
+        // Without a forecast the risk is the usage level, never a forecast's "fits".
+        #expect(UsageForecast.Risk(usedPercent: 26, forecast: nil) == .safe)
+        #expect(UsageForecast.Risk(usedPercent: 95, forecast: nil) == .atRisk)
+    }
+
+    @Test func staleMeasurementGivesNoForecast() throws {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let start = reset.addingTimeInterval(-7 * 86_400)
+        let measured = start.addingTimeInterval(86_400) // 50% one day into the week
+        let weekly = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 50, resetsAt: reset)
+        // Refreshes failing for 2 h: the old 50% is not current usage, so no projection (and no warning).
+        #expect(UsageForecaster.forecast(window: weekly, samples: [], now: measured.addingTimeInterval(7_200),
+                                         measuredAt: measured, staleAfter: 900, calendar: cal) == nil)
+        // Fresh enough: the window average runs to the measurement, not to the clock (50% per 24 h).
+        let f = try #require(UsageForecaster.forecast(window: weekly, samples: [], now: measured.addingTimeInterval(600),
+                                                      measuredAt: measured, staleAfter: 900, calendar: cal))
+        #expect(f.basis == .windowAverage)
+        #expect(abs(f.ratePerHour - 50.0 / 24) < 0.000_1)
+        // A stale 100% is still exhausted: usage never drops within a window.
+        let full = UsageWindow(id: "w", kind: .weekly, title: "Weekly", usedPercent: 100, resetsAt: reset)
+        let e = try #require(UsageForecaster.forecast(window: full, samples: [], now: measured.addingTimeInterval(7_200),
+                                                      measuredAt: measured, staleAfter: 900, calendar: cal))
+        #expect(e.risk == .exhausted)
+        #expect(ProviderSyncStatus.staleAfter(refreshInterval: 1_800) == 3_660)
+    }
+
+    @Test func resetInThePastOrNowGivesNoForecast() {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 40, resetsAt: reset)
+        #expect(UsageForecaster.forecast(window: window, samples: [], now: reset, calendar: cal) == nil)
+        #expect(UsageForecaster.forecast(window: window, samples: [], now: reset.addingTimeInterval(60), calendar: cal) == nil)
+        let noReset = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 40, resetsAt: nil)
+        #expect(UsageForecaster.forecast(window: noReset, samples: [], now: reset, calendar: cal) == nil)
+    }
+
+    @Test func windowEdges() throws {
+        let reset = Date(timeIntervalSince1970: 1_735_689_600)
+        let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 50, resetsAt: reset)
+        // One second before the reset: projection is current + rate * 1 s.
+        let late = reset.addingTimeInterval(-1)
+        let f = try #require(UsageForecaster.forecast(window: window, samples: [], now: late, calendar: cal))
+        #expect(f.projectedPercent > 50 && f.projectedPercent < 50.01)
+        #expect(f.runsOutAt == nil)
+        // Exactly 5 min into the window: the window average is just allowed.
+        let early = reset.addingTimeInterval(-18_000 + 300)
+        let e = try #require(UsageForecaster.forecast(window: window, samples: [], now: early, calendar: cal))
+        #expect(e.basis == .windowAverage)
+        #expect(e.risk == .atRisk) // 50% in 5 min of a 5 h window
+    }
+
     @Test func historyDedupeAndReset() {
         var history = UsageHistory()
         let now = Date(timeIntervalSince1970: 1_735_689_600)

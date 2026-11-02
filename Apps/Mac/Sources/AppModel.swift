@@ -137,6 +137,10 @@ final class AppModel {
     var menuBarStyle: MenuBarBadgeStyle {
         didSet { defaults.set(menuBarStyle.rawValue, forKey: "qv.menubarStyle") }
     }
+    /// Where the panel shows the "Most at risk / Closest limit" summary (and its "N limits at risk" badge).
+    var riskSummaryPlacement: RiskSummaryPlacement {
+        didSet { defaults.set(riskSummaryPlacement.rawValue, forKey: "riskSummaryPlacement") }
+    }
     var menuBarPercentPlacement: MenuBarPercentPlacement {
         didSet { defaults.set(menuBarPercentPlacement.rawValue, forKey: "menuBarPercentPlacement") }
     }
@@ -304,6 +308,7 @@ final class AppModel {
         menuBarDisplayStyle = MenuBarDisplayStyle(rawValue: defaults.string(forKey: "menuBarDisplayStyle") ?? "") ?? .icon
         menuBarBarSources = defaults.stringArray(forKey: "menuBarBarSources").map { $0.map(MenuBarSource.init(storageKey:)) } ?? [.worst]
         menuBarStyle = MenuBarBadgeStyle(rawValue: defaults.string(forKey: "qv.menubarStyle") ?? "") ?? .circular
+        riskSummaryPlacement = RiskSummaryPlacement(storedValue: defaults.string(forKey: "riskSummaryPlacement"))
         menuBarPercentPlacement = MenuBarPercentPlacement(rawValue: defaults.string(forKey: "menuBarPercentPlacement") ?? "") ?? .beside
         menuBarShowVendorIcons = defaults.bool(forKey: "menuBarShowVendorIcons")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
@@ -571,8 +576,12 @@ final class AppModel {
     }
 
     func forecast(instanceID: String, window: UsageWindow, now: Date = .now) -> UsageForecast? {
-        let key = states[instanceID]?.snapshot?.instanceID ?? instanceID
-        return usageHistory.forecast(for: window, instanceID: key, now: now)
+        let snapshot = states[instanceID]?.snapshot
+        // Stale = two missed refreshes, as in the sync status; adaptive refresh waits up to 30 min between ticks.
+        let interval = isAdaptiveRefresh ? 30 * 60 : TimeInterval(refreshIntervalSeconds)
+        return usageHistory.forecast(for: window, instanceID: snapshot?.instanceID ?? instanceID, now: now,
+                                     measuredAt: snapshot?.fetchedAt,
+                                     staleAfter: ProviderSyncStatus.staleAfter(refreshInterval: interval))
     }
 
     /// The panel header: every alert window by its forecast risk (usage level without one), plus spend already
@@ -589,7 +598,8 @@ final class AppModel {
                 // A minor sub-window (Cursor Auto just under the total) still counts once it runs out before its reset.
                 guard alert.contains(where: { $0.id == window.id }) || risk >= .atRisk else { continue }
                 items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
-                                      risk: risk, detail: projection?.label(now: now)))
+                                      risk: risk, detail: projection?.label(now: now) ?? UsageForecast.notEnoughDataLabel,
+                                      missingForecast: projection == nil))
             }
             // ponytail: only spend already over its cap counts; a "likely over budget" projection needs spend history.
             for credits in snapshot.credits where credits.isOverLimit && !snapshot.windows.contains(where: { $0.id == credits.id }) {

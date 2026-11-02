@@ -202,6 +202,8 @@ public struct LimitBar: View {
                     }
                     if let projection {
                         forecastLine(projection, now)
+                    } else if needsForecastData(now) {
+                        noDataLine
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -222,6 +224,8 @@ public struct LimitBar: View {
                     }
                     if let projection {
                         forecastLine(projection, now, compact: true)
+                    } else if needsForecastData(now) {
+                        noDataLine
                     }
                 }
                 .padding(8)
@@ -248,6 +252,18 @@ public struct LimitBar: View {
                 EmptyView()
             }
         }
+    }
+
+    /// An active, not yet full window without enough history for a projection: say so instead of staying silent.
+    private func needsForecastData(_ now: Date) -> Bool {
+        window.usedPercent < 100 && (window.resetsAt.map { $0 > now } ?? false)
+    }
+
+    private var noDataLine: some View {
+        Label(UsageForecast.notEnoughDataLabel, systemImage: "chart.line.uptrend.xyaxis")
+            .font(.caption2).foregroundStyle(.secondary)
+            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            .help("A forecast needs a few minutes of this window or ten minutes of rising usage")
     }
 
     private func forecastLine(_ forecast: UsageForecast, _ now: Date, compact: Bool = false) -> some View {
