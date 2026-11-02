@@ -582,7 +582,7 @@ final class AppModel {
         for instance in visibleInstances {
             guard let snapshot = states[instance.id]?.snapshot else { continue }
             let name = title(for: instance)
-            for window in snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows {
+            for window in (snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows) {
                 let projection = forecast(instanceID: instance.id, window: window, now: now)
                 items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
                                       risk: UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection),
