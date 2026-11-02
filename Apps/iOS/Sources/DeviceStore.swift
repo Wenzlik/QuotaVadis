@@ -18,6 +18,15 @@ final class DeviceStore {
     var lastError: String?
     var isRefreshing = false
     var expanded: Set<String> = []
+    /// Samples of what the Macs measured, recorded here as payloads arrive (foreground, push, background refresh).
+    /// The Mac's own history is not synced; see `recordHistory`.
+    private(set) var history = UsageHistory.load()
+    private let historyWriter = UsageHistoryWriter()
+    @ObservationIgnored private var historyRevision = 0
+    /// Big-bar pick per provider instance, same key and format as the Mac app (its own defaults, not synced).
+    var primaryWindowIDs: [String: String] {
+        didSet { UserDefaults.standard.set(primaryWindowIDs, forKey: "primaryWindowIDs") }
+    }
 
     // Notifications, evaluated locally whenever new numbers arrive (foreground or silent push).
     var notificationsEnabled: Bool {
@@ -99,6 +108,7 @@ final class DeviceStore {
                                   warned: Set(d.stringArray(forKey: "warnedKeys") ?? []),
                                   creditBaseline: d.dictionary(forKey: "creditBaseline") as? [String: Double] ?? [:])
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
+        primaryWindowIDs = d.dictionary(forKey: "primaryWindowIDs") as? [String: String] ?? [:]
         // Last known payloads so the app opens with content offline.
         if let data = try? Data(contentsOf: Self.cacheURL),
            let cached = try? JSONDecoder.iso.decode([DevicePayload].self, from: data) {
@@ -147,6 +157,7 @@ final class DeviceStore {
             let data = try JSONEncoder.iso.encode(fetched)
             try data.write(to: Self.cacheURL, options: .atomic)
             devices = fetched
+            await recordHistory()
             updateWidgets()
             await evaluateAlerts()
             lastRefresh = .now
@@ -158,6 +169,36 @@ final class DeviceStore {
             lastError = error.localizedDescription
             return .failed
         }
+    }
+}
+
+extension DeviceStore {
+    /// Each Mac's snapshots at their measurement time. Saved off the main thread by one writer, newest revision wins;
+    /// the refresh waits for the save, so a background refresh reports completion only once it is on disk. The file
+    /// is a few hundred KB at most (600 samples per window, pruned to the window's length).
+    private func recordHistory() async {
+        history.record(payloads: devices)
+        historyRevision += 1
+        try? await historyWriter.save(history, revision: historyRevision)
+    }
+
+    func forecast(_ window: UsageWindow, of snapshot: UsageSnapshot, in device: DevicePayload, now: Date) -> UsageForecast? {
+        history.forecast(for: window, snapshot: snapshot, in: device, now: now)
+    }
+
+    /// The overview's "Most at risk" card and the Limits tab badge, for the selected Mac.
+    func riskSummary(now: Date = .now) -> RiskSummary? {
+        guard let device = selectedDevice else { return nil }
+        let items = device.snapshots.flatMap { snapshot in
+            RiskItem.items(for: snapshot, name: snapshot.displayTitle, now: now) { forecast($0, of: snapshot, in: device, now: now) }
+        }
+        return RiskSummary(items: items)
+    }
+
+    /// Picker binding: a pick the snapshot no longer reports reads as Default but stays saved for its return.
+    func primaryWindowBinding(_ snapshot: UsageSnapshot) -> Binding<String?> {
+        Binding(get: { snapshot.reportedWindowID(self.primaryWindowIDs[snapshot.instanceID]) },
+                set: { self.primaryWindowIDs[snapshot.instanceID] = $0 })
     }
 }
 

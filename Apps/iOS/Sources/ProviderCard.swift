@@ -6,6 +6,10 @@ import QuotaUI
 struct ProviderCard: View {
     let snapshot: UsageSnapshot
     let status: ProviderSyncStatus
+    /// Forecast for a window at a moment, from the phone's history of this Mac's measurements.
+    var forecast: ((UsageWindow, Date) -> UsageForecast?)?
+    /// The window the user picked for the big bar; nil or no longer reported = the session.
+    var primaryWindowID: String?
     /// Off where tapping selects in place instead of pushing (two panes).
     var showsChevron = true
 
@@ -23,9 +27,10 @@ struct ProviderCard: View {
                 }
                 Spacer(minLength: 8)
                 if let worst = snapshot.worstWindow {
+                    // Same rule as the bars: the forecast's risk, the usage level without one. Text colour only.
                     Text("\(Int(worst.usedPercent.rounded()))%")
                         .font(.title2.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(usageTint(worst.usedPercent))
+                        .riskTextStyle(UsageForecast.Risk(usedPercent: worst.usedPercent, forecast: forecast?(worst, .now)))
                         .accessibilityLabel("\(Int(worst.usedPercent.rounded())) percent used")
                 }
                 if showsChevron {
@@ -45,9 +50,8 @@ struct ProviderCard: View {
             }
 
             VStack(spacing: 8) {
-                ForEach(snapshot.overviewWindows) { window in
-                    UsageBar(window: window)
-                }
+                // Claude-style, as in the Mac panel: the session (or the pick) as the big bar, the rest as cards.
+                LimitOverview(snapshot: snapshot, primaryWindowID: primaryWindowID, forecast: forecast)
                 ForEach(snapshot.credits.filter { $0.used > 0 }) { credit in
                     CreditsLine(credits: credit)
                 }

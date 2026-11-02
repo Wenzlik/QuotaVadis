@@ -169,6 +169,12 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         return (main, overview.filter { $0.id != main?.id })
     }
 
+    /// A saved big-bar pick as a picker shows it: the pick while this snapshot reports it, nil (Default) otherwise.
+    /// The saved value stays as it is, so the pick returns with its window.
+    public func reportedWindowID(_ pick: String?) -> String? {
+        pick.flatMap { id in windows.contains { $0.id == id } ? id : nil }
+    }
+
     public var compactWindows: [UsageWindow] {
         guard let worstWindow else { return overviewWindows }
         return [worstWindow] + overviewWindows.filter { $0.id != worstWindow.id }

@@ -6,6 +6,8 @@ struct ProviderDetailView: View {
     let snapshot: UsageSnapshot
     let cost: CostReport?
     let deviceName: String
+    var forecast: ((UsageWindow, Date) -> UsageForecast?)?
+    var primaryWindowID: String?
 
     var body: some View {
         ScrollView {
@@ -13,8 +15,12 @@ struct ProviderDetailView: View {
                 header
 
                 section("Limits", systemImage: "gauge.with.dots.needle.50percent") {
-                    ForEach(snapshot.windows.filter(\.prominent)) { UsageBar(window: $0) }
-                    ForEach(snapshot.windows.filter { !$0.prominent }) { UsageBar(window: $0, compact: true) }
+                    // The overview's big bar and cards with pace and forecast, then every other window.
+                    let layout = LimitOverview.layout(snapshot, primaryWindowID: primaryWindowID, forecast: forecast)
+                    LimitOverview(main: layout.main, cards: layout.cards, forecast: forecast)
+                    ForEach(snapshot.windows.filter { w in w.id != layout.main?.id && !layout.cards.contains { $0.id == w.id } }) { window in
+                        UsageBar(window: window, compact: true, forecast: { forecast?(window, $0) })
+                    }
                 }
 
                 if !snapshot.credits.isEmpty || snapshot.resetCreditsAvailable != nil {
