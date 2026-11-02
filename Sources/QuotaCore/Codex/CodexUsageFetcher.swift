@@ -69,13 +69,14 @@ public struct CodexUsageFetcher: UsageFetcher {
         // Windows are labelled by their real length: some plans expose only a weekly window as "primary".
         func add(prefix: String?, _ w: CodexUsageResponse.Window?, kindOverride: UsageWindow.Kind? = nil) {
             guard let w else { return }
-            let kind = UsageWindow.kind(forSeconds: w.limitWindowSeconds ?? 18_000)
+            let seconds = w.limitWindowSeconds ?? 18_000
+            let kind = UsageWindow.kind(forSeconds: seconds)
             let baseTitle = kind == .session ? "Session" : kind == .weekly ? "Weekly" : "Monthly"
             let id = [prefix, kind.rawValue].compactMap { $0 }.joined(separator: "-")
             let title = prefix.map { "\($0) \(baseTitle.lowercased())" } ?? baseTitle
             windows.append(UsageWindow(id: id, kind: kindOverride ?? kind, title: title, usedPercent: Double(w.usedPercent),
                                        resetsAt: Date(timeIntervalSince1970: TimeInterval(w.resetAt)), prominent: kindOverride == nil,
-                                       windowSeconds: w.limitWindowSeconds.map(TimeInterval.init)))
+                                       windowSeconds: TimeInterval(seconds)))
         }
         add(prefix: nil, r.rateLimit?.primaryWindow)
         add(prefix: nil, r.rateLimit?.secondaryWindow)

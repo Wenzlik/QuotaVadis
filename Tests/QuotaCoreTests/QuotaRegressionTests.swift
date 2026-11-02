@@ -11,6 +11,10 @@ import Testing
     #expect(snapshot.compactWindows.first?.id == snapshot.worstWindow?.id)
     #expect(snapshot.overviewWindows.count == 2)
     #expect(snapshot.windows.last?.prominent == false)
+    // No limit_window_seconds: same 5h fallback as `kind`, so the .model window still gets a pace marker.
+    let spark = try #require(snapshot.windows.last)
+    #expect(spark.windowSeconds == 18_000)
+    #expect(spark.windowLength() == 18_000)
     var alerts = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: true)
     let due = alerts.evaluate(snapshots: [snapshot])
     #expect(due.count == 1)
