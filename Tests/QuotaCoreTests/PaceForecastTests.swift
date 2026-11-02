@@ -51,8 +51,8 @@ struct PaceForecastTests {
         let now = reset.addingTimeInterval(-7_200)
         let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 50, resetsAt: reset)
         let samples = (0..<6).map { i in
-            UsageSample(at: now.addingTimeInterval(Double(i) * 300), percent: 40 + Double(i) * 2)
-        } // 40..50 over 30 min
+            UsageSample(at: now.addingTimeInterval(Double(i - 5) * 300), percent: 40 + Double(i) * 2)
+        } // 40..50 ending at now
         #require(let f = UsageForecaster.forecast(window: window, samples: samples, now: now, calendar: cal))
         #expect(f.projectedPercent == 90, accuracy: 0.5)
         #expect(f.risk == .watch)
@@ -66,13 +66,13 @@ struct PaceForecastTests {
         let now = reset.addingTimeInterval(-7_200)
         let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 60, resetsAt: reset)
         let samples = (0..<6).map { i in
-            UsageSample(at: now.addingTimeInterval(Double(i) * 300), percent: 40 + Double(i) * 4)
+            UsageSample(at: now.addingTimeInterval(Double(i - 5) * 300), percent: 40 + Double(i) * 4)
         } // 40..60 over 30 min -> 40 pts/h
         #require(let f = UsageForecaster.forecast(window: window, samples: samples, now: now, calendar: cal))
         #expect(f.risk == .atRisk)
         #require(let runsOut = f.runsOutAt)
-        #expect(abs(runsOut.timeIntervalSinceNow - 3_600) < 1, "runsOutAt should be now + 1h")
-        #expect(f.label.contains("before reset"))
+        #expect(abs(runsOut.timeIntervalSince(now) - 3_600) < 1, "runsOutAt should be now + 1h")
+        #expect(f.label().contains("before reset"))
     }
 
     @Test func forecastWindowAverageFallback() {
@@ -82,14 +82,14 @@ struct PaceForecastTests {
         let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 30, resetsAt: reset, windowSeconds: 18_000)
         #require(let f = UsageForecaster.forecast(window: window, samples: [], now: now, calendar: cal))
         #expect(f.basis == .windowAverage)
-        #expect(f.ratePerHour == 30 / 5 * 3600 / 3600, accuracy: 0.01) // 6 pts/h
-        #expect(f.projectedPercent == 30 + 6 * 2, accuracy: 0.5) // 42
+        #expect(f.ratePerHour == 10, accuracy: 0.01) // 30 pts / 3 h = 10 pt/h
+        #expect(f.projectedPercent == 50, accuracy: 0.5) // 30 + 10 * 2
     }
 
     @Test func forecastNilWhenNoData() {
         let reset = Date(timeIntervalSince1970: 1_735_689_600 + 7_200)
         let now = reset.addingTimeInterval(-7_200)
-        let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 30, resetsAt: reset)
+        let window = UsageWindow(id: "s", kind: .model, title: "Model", usedPercent: 30, resetsAt: reset)
         #expect(UsageForecaster.forecast(window: window, samples: [], now: now, calendar: cal) == nil)
     }
 
