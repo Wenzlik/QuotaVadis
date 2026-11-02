@@ -109,6 +109,27 @@ struct PaceForecastTests {
         #expect(abs(f.projectedPercent - 70) < 0.01)
     }
 
+    @Test func forecastIgnoresOnePointDip() throws {
+        // Integer providers (Codex) can dip 51 -> 50 within the same window; that is not a reset.
+        let reset = Date(timeIntervalSince1970: 1_735_689_600 + 7_200)
+        let now = reset.addingTimeInterval(-7_200)
+        let window = UsageWindow(id: "s", kind: .session, title: "Session", usedPercent: 50, resetsAt: reset)
+        let samples = [
+            UsageSample(at: now.addingTimeInterval(-1_800), percent: 40),
+            UsageSample(at: now.addingTimeInterval(-1_200), percent: 46),
+            UsageSample(at: now.addingTimeInterval(-600), percent: 51),
+            UsageSample(at: now.addingTimeInterval(-300), percent: 50),
+        ]
+        let f = try #require(UsageForecaster.forecast(window: window, samples: samples, now: now, calendar: cal))
+        // 40 -> 50 over 30 min = 20 pt/h, 50 + 20 * 2 = 90 (a reset would leave only 300 s -> window average).
+        #expect(f.basis == .recent)
+        #expect(abs(f.ratePerHour - 20) < 0.01)
+        #expect(abs(f.projectedPercent - 90) < 0.01)
+        #expect(!UsageForecaster.isReset(from: 51, to: 50))
+        #expect(UsageForecaster.isReset(from: 3, to: 0))
+        #expect(UsageForecaster.isReset(from: 60, to: 50))
+    }
+
     @Test func forecastExhausted() throws {
         let reset = Date(timeIntervalSince1970: 1_735_689_600 + 7_200)
         let now = reset.addingTimeInterval(-7_200)
@@ -135,6 +156,24 @@ struct PaceForecastTests {
         history.record(snap2, at: now.addingTimeInterval(300)) // reset drop -> only new sample
         #expect(history.samples(instanceID: "claude", windowID: "w1").count == 1)
         #expect(history.samples(instanceID: "claude", windowID: "w1").first?.percent == 10)
+    }
+
+    @Test func historyKeepsOnePointDipAndResetsOnNewWindow() {
+        var history = UsageHistory()
+        let now = Date(timeIntervalSince1970: 1_735_689_600)
+        func snap(_ percent: Double, resetsAt: Date) -> UsageSnapshot {
+            UsageSnapshot(provider: .codex, account: "a", plan: "Plus", windows: [
+                UsageWindow(id: "w1", kind: .session, title: "S", usedPercent: percent, resetsAt: resetsAt)
+            ], credits: [])
+        }
+        let reset1 = now.addingTimeInterval(3_600)
+        history.record(snap(51, resetsAt: reset1), at: now)
+        history.record(snap(50, resetsAt: reset1), at: now.addingTimeInterval(300)) // 1-point dip, same window
+        #expect(history.samples(instanceID: "codex", windowID: "w1").map(\.percent) == [51, 50])
+        // Next window: resetsAt moved 5 h on, so its start (reset1) is after both old samples.
+        let reset2 = reset1.addingTimeInterval(18_000)
+        history.record(snap(47, resetsAt: reset2), at: reset1.addingTimeInterval(60))
+        #expect(history.samples(instanceID: "codex", windowID: "w1").map(\.percent) == [47])
     }
 
     @Test func historySaveLoadRoundtrip() throws {
