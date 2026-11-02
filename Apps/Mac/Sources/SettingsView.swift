@@ -143,6 +143,18 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
             }
+            Section {
+                Picker("Show", selection: $model.riskSummaryPlacement) {
+                    Text("Below the providers").tag(RiskSummaryPlacement.bottom)
+                    Text("Above the providers").tag(RiskSummaryPlacement.top)
+                    Text("Hidden").tag(RiskSummaryPlacement.hidden)
+                }
+            } header: {
+                Text("Most at risk")
+            } footer: {
+                Text("The panel’s summary of the limit closest to running out, with the “N limits at risk” count.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             let pickable = model.visibleInstances.filter { (model.states[$0.id]?.snapshot?.windows.count ?? 0) > 1 }
             if !pickable.isEmpty {
                 Section {

@@ -187,6 +187,16 @@ public struct RiskSummary: Sendable, Hashable {
     }
 }
 
+/// Where the panel shows the "Most at risk / Closest limit" summary. Raw values are stored in UserDefaults.
+public enum RiskSummaryPlacement: String, CaseIterable, Sendable {
+    case bottom, top, hidden
+
+    /// Stored value, or `.bottom` when missing or unknown.
+    public init(storedValue: String?) {
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? .bottom
+    }
+}
+
 public enum UsageForecaster {
     public static func forecast(window: UsageWindow, samples: [UsageSample], now: Date = .now, recentInterval: TimeInterval = 3600, calendar: Calendar = .current) -> UsageForecast? {
         guard let reset = window.resetsAt, reset > now else { return nil }

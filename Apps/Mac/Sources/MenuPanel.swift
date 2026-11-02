@@ -26,15 +26,10 @@ struct MenuPanel: View {
                             ContentUnavailableView("Nothing to track on this Mac", systemImage: "flame",
                                                    description: Text("Log in to a provider on this Mac, then Refresh."))
                         } else {
-                            // Recomputed on every tick: forecasts and "N limits at risk" move with the clock, not only
-                            // with refreshes. No card while nothing has a snapshot yet.
-                            TimelineView(.periodic(from: .now, by: 60)) { context in
-                                if let summary = model.riskSummary(now: context.date) {
-                                    riskSummaryCard(summary, now: context.date)
-                                }
-                            }
+                            if model.riskSummaryPlacement == .top { riskSummary }
                             Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             providerRows
+                            if model.riskSummaryPlacement == .bottom { riskSummary }
                         }
                     }
                     .padding(10)
@@ -189,6 +184,16 @@ struct MenuPanel: View {
     private func openAccounts() {
         model.settingsSection = .accounts
         bringToFront { openSettings() }
+    }
+
+    /// Recomputed on every tick: forecasts and "N limits at risk" move with the clock, not only with refreshes.
+    /// No card while nothing has a snapshot yet. Hidden in Settings ▸ General = no card and no badge anywhere.
+    private var riskSummary: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let summary = model.riskSummary(now: context.date) {
+                riskSummaryCard(summary, now: context.date)
+            }
+        }
     }
 
     private func riskSummaryCard(_ summary: RiskSummary, now: Date) -> some View {

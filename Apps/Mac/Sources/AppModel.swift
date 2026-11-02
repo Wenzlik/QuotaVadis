@@ -137,6 +137,10 @@ final class AppModel {
     var menuBarStyle: MenuBarBadgeStyle {
         didSet { defaults.set(menuBarStyle.rawValue, forKey: "qv.menubarStyle") }
     }
+    /// Where the panel shows the "Most at risk / Closest limit" summary (and its "N limits at risk" badge).
+    var riskSummaryPlacement: RiskSummaryPlacement {
+        didSet { defaults.set(riskSummaryPlacement.rawValue, forKey: "riskSummaryPlacement") }
+    }
     var menuBarPercentPlacement: MenuBarPercentPlacement {
         didSet { defaults.set(menuBarPercentPlacement.rawValue, forKey: "menuBarPercentPlacement") }
     }
@@ -304,6 +308,7 @@ final class AppModel {
         menuBarDisplayStyle = MenuBarDisplayStyle(rawValue: defaults.string(forKey: "menuBarDisplayStyle") ?? "") ?? .icon
         menuBarBarSources = defaults.stringArray(forKey: "menuBarBarSources").map { $0.map(MenuBarSource.init(storageKey:)) } ?? [.worst]
         menuBarStyle = MenuBarBadgeStyle(rawValue: defaults.string(forKey: "qv.menubarStyle") ?? "") ?? .circular
+        riskSummaryPlacement = RiskSummaryPlacement(storedValue: defaults.string(forKey: "riskSummaryPlacement"))
         menuBarPercentPlacement = MenuBarPercentPlacement(rawValue: defaults.string(forKey: "menuBarPercentPlacement") ?? "") ?? .beside
         menuBarShowVendorIcons = defaults.bool(forKey: "menuBarShowVendorIcons")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true

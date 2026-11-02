@@ -23,6 +23,21 @@ struct RiskSummaryTests {
         #expect(UsageForecast.Risk(usedPercent: 100, forecast: nil) == .exhausted)
     }
 
+    @Test func summaryPlacementDecodesWithBottomDefault() {
+        #expect(RiskSummaryPlacement(storedValue: nil) == .bottom)
+        #expect(RiskSummaryPlacement(storedValue: "") == .bottom)
+        #expect(RiskSummaryPlacement(storedValue: "sideways") == .bottom)
+        #expect(RiskSummaryPlacement(storedValue: "Top") == .bottom) // raw values are case-sensitive
+        #expect(RiskSummaryPlacement(storedValue: "bottom") == .bottom)
+        #expect(RiskSummaryPlacement(storedValue: "top") == .top)
+        #expect(RiskSummaryPlacement(storedValue: "hidden") == .hidden)
+        // Stored strings are a persistence contract: never rename them.
+        #expect(RiskSummaryPlacement.allCases.map(\.rawValue) == ["bottom", "top", "hidden"])
+        for placement in RiskSummaryPlacement.allCases {
+            #expect(RiskSummaryPlacement(storedValue: placement.rawValue) == placement)
+        }
+    }
+
     @Test func rankingRiskThenUsageThenReset() {
         let soon = now.addingTimeInterval(3_600), later = now.addingTimeInterval(7_200)
         let grok = RiskItem(title: "Grok Bot", usedPercent: 53, resetsAt: later, risk: .safe)
