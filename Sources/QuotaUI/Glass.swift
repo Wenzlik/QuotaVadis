@@ -1,4 +1,5 @@
 import SwiftUI
+import QuotaCore
 
 /// Liquid Glass on macOS 26 / iOS 26, translucent material before that. One place to keep the look consistent.
 /// With Reduce Transparency on, an opaque grouped background instead.
@@ -30,10 +31,6 @@ private var opaqueCardBackground: Color {
     #endif
 }
 
-public extension View {
-    func glassCard(cornerRadius: CGFloat = 16) -> some View { modifier(GlassCard(cornerRadius: cornerRadius)) }
-}
-
 /// A colour with separate light/dark variants: bright on dark glass, deeper on light backgrounds so
 /// coloured text stays readable over a white desktop.
 public func adaptiveColor(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
@@ -53,10 +50,10 @@ public func adaptiveColor(light: (Double, Double, Double), dark: (Double, Double
 
 /// Usage colour by level, shared by bars, labels and charts.
 public func usageTint(_ percent: Double) -> Color {
-    switch percent {
-    case ..<50: adaptiveColor(light: (0.12, 0.55, 0.30), dark: (0.30, 0.78, 0.47))
-    case ..<80: adaptiveColor(light: (0.72, 0.45, 0.00), dark: (0.98, 0.75, 0.25))
-    default: adaptiveColor(light: (0.80, 0.16, 0.16), dark: (0.96, 0.36, 0.34))
+    switch UsageLevel(percent) {
+    case .ok: adaptiveColor(light: (0.12, 0.55, 0.30), dark: (0.30, 0.78, 0.47))
+    case .warning: adaptiveColor(light: (0.72, 0.45, 0.00), dark: (0.98, 0.75, 0.25))
+    case .critical: adaptiveColor(light: (0.80, 0.16, 0.16), dark: (0.96, 0.36, 0.34))
     }
 }
 

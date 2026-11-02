@@ -76,7 +76,7 @@ private func tempFile(_ lines: [String]) throws -> URL {
     #expect(r.days.count == 7)
     #expect(r.days.last?.costUSD == 2)
     #expect(r.days.dropLast().allSatisfy { $0.costUSD == 0 })
-    #expect(r.topModel?.id == "m")
+    #expect(r.byModel.max { $0.costUSD < $1.costUSD }?.id == "m")
 }
 
 @Test func scanCachePrunesOutOfWindowAndSavesOnlyOnChange() throws {

@@ -37,8 +37,7 @@ enum HTTP {
         case 200...299:
             if let host = url.host() { await RateLimitGate.shared.recordSuccess(host) }
             return data
-        case 401: throw ProviderError.unauthorized
-        case 403: throw ProviderError.unauthorized
+        case 401, 403: throw ProviderError.unauthorized
         case 429:
             if let host = url.host() { await RateLimitGate.shared.recordLimit(host, retryAfter: http?.value(forHTTPHeaderField: "Retry-After")) }
             throw ProviderError.rateLimited
