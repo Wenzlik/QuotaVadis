@@ -76,6 +76,31 @@ struct RiskSummaryTests {
         #expect(RiskSummary(items: []) == nil)
     }
 
+    @Test func missingForecastIsNotOnTrack() throws {
+        let reset = now.addingTimeInterval(86_400)
+        let weekly = RiskItem(title: "Codex · Weekly", usedPercent: 20, resetsAt: reset, risk: .safe)
+        let model = RiskItem(title: "Cursor · Auto", usedPercent: 26, resetsAt: reset, risk: .safe, missingForecast: true)
+
+        let known = try #require(RiskSummary(items: [weekly]))
+        #expect(known.allOnTrack)
+        #expect(known.statusLabel == "All 1 limits on track")
+
+        // Low usage but no forecast: the summary says so instead of "All 2 limits on track".
+        let mixed = try #require(RiskSummary(items: [weekly, model]))
+        #expect(mixed.noForecastCount == 1)
+        #expect(!mixed.allOnTrack)
+        #expect(mixed.statusLabel == "1 on track · 1 limit without forecast")
+
+        let unknownOnly = try #require(RiskSummary(items: [model]))
+        #expect(unknownOnly.statusLabel == "1 limit without forecast")
+
+        // An at-risk limit still headlines; a high-usage limit without a forecast is at risk by level, not unknown.
+        let hot = RiskItem(title: "Claude · Session", usedPercent: 90, resetsAt: reset, risk: .atRisk, missingForecast: true)
+        let risky = try #require(RiskSummary(items: [weekly, model, hot]))
+        #expect(risky.noForecastCount == 1)
+        #expect(risky.statusLabel == "1 limit at risk")
+    }
+
     @Test func spendOverLimit() {
         #expect(UsageCredits(id: "od", title: "On-demand", used: 1.04, limit: 1.00).isOverLimit)
         #expect(UsageCredits(id: "od", title: "On-demand", used: 1.00, limit: 1.00).isOverLimit)

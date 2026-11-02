@@ -598,7 +598,8 @@ final class AppModel {
                 // A minor sub-window (Cursor Auto just under the total) still counts once it runs out before its reset.
                 guard alert.contains(where: { $0.id == window.id }) || risk >= .atRisk else { continue }
                 items.append(RiskItem(title: "\(name) · \(window.title)", usedPercent: window.usedPercent, resetsAt: window.resetsAt,
-                                      risk: risk, detail: projection?.label(now: now)))
+                                      risk: risk, detail: projection?.label(now: now) ?? UsageForecast.notEnoughDataLabel,
+                                      missingForecast: projection == nil))
             }
             // ponytail: only spend already over its cap counts; a "likely over budget" projection needs spend history.
             for credits in snapshot.credits where credits.isOverLimit && !snapshot.windows.contains(where: { $0.id == credits.id }) {

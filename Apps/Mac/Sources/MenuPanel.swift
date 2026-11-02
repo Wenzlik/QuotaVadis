@@ -213,12 +213,15 @@ struct MenuPanel: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 if summary.atRiskCount > 0 {
-                    Label(summary.atRiskCount == 1 ? "1 limit at risk" : "\(summary.atRiskCount) limits at risk",
-                          systemImage: "exclamationmark.triangle.fill")
+                    Label(summary.statusLabel, systemImage: "exclamationmark.triangle.fill")
                         .riskTextStyle(.atRisk)
-                } else {
-                    Label("All \(summary.limitCount) limits on track", systemImage: "checkmark.circle.fill")
+                } else if summary.allOnTrack {
+                    Label(summary.statusLabel, systemImage: "checkmark.circle.fill")
                         .riskTextStyle(.safe)
+                } else {
+                    // Unknown forecast: neither green nor a warning.
+                    Label(summary.statusLabel, systemImage: "questionmark.circle")
+                        .foregroundStyle(.secondary)
                 }
                 if let detail = top.detail {
                     Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)

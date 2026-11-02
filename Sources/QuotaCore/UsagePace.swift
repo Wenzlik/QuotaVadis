@@ -159,9 +159,14 @@ public struct RiskItem: Sendable, Hashable {
     public var risk: UsageForecast.Risk
     /// Forecast label for a window, "$1.04 / $1.00" for spend.
     public var detail: String?
+    /// A window that should have a forecast but has none (not enough data, stale measurement): its risk is
+    /// only the usage level, so it must not count as "on track".
+    public var missingForecast: Bool
 
-    public init(title: String, usedPercent: Double, resetsAt: Date?, risk: UsageForecast.Risk, detail: String? = nil) {
+    public init(title: String, usedPercent: Double, resetsAt: Date?, risk: UsageForecast.Risk, detail: String? = nil,
+                missingForecast: Bool = false) {
         self.title = title; self.usedPercent = usedPercent; self.resetsAt = resetsAt; self.risk = risk; self.detail = detail
+        self.missingForecast = missingForecast
     }
 
     /// Header order: worse risk first, then higher usage, then the sooner reset.
@@ -176,6 +181,8 @@ public struct RiskItem: Sendable, Hashable {
 public struct RiskSummary: Sendable, Hashable {
     public var atRiskCount: Int
     public var limitCount: Int
+    /// Limits below "at risk" whose forecast is unknown.
+    public var noForecastCount: Int
     public var top: RiskItem
 
     public init?(items: [RiskItem]) {
@@ -184,6 +191,19 @@ public struct RiskSummary: Sendable, Hashable {
         self.top = top
         limitCount = items.count
         atRiskCount = items.filter { $0.risk >= .atRisk }.count
+        noForecastCount = items.filter { $0.risk < .atRisk && $0.missingForecast }.count
+    }
+
+    /// True only when every limit has a forecast and none is at risk.
+    public var allOnTrack: Bool { atRiskCount == 0 && noForecastCount == 0 }
+
+    /// "2 limits at risk", "All 3 limits on track", or with unknown forecasts "2 on track · 1 without forecast".
+    public var statusLabel: String {
+        if atRiskCount > 0 { return atRiskCount == 1 ? "1 limit at risk" : "\(atRiskCount) limits at risk" }
+        if noForecastCount == 0 { return "All \(limitCount) limits on track" }
+        let onTrack = limitCount - noForecastCount
+        let unknown = noForecastCount == 1 ? "1 limit without forecast" : "\(noForecastCount) limits without forecast"
+        return onTrack == 0 ? unknown : "\(onTrack) on track · \(unknown)"
     }
 }
 
