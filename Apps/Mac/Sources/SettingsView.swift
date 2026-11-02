@@ -143,6 +143,22 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Text(refreshDescription).font(.caption).foregroundStyle(.secondary)
             }
+            let pickable = model.visibleInstances.filter { (model.states[$0.id]?.snapshot?.windows.count ?? 0) > 1 }
+            if !pickable.isEmpty {
+                Section {
+                    ForEach(pickable) { instance in
+                        Picker(model.title(for: instance), selection: model.primaryWindowBinding(instance.id)) {
+                            Text("Default").tag(String?.none)
+                            ForEach(model.states[instance.id]?.snapshot?.windows ?? []) { Text($0.title).tag(Optional($0.id)) }
+                        }
+                    }
+                } header: {
+                    Text("Main bar")
+                } footer: {
+                    Text("Which limit gets the big bar on each card in the panel; the others move to the small cards below. Also in the card’s right-click menu.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 HStack {
                     Button(model.cliInstalled ? "Reinstall command line tool" : "Install command line tool") { model.installCLI() }
