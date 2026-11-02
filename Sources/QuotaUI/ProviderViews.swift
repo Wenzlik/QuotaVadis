@@ -105,7 +105,7 @@ public struct ProviderRow: View {
                         CreditsLine(credits: credits)
                     }
                     ForEach(snapshot.windows.filter { w in w.id != layout.main?.id && !others.contains { $0.id == w.id } }) { window in
-                        UsageBar(window: window, compact: true)
+                        UsageBar(window: window, compact: true, forecast: { forecast?(window, $0) })
                     }
                     if let resets = snapshot.resetCreditsAvailable {
                         DetailLine(title: "Limit resets available", value: "\(resets)")
@@ -338,27 +338,34 @@ public struct UsageBar: View {
     let window: UsageWindow
     /// Sub-window (per-model breakdown): indented, thinner bar.
     var compact = false
+    /// Same rule as `LimitBar`: bar and percentage follow the forecast's risk, the usage level without one.
+    let forecast: (Date) -> UsageForecast?
 
-    public init(window: UsageWindow, compact: Bool = false) { self.window = window; self.compact = compact }
+    public init(window: UsageWindow, compact: Bool = false, forecast: @escaping (Date) -> UsageForecast? = { _ in nil }) {
+        self.window = window; self.compact = compact; self.forecast = forecast
+    }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
-                Spacer()
-                if let reset = window.resetsAt {
-                    ResetLabel(reset: reset)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: forecast(context.date))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
+                    Spacer()
+                    if let reset = window.resetsAt {
+                        ResetLabel(reset: reset)
+                    }
+                    // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
+                    Text("\(Int(window.usedPercent.rounded()))%")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .riskTextStyle(risk)
+                        .frame(minWidth: 34, alignment: .trailing)
                 }
-                // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
-                Text("\(Int(window.usedPercent.rounded()))%")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(usageTint(window.usedPercent))
-                    .frame(minWidth: 34, alignment: .trailing)
+                GlowBar(percent: window.usedPercent, height: compact ? 4 : 7, tintPercent: riskTintPercent(risk))
             }
-            GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
+            .padding(.leading, compact ? 12 : 0)
+            .accessibilityElement(children: .combine)
         }
-        .padding(.leading, compact ? 12 : 0)
-        .accessibilityElement(children: .combine)
     }
 }
 
