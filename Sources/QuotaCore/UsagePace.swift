@@ -76,6 +76,8 @@ public struct UsageSample: Codable, Sendable, Hashable {
 public struct UsageForecast: Sendable, Hashable {
     public enum Risk: Int, Sendable, Comparable {
         case safe, watch, atRisk, exhausted
+        // Comparable is not synthesized for raw-value enums (SE-0266): order by severity explicitly.
+        public static func < (lhs: Risk, rhs: Risk) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     public enum Basis: Sendable, Hashable {
