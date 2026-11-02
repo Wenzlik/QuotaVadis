@@ -61,10 +61,14 @@ public func usageTint(_ percent: Double) -> Color {
 public struct GlowBar: View {
     let percent: Double
     let height: CGFloat
-    public init(percent: Double, height: CGFloat = 7) { self.percent = percent; self.height = height }
+    let marker: Double?
+    let tintPercent: Double?
+    public init(percent: Double, height: CGFloat = 7, marker: Double? = nil, tintPercent: Double? = nil) {
+        self.percent = percent; self.height = height; self.marker = marker; self.tintPercent = tintPercent
+    }
 
     public var body: some View {
-        let tint = usageTint(percent)
+        let tint = usageTint(tintPercent ?? percent)
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.primary.opacity(0.08))
@@ -78,6 +82,35 @@ public struct GlowBar: View {
             }
         }
         .frame(height: height)
+        // The pace marker sits on top of the track without changing its height: a tick across the bar and a
+        // small triangle in the 6 pt reserved above it. Without a marker the bar is exactly `height` tall.
+        .overlay {
+            if let marker {
+                GeometryReader { geo in
+                    let x = geo.size.width * min(1, max(0, marker / 100))
+                    Capsule()
+                        .fill(.primary.opacity(0.75))
+                        .frame(width: 1.5, height: height + 2)
+                        .position(x: x, y: height / 2)
+                    PaceTriangle()
+                        .fill(.primary.opacity(0.85))
+                        .frame(width: 7, height: 5)
+                        .position(x: min(max(x, 3.5), max(3.5, geo.size.width - 3.5)), y: -3.5)
+                }
+            }
+        }
+        .padding(.top, marker == nil ? 0 : 6)
         .accessibilityHidden(true)
+    }
+
+    private struct PaceTriangle: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.closeSubpath()
+            return path
+        }
     }
 }

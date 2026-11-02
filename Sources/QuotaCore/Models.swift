@@ -51,14 +51,18 @@ public struct UsageWindow: Codable, Sendable, Hashable, Identifiable {
     /// Shown in the collapsed row. False for breakdown sub-windows (Cursor Auto/Other, Codex extra limits).
     public var prominent: Bool
 
-    public init(id: String, kind: Kind, title: String, usedPercent: Double, resetsAt: Date?, prominent: Bool = true) {
+    public init(id: String, kind: Kind, title: String, usedPercent: Double, resetsAt: Date?, prominent: Bool = true, windowSeconds: TimeInterval? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
         self.prominent = prominent
+        self.windowSeconds = windowSeconds
     }
+
+    /// Nominal length of the rolling window when the provider reports it; nil = derive from `kind`.
+    public var windowSeconds: TimeInterval?
 
     public var remainingPercent: Double { max(0, 100 - usedPercent) }
 

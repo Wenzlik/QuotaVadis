@@ -73,6 +73,8 @@ final class AppModel {
     var lastRefresh: Date?
     var isRefreshing = false
     var isRefreshingCosts = false
+    /// Local consumption samples for pace/forecast (~KB, Application Support/QuotaVadis/usage-history.json).
+    private(set) var usageHistory = UsageHistory.load()
 
     // iCloud sync
     var syncStatus: CloudSync.Status = .unknown
@@ -563,6 +565,46 @@ final class AppModel {
         return "\(base) · \(org)"
     }
 
+    func forecast(instanceID: String, window: UsageWindow, now: Date = .now) -> UsageForecast? {
+        let key = states[instanceID]?.snapshot?.instanceID ?? instanceID
+        return usageHistory.forecast(for: window, instanceID: key, now: now)
+    }
+
+    struct RiskSummary: Equatable {
+        var atRiskCount: Int
+        var limitCount: Int
+        var closestTitle: String
+        var closestWindow: UsageWindow
+        var closestForecast: UsageForecast?
+    }
+
+    func riskSummary(now: Date = .now) -> RiskSummary? {
+        var atRiskCount = 0
+        var limitCount = 0
+        var closest: (instance: Instance, window: UsageWindow, forecast: UsageForecast?)?
+        for instance in visibleInstances {
+            guard let snapshot = states[instance.id]?.snapshot else { continue }
+            let windows = snapshot.alertWindows.isEmpty ? snapshot.windows : snapshot.alertWindows
+            for window in windows {
+                limitCount += 1
+                let projection = self.forecast(instanceID: instance.id, window: window, now: now)
+                if (projection?.risk ?? .safe) >= .atRisk { atRiskCount += 1 }
+                // Highest usage wins; on a tie, the window that resets sooner.
+                if let current = closest?.window,
+                   window.usedPercent < current.usedPercent ||
+                   (window.usedPercent == current.usedPercent &&
+                    (window.resetsAt ?? .distantFuture) >= (current.resetsAt ?? .distantFuture)) {
+                    continue
+                }
+                closest = (instance, window, projection)
+            }
+        }
+        guard let closest else { return nil }
+        return RiskSummary(atRiskCount: atRiskCount, limitCount: limitCount,
+                           closestTitle: "\(title(for: closest.instance)) · \(closest.window.title)",
+                           closestWindow: closest.window, closestForecast: closest.forecast)
+    }
+
     /// Every window that can feed "Highest usage", for the Settings checklist.
     var menuBarCandidates: [(key: String, label: String)] {
         visibleInstances.flatMap { instance -> [(key: String, label: String)] in
@@ -636,6 +678,19 @@ final class AppModel {
         let result = await service.refresh(enabled: enabledProviders) { [weak self] id, state in
             await self?.received(id: id, state: state)
         }
+        for state in result.values {
+            if case .fresh(let snapshot) = state { usageHistory.record(snapshot) }
+        }
+        var validKeys: Set<String> = []
+        for state in result.values {
+            if case .fresh(let snapshot) = state {
+                for window in snapshot.windows {
+                    validKeys.insert(UsageHistory.key(instanceID: snapshot.instanceID, windowID: window.id))
+                }
+            }
+        }
+        usageHistory.prune(keeping: validKeys)
+        try? usageHistory.save()
         // claude-web rows were held back in `pendingWebStates` while streaming (see `received`) precisely so
         // they land already deduped, in the same tick as this cleanup — never shown then yanked a moment later.
         for (id, state) in pendingWebStates { states[id] = state }

@@ -76,20 +76,20 @@ public struct ClaudeUsageFetcher: UsageFetcher {
 
     static func snapshot(from r: ClaudeUsageResponse, plan: String?, profile: ClaudeProfileResponse? = nil) -> UsageSnapshot {
         var windows: [UsageWindow] = []
-        func add(_ id: String, _ kind: UsageWindow.Kind, _ title: String, _ w: ClaudeUsageResponse.Window?) {
+        func add(_ id: String, _ kind: UsageWindow.Kind, _ title: String, _ w: ClaudeUsageResponse.Window?, windowSeconds: TimeInterval? = nil) {
             guard let w, let pct = w.utilization else { return }
-            windows.append(UsageWindow(id: id, kind: kind, title: title, usedPercent: pct, resetsAt: ISO8601DateFormatter.parseAny(w.resetsAt)))
+            windows.append(UsageWindow(id: id, kind: kind, title: title, usedPercent: pct, resetsAt: ISO8601DateFormatter.parseAny(w.resetsAt), windowSeconds: windowSeconds))
         }
-        add("session", .session, "Session", r.fiveHour)
-        add("weekly", .weekly, "Weekly", r.sevenDay)
-        add("weekly-sonnet", .model, "Sonnet", r.sevenDaySonnet)
-        add("weekly-opus", .model, "Opus", r.sevenDayOpus)
+        add("session", .session, "Session", r.fiveHour, windowSeconds: 18_000)
+        add("weekly", .weekly, "Weekly", r.sevenDay, windowSeconds: 604_800)
+        add("weekly-sonnet", .model, "Sonnet", r.sevenDaySonnet, windowSeconds: 604_800)
+        add("weekly-opus", .model, "Opus", r.sevenDayOpus, windowSeconds: 604_800)
         // Newer shape: per-model scoped weekly limits.
         for entry in r.limits ?? [] {
             guard let pct = entry.percent, let name = entry.scope?.model?.displayName else { continue }
             let id = "weekly-" + name.lowercased().replacingOccurrences(of: " ", with: "-")
             guard !windows.contains(where: { $0.id == id }) else { continue }
-            windows.append(UsageWindow(id: id, kind: .model, title: name, usedPercent: pct, resetsAt: ISO8601DateFormatter.parseAny(entry.resetsAt)))
+            windows.append(UsageWindow(id: id, kind: .model, title: name, usedPercent: pct, resetsAt: ISO8601DateFormatter.parseAny(entry.resetsAt), windowSeconds: 604_800))
         }
         var credits: [UsageCredits] = []
         if let spend = r.spend, spend.enabled == true, let used = spend.used?.amount {
