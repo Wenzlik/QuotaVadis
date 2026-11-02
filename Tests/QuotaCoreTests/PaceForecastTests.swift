@@ -73,7 +73,7 @@ struct PaceForecastTests {
         #expect(f.risk == .atRisk)
         let runsOut = try #require(f.runsOutAt)
         #expect(abs(runsOut.timeIntervalSince(now) - 3_600) < 1, "runsOutAt should be now + 1h")
-        #expect(f.label().contains("before reset"))
+        #expect(f.label(now: now, calendar: cal, locale: Locale(identifier: "en_US_POSIX")).contains("before reset"))
     }
 
     @Test func forecastWindowAverageFallback() throws {
