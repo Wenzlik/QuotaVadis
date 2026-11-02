@@ -25,11 +25,12 @@ public struct AntigravityUsageFetcher: UsageFetcher {
     static func snapshot(summary: AntigravityQuotaSummary, status: AntigravityUserStatus?) -> UsageSnapshot {
         var windows: [UsageWindow] = []
         for group in summary.response?.groups ?? [] {
-            for bucket in group.buckets ?? [] {
+            for (index, bucket) in (group.buckets ?? []).enumerated() {
                 guard let remaining = bucket.remainingFraction else { continue }
                 let kind = UsageWindow.Kind(rawValue: bucket.window ?? "") ?? .weekly
                 let title = Self.groupTitle(group.displayName ?? bucket.displayName ?? bucket.bucketId ?? "Quota")
-                windows.append(UsageWindow(id: bucket.bucketId ?? UUID().uuidString, kind: kind, title: title,
+                // Stable across fetches without a bucket id, so a main-bar pick or menu bar choice survives refresh.
+                windows.append(UsageWindow(id: bucket.bucketId ?? "\(title)·\(kind.rawValue)·\(index)", kind: kind, title: title,
                                            usedPercent: (1 - remaining) * 100,
                                            resetsAt: ISO8601DateFormatter.parseAny(bucket.resetTime)))
             }

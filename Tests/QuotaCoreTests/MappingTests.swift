@@ -247,6 +247,16 @@ private let en = Locale(identifier: "en_US")
     #expect(s.account == "me@example.com")
 }
 
+@Test func antigravityIDWithoutBucketIDIsStable() throws {
+    let summary = #"{"response":{"groups":[{"displayName":"Gemini Models","buckets":[{"window":"weekly","remainingFraction":0.5},{"window":"session","remainingFraction":0.9}]}]}}"#
+    func ids() throws -> [String] {
+        AntigravityUsageFetcher.snapshot(summary: try JSONDecoder().decode(AntigravityQuotaSummary.self, from: Data(summary.utf8)), status: nil)
+            .windows.map(\.id)
+    }
+    #expect(try ids() == ["Gemini models·weekly·0", "Gemini models·session·1"])
+    #expect(try ids() == ids())
+}
+
 @Test func alertEngineThresholdAndReset() {
     var engine = QuotaAlertEngine(warnAtPercent: 80, notifyOnReset: true)
     func snap(_ pct: Double) -> UsageSnapshot {

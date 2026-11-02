@@ -23,15 +23,17 @@ public struct ProviderRow: View {
     let isExpanded: Bool
     /// Forecast for a window at a given moment; called on every timeline tick so the projection stays current.
     let forecast: ((UsageWindow, Date) -> UsageForecast?)?
+    /// The window the user picked for the big bar; nil or missing from the data = the default.
+    let primaryWindowID: String?
     let toggle: () -> Void
     let action: ProviderRowAction?
     let showDetails: (() -> Void)?
 
     public init(provider: ProviderID, title: String? = nil, state: ProviderState, cost: CostReport?, isExpanded: Bool,
-                forecast: ((UsageWindow, Date) -> UsageForecast?)? = nil,
+                forecast: ((UsageWindow, Date) -> UsageForecast?)? = nil, primaryWindowID: String? = nil,
                 action: ProviderRowAction? = nil, showDetails: (() -> Void)? = nil, toggle: @escaping () -> Void) {
         self.provider = provider; self.title = title ?? provider.displayName; self.state = state; self.cost = cost
-        self.isExpanded = isExpanded; self.forecast = forecast; self.toggle = toggle; self.action = action; self.showDetails = showDetails
+        self.isExpanded = isExpanded; self.forecast = forecast; self.primaryWindowID = primaryWindowID; self.toggle = toggle; self.action = action; self.showDetails = showDetails
     }
 
     public var body: some View {
@@ -73,10 +75,12 @@ public struct ProviderRow: View {
                 if let notice = snapshot.modelLimitNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
-                let overview = mainWindows(snapshot)
-                let main = overview.first { $0.kind == .session } ?? overview.first
-                let others = overview.filter { $0.id != main?.id }
-                if let main {
+                // A sub-window that runs out before its reset is a card even when the provider marks it minor.
+                let layout = snapshot.overviewLayout(primaryWindowID: primaryWindowID) { w in
+                    UsageForecast.Risk(usedPercent: w.usedPercent, forecast: forecast?(w, .now)) >= .atRisk
+                }
+                let others = layout.cards
+                if let main = layout.main {
                     LimitBar(window: main, forecast: { forecast?(main, $0) }, style: .main)
                 }
                 // Two cards per row. Plain stacks, not a lazy grid: the menu panel sizes itself from intrinsic
@@ -100,8 +104,8 @@ public struct ProviderRow: View {
                     ForEach(snapshot.credits.filter { $0.used == 0 }) { credits in
                         CreditsLine(credits: credits)
                     }
-                    ForEach(snapshot.windows.filter { w in !mainWindows(snapshot).contains { $0.id == w.id } }) { window in
-                        UsageBar(window: window, compact: true)
+                    ForEach(snapshot.windows.filter { w in w.id != layout.main?.id && !others.contains { $0.id == w.id } }) { window in
+                        UsageBar(window: window, compact: true, forecast: { forecast?(window, $0) })
                     }
                     if let resets = snapshot.resetCreditsAvailable {
                         DetailLine(title: "Limit resets available", value: "\(resets)")
@@ -146,11 +150,6 @@ public struct ProviderRow: View {
             }
         }
     }
-
-    /// Keep the overview compact while retaining every binding exception.
-    private func mainWindows(_ snapshot: UsageSnapshot) -> [UsageWindow] {
-        snapshot.overviewWindows
-    }
 }
 
 /// Pace and forecast helpers for per-window bars.
@@ -160,21 +159,6 @@ internal func paceTint(_ pace: UsagePace) -> Color {
     case .over where pace.deltaPercent < 15: usageTint(60)
     default: usageTint(100)
     }
-}
-
-internal func riskTint(_ risk: UsageForecast.Risk) -> Color {
-    switch risk {
-    case .safe: usageTint(0)
-    case .watch: usageTint(60)
-    default: usageTint(100)
-    }
-}
-
-/// Bar tint for a window with an optional forecast: the worse of usage-based tint and risk-based tint.
-internal func barTint(usedPercent: Double, forecast: UsageForecast?) -> Double {
-    if let forecast, forecast.risk >= .atRisk { return 100 }
-    if let forecast, forecast.risk == .watch { return max(usedPercent, 60) }
-    return usedPercent
 }
 
 /// A per-window bar: main (session) style or compact card style.
@@ -194,7 +178,9 @@ public struct LimitBar: View {
             let now = context.date
             let pace = window.pace(now: now)
             let projection = forecast(now)
-            let tint = barTint(usedPercent: window.usedPercent, forecast: projection)
+            // Bar and percentage follow the forecast's risk (usage level without one); pace text keeps its own colour.
+            let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: projection)
+            let tint = riskTintPercent(risk)
 
             switch style {
             case .main:
@@ -204,7 +190,7 @@ public struct LimitBar: View {
                         Spacer()
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .font(.callout.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(usageTint(tint))
+                            .riskTextStyle(risk)
                     }
                     GlowBar(percent: window.usedPercent, height: 10, marker: pace?.expectedPercent, tintPercent: tint)
                     HStack {
@@ -226,17 +212,16 @@ public struct LimitBar: View {
                         Spacer()
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(usageTint(tint))
+                            .riskTextStyle(risk)
                     }
                     GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: tint)
-                    resetLine(now)
+                    // Card width: short labels, and room for a second line rather than an ellipsis.
+                    resetLine(now, compact: true)
                     if let pace {
                         Text(pace.label).font(.caption2.weight(.medium)).foregroundStyle(paceTint(pace))
                     }
                     if let projection {
-                        forecastLine(projection, now)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        forecastLine(projection, now, compact: true)
                     }
                 }
                 .padding(8)
@@ -247,15 +232,17 @@ public struct LimitBar: View {
         }
     }
 
-    private func resetLine(_ now: Date) -> some View {
+    private func resetLine(_ now: Date, compact: Bool = false) -> some View {
         Group {
             if let reset = window.resetsAt {
+                let left = compact ? reset.compactRemainingLabel(now: now) : reset.remainingLabel(now: now)
                 Label {
-                    Text(reset <= now ? "reset passed" : "resets \(reset.resetClockLabel(now: now)) · \(reset.remainingLabel(now: now))")
+                    Text(reset <= now ? "reset passed" : "resets \(reset.resetClockLabel(now: now)) · \(left)")
                 } icon: {
                     Image(systemName: "clock")
                 }
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                .font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(compact ? 2 : 1).fixedSize(horizontal: false, vertical: compact)
                 .help(reset.formatted(date: .complete, time: .shortened))
             } else {
                 EmptyView()
@@ -263,11 +250,14 @@ public struct LimitBar: View {
         }
     }
 
-    private func forecastLine(_ forecast: UsageForecast, _ now: Date) -> some View {
-        Label(forecast.label(now: now),
+    private func forecastLine(_ forecast: UsageForecast, _ now: Date, compact: Bool = false) -> some View {
+        Label(compact ? forecast.compactLabel(now: now) : forecast.label(now: now),
               systemImage: forecast.risk >= .atRisk ? "exclamationmark.triangle.fill" : "chart.line.uptrend.xyaxis")
-        .font(.caption2).foregroundStyle(riskTint(forecast.risk))
-        .help(forecast.basis == .recent ? "Forecast from the last hour of usage" : "Forecast from the average since the window started")
+        .font(.caption2)
+        .lineLimit(compact ? 3 : nil).fixedSize(horizontal: false, vertical: true)
+        .riskTextStyle(forecast.risk)
+        .help("\(forecast.label(now: now)). " +
+              (forecast.basis == .recent ? "Forecast from the last hour of usage" : "Forecast from the average since the window started"))
     }
 }
 
@@ -306,9 +296,11 @@ public struct CreditsLine: View {
                 if let reset = credits.resetsAt, credits.limit != nil {
                     ResetLabel(reset: reset)
                 }
-                Text(credits.valueLabel())
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(credits.limit == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+                if credits.limit == nil {
+                    Text(credits.valueLabel()).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.secondary)
+                } else {
+                    Text(credits.valueLabel()).font(.caption.weight(.semibold).monospacedDigit()).riskTextStyle(risk)
+                }
             }
             if let usd = credits.approxUSDLabel() {
                 Text(usd).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
@@ -321,7 +313,8 @@ public struct CreditsLine: View {
         }
     }
 
-    private var tint: Color { usageTint(credits.usedPercent ?? 0) }
+    /// Spend has no forecast: the usage-level fallback of the shared risk rule.
+    private var risk: UsageForecast.Risk { UsageForecast.Risk(usedPercent: credits.usedPercent ?? 0, forecast: nil) }
 }
 
 /// The "Resets in 2 hours · 13:30" line next to a bar. A plain `Text` of the formatted string goes stale:
@@ -345,27 +338,34 @@ public struct UsageBar: View {
     let window: UsageWindow
     /// Sub-window (per-model breakdown): indented, thinner bar.
     var compact = false
+    /// Same rule as `LimitBar`: bar and percentage follow the forecast's risk, the usage level without one.
+    let forecast: (Date) -> UsageForecast?
 
-    public init(window: UsageWindow, compact: Bool = false) { self.window = window; self.compact = compact }
+    public init(window: UsageWindow, compact: Bool = false, forecast: @escaping (Date) -> UsageForecast? = { _ in nil }) {
+        self.window = window; self.compact = compact; self.forecast = forecast
+    }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
-                Spacer()
-                if let reset = window.resetsAt {
-                    ResetLabel(reset: reset)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: forecast(context.date))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(window.title).font(.caption).foregroundStyle(compact ? .secondary : .primary)
+                    Spacer()
+                    if let reset = window.resetsAt {
+                        ResetLabel(reset: reset)
+                    }
+                    // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
+                    Text("\(Int(window.usedPercent.rounded()))%")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .riskTextStyle(risk)
+                        .frame(minWidth: 34, alignment: .trailing)
                 }
-                // A fixed column: "5%" and "32%" line up, so the reset labels beside them do too.
-                Text("\(Int(window.usedPercent.rounded()))%")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(usageTint(window.usedPercent))
-                    .frame(minWidth: 34, alignment: .trailing)
+                GlowBar(percent: window.usedPercent, height: compact ? 4 : 7, tintPercent: riskTintPercent(risk))
             }
-            GlowBar(percent: window.usedPercent, height: compact ? 4 : 7)
+            .padding(.leading, compact ? 12 : 0)
+            .accessibilityElement(children: .combine)
         }
-        .padding(.leading, compact ? 12 : 0)
-        .accessibilityElement(children: .combine)
     }
 }
 

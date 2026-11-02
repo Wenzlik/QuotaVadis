@@ -112,6 +112,12 @@ public struct UsageForecast: Sendable, Hashable {
         return "fits, ends at ~\(Int(min(projectedPercent, 100).rounded()))%"
     }
 
+    /// Card-width variant: "runs out Sun 10:47" without the gap to the reset; `label` goes in the tooltip.
+    public func compactLabel(now: Date = .now, calendar: Calendar = .current, locale: Locale = .autoupdatingCurrent) -> String {
+        guard risk != .exhausted, let runsOutAt else { return label(now: now, calendar: calendar, locale: locale) }
+        return "runs out \(runsOutAt.resetClockLabel(now: now, calendar: calendar, locale: locale))"
+    }
+
     private static func shortDuration(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded())
         guard total > 0 else { return "1 min" }
@@ -125,6 +131,56 @@ public struct UsageForecast: Sendable, Hashable {
             return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
         }
         return "\(max(minutes, 1)) min"
+    }
+}
+
+public extension UsageForecast.Risk {
+    /// The one rule for bar, percentage and headline colour and for "most at risk" ranking: the forecast's
+    /// risk when there is one, otherwise the usage level (ok → safe, warning → watch, critical → at risk).
+    init(usedPercent: Double, forecast: UsageForecast?) {
+        if let forecast { self = forecast.risk; return }
+        if usedPercent >= 100 { self = .exhausted; return }
+        switch UsageLevel(usedPercent) {
+        case .ok: self = .safe
+        case .warning: self = .watch
+        case .critical: self = .atRisk
+        }
+    }
+}
+
+/// One limit (window or capped spend) as the panel header sees it.
+public struct RiskItem: Sendable, Hashable {
+    public var title: String
+    public var usedPercent: Double
+    public var resetsAt: Date?
+    public var risk: UsageForecast.Risk
+    /// Forecast label for a window, "$1.04 / $1.00" for spend.
+    public var detail: String?
+
+    public init(title: String, usedPercent: Double, resetsAt: Date?, risk: UsageForecast.Risk, detail: String? = nil) {
+        self.title = title; self.usedPercent = usedPercent; self.resetsAt = resetsAt; self.risk = risk; self.detail = detail
+    }
+
+    /// Header order: worse risk first, then higher usage, then the sooner reset.
+    public func outranks(_ other: RiskItem) -> Bool {
+        if risk != other.risk { return risk > other.risk }
+        if usedPercent != other.usedPercent { return usedPercent > other.usedPercent }
+        return (resetsAt ?? .distantFuture) < (other.resetsAt ?? .distantFuture)
+    }
+}
+
+/// "N limits at risk" plus the single most threatened limit; nil without any limit.
+public struct RiskSummary: Sendable, Hashable {
+    public var atRiskCount: Int
+    public var limitCount: Int
+    public var top: RiskItem
+
+    public init?(items: [RiskItem]) {
+        guard var top = items.first else { return nil }
+        for item in items.dropFirst() where item.outranks(top) { top = item }
+        self.top = top
+        limitCount = items.count
+        atRiskCount = items.filter { $0.risk >= .atRisk }.count
     }
 }
 

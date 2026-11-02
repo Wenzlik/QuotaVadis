@@ -157,6 +157,18 @@ public struct UsageSnapshot: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
+    /// The collapsed card: one big bar, the rest as small cards. `primaryWindowID` (the user's pick) wins while
+    /// the snapshot still has that window, even a sub-window; otherwise the session, else the first overview window.
+    /// `promote` adds a window the overview would hide (a non-prominent sub-window whose forecast runs out) as a card.
+    public func overviewLayout(primaryWindowID: String? = nil,
+                               promote: (UsageWindow) -> Bool = { _ in false }) -> (main: UsageWindow?, cards: [UsageWindow]) {
+        let base = overviewWindows
+        let overview = base + windows.filter { w in !base.contains { $0.id == w.id } && promote(w) }
+        let main = primaryWindowID.flatMap { id in windows.first { $0.id == id } }
+            ?? overview.first { $0.kind == .session } ?? overview.first
+        return (main, overview.filter { $0.id != main?.id })
+    }
+
     public var compactWindows: [UsageWindow] {
         guard let worstWindow else { return overviewWindows }
         return [worstWindow] + overviewWindows.filter { $0.id != worstWindow.id }
@@ -304,6 +316,9 @@ public struct UsageCredits: Codable, Sendable, Hashable, Identifiable {
         guard let limit, limit > 0 else { return nil }
         return used / limit * 100
     }
+
+    /// Spend at or past its cap: already a limit hit, not a projection.
+    public var isOverLimit: Bool { (usedPercent ?? 0) >= 100 }
 }
 
 public extension Date {
@@ -315,6 +330,15 @@ public extension Date {
         if d > 0 { return h > 0 ? "in \(d)d \(h)h" : "in \(d)d" }
         if h > 0 { return m > 0 ? "in \(h)h \(m)m" : "in \(h)h" }
         return "in \(max(m, 1))m"
+    }
+
+    /// "4d", "2h", "35m": the largest unit of the time left, for card-width reset lines.
+    func compactRemainingLabel(now: Date = .now) -> String {
+        guard self > now else { return "passed" }
+        let minutes = Int(timeIntervalSince(now) / 60)
+        if minutes >= 1440 { return "\(minutes / 1440)d" }
+        if minutes >= 60 { return "\(minutes / 60)h" }
+        return "\(max(minutes, 1))m"
     }
 
     /// "14:35" today, weekday+time within 6 days, day+month+time beyond — formatted with the given

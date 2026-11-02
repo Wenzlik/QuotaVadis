@@ -47,7 +47,11 @@ struct ProviderDashboardView: View {
                         if let notice = snapshot.modelLimitNotice {
                             Label(notice, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
                         }
-                        ForEach(snapshot.windows) { UsageBar(window: $0, compact: !$0.prominent) }
+                        ForEach(snapshot.windows) { window in
+                            // Same forecast-risk colouring as the popover, so bar and % don't change colour here.
+                            UsageBar(window: window, compact: !window.prominent,
+                                     forecast: { model.forecast(instanceID: instance.id, window: window, now: $0) })
+                        }
                         ForEach(snapshot.credits) { CreditsLine(credits: $0) }
                     } else {
                         Text("No limits read yet.").foregroundStyle(.secondary)
