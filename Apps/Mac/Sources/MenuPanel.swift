@@ -230,14 +230,19 @@ extension AppModel {
 }
 
 /// A menu bar app is never the active app, so its windows open behind whatever is frontmost.
-/// Activate first, open, then make the newest window key once SwiftUI has created it.
+/// Go regular and activate first, open, then make the newest window key once SwiftUI has created it.
+/// The deprecated ignoringOtherApps form on purpose: cooperative `activate()` may be declined when another
+/// app is frontmost, and this is always an explicit user request.
 @MainActor
 func bringToFront(_ open: () -> Void) {
+    WindowActivationController.shared.setRegular(true)
     NSApp.activate(ignoringOtherApps: true)
     open()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-        NSApp.activate(ignoringOtherApps: true)
+        if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
         let candidates = NSApp.windows.filter { $0.isVisible && $0.canBecomeKey && !($0.className.contains("StatusBar") || $0.className.contains("MenuBarExtra")) }
         candidates.last?.makeKeyAndOrderFront(nil)
+        // Settles the policy even if nothing opened (back to accessory) or the window was already key.
+        WindowActivationController.shared.update()
     }
 }
