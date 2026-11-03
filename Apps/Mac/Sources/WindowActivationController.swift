@@ -31,15 +31,11 @@ final class WindowActivationController {
     }
 
     /// Only touches the policy when it changes, so repeated calls don't flicker the Dock.
+    /// Never activates: notification-driven updates must not steal focus. Explicit opens activate in bringToFront.
     func setRegular(_ regular: Bool) {
         let policy: NSApplication.ActivationPolicy = regular ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
-        guard regular else { return }
-        NSApp.activate()
-        let visible = NSApp.windows.filter { Self.isStandalone($0) && $0.isVisible }
-        let front = visible.first { $0.isKeyWindow } ?? visible.first
-        front?.makeKeyAndOrderFront(nil)
     }
 
     /// A real app window: titled, not a panel/popover/alert/sheet, not the status item or MenuBarExtra panel.
