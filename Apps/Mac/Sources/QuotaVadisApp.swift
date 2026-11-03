@@ -6,6 +6,8 @@ struct QuotaVadisApp: App {
     @State private var model = AppModel()
     @State private var updater = Updater()
 
+    init() { _ = WindowActivationController.shared }
+
     var body: some Scene {
         MenuBarExtra {
             MenuPanel(model: model)
