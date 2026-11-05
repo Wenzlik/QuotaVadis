@@ -86,9 +86,9 @@ struct ProviderWidgetView: View {
     private func pct(_ w: UsageWindow?) -> String { w.map { "\(Int($0.usedPercent.rounded()))%" } ?? "—" }
 
     private func small(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                ProviderMark(provider: s.provider, size: 20)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                ProviderMark(provider: s.provider, size: 18)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(s.provider.displayName).font(.caption.weight(.semibold)).lineLimit(1)
                     if let plan = s.plan {
@@ -109,7 +109,7 @@ struct ProviderWidgetView: View {
                 .frame(maxWidth: .infinity)
                 Text(w.title).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 if let reset = w.resetsAt {
-                    Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))")
+                    Text("resets \(reset.compactRemainingLabel(now: entry.date)) · \(reset.resetClockLabel(now: entry.date))")
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
@@ -196,9 +196,14 @@ struct OverviewWidgetView: View {
     }
 
     private func large(_ payload: DevicePayload) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // Dynamically limit windows per provider based on provider count to fit in ~340pt
+        // 4+ providers: 2 windows each, 3 providers: 3 windows, 1-2 providers: 3 windows
+        let providerCount = payload.snapshots.count
+        let maxWindows = providerCount >= 4 ? 2 : 3
+        
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(payload.snapshots.prefix(4)) { s in
-                WidgetProviderSection(snapshot: s, payload: payload, now: entry.date)
+                WidgetProviderSection(snapshot: s, payload: payload, now: entry.date, maxWindows: maxWindows)
             }
             Spacer(minLength: 0)
             footerLine(payload)
@@ -305,21 +310,23 @@ struct WidgetProviderRow: View {
 
 /// A provider section in the large overview widget (header + multiple bars).
 /// Compact layout: no background padding, shows worst window with pace marker + 1-2 secondary windows without.
+/// `maxWindows` limits how many bars to show per provider (to fit more providers).
 struct WidgetProviderSection: View {
     let snapshot: UsageSnapshot
     let payload: DevicePayload
     let now: Date
+    var maxWindows: Int = 3
 
     var body: some View {
         let freshness = payload.status(for: snapshot).freshness(now: now)
-        let windows = snapshot.compactWindows.prefix(3)
+        let windows = snapshot.compactWindows.prefix(maxWindows)
         let worstID = snapshot.worstWindow?.id
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                ProviderMark(provider: snapshot.provider, size: 14)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                ProviderMark(provider: snapshot.provider, size: 12)
                 Text(snapshot.provider.shortName)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                 if let plan = snapshot.plan {
                     Text(plan)
                         .font(.caption2)
