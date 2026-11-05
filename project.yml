@@ -131,6 +131,8 @@ targets:
     dependencies:
       - package: QuotaCore
         product: QuotaCore
+      - package: QuotaCore
+        product: QuotaUI
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
     info:
@@ -160,6 +162,8 @@ targets:
     dependencies:
       - package: QuotaCore
         product: QuotaCore
+      - package: QuotaCore
+        product: QuotaUI
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
     info:
