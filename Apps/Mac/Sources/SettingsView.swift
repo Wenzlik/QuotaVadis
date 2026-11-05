@@ -392,6 +392,18 @@ struct SettingsView: View {
                     Label("The widget is still running build \(stale) from before the update.", systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                 }
+                // Multiple registered copies of the app break chronod's extension lookup.
+                if !model.unregisteredWidgetCopies.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Unregistered duplicate app copies that were breaking widgets:", systemImage: "doc.on.doc")
+                            .font(.caption).foregroundStyle(.orange)
+                        ForEach(model.unregisteredWidgetCopies, id: \.self) { path in
+                            Text(path).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
+                        Text("Delete these copies to prevent the issue from recurring.")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
                 HStack {
                     Button("Refresh widgets now") { model.refreshWidgetsNow() }
                     if model.staleWidgetExtensionVersion != nil {
