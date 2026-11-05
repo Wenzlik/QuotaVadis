@@ -196,8 +196,17 @@ struct OverviewWidgetView: View {
     }
 
     private func large(_ payload: DevicePayload) -> some View {
-        // Dynamically limit windows per provider based on provider count to fit in ~340pt
-        // 4+ providers: 2 windows each, 3 providers: 3 windows, 1-2 providers: 3 windows
+        #if os(macOS)
+        // macOS large widget (~345pt): always show 3 windows per provider, richer spacing
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(payload.snapshots.prefix(4)) { s in
+                WidgetProviderSection(snapshot: s, payload: payload, now: entry.date, maxWindows: 3)
+            }
+            Spacer(minLength: 0)
+            footerLine(payload)
+        }
+        #else
+        // iOS: dynamically limit windows to prevent overflow on smaller screens
         let providerCount = payload.snapshots.count
         let maxWindows = providerCount >= 4 ? 2 : 3
         
@@ -208,10 +217,20 @@ struct OverviewWidgetView: View {
             Spacer(minLength: 0)
             footerLine(payload)
         }
+        #endif
     }
 
     private func footerLine(_ payload: DevicePayload) -> some View {
         HStack(spacing: 4) {
+            #if os(macOS)
+            Image(systemName: "desktopcomputer")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Text("\(payload.deviceName) · updated \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            #else
             Image(systemName: "desktopcomputer")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -219,15 +238,16 @@ struct OverviewWidgetView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
+            #endif
         }
     }
 }
 
 /// A progress bar line for widgets, using the polished GlowBar from QuotaUI.
 struct WidgetBarLine: View {
-    /// - `standard`: 7pt bar with pace marker, full caption text
-    /// - `compact`: 5pt bar with pace marker, caption2 text
-    /// - `mini`: 4pt bar WITHOUT pace marker, caption2 text (densest, for overflow situations)
+    /// - `standard`: 7pt bar with pace marker, full caption text, full reset label (macOS)
+    /// - `compact`: 5pt bar with pace marker, caption2 text, compact reset label
+    /// - `mini`: 4pt bar WITHOUT pace marker, caption2 text, compact reset (iOS overflow)
     enum Style { case standard, compact, mini }
 
     let window: UsageWindow
@@ -258,9 +278,23 @@ struct WidgetBarLine: View {
                 Text(window.title).font(titleFont)
                 Spacer()
                 if let reset = window.resetsAt {
+                    // macOS standard style: show full reset label with clock time
+                    // iOS/compact/mini: show only compact remaining time
+                    #if os(macOS)
+                    if style == .standard {
+                        Text("\(reset.compactRemainingLabel(now: now)) · \(reset.resetClockLabel(now: now))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text(reset.compactRemainingLabel(now: now))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    #else
                     Text(reset.compactRemainingLabel(now: now))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                    #endif
                 }
                 Text("\(Int(window.usedPercent.rounded()))%")
                     .font(percentFont)
@@ -283,6 +317,32 @@ struct WidgetProviderRow: View {
         let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: nil)
         let freshness = payload.status(for: snapshot).freshness(now: now)
 
+        #if os(macOS)
+        // macOS: richer layout with full reset label
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: snapshot.provider, size: 16)
+                Text(snapshot.provider.shortName)
+                    .font(.caption.weight(.semibold))
+                if freshness != .fresh {
+                    Text(freshness.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let reset = window.resetsAt {
+                    Text("\(reset.compactRemainingLabel(now: now)) · \(reset.resetClockLabel(now: now))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Text("\(Int(window.usedPercent.rounded()))%")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .riskTextStyle(risk)
+            }
+            GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
+        }
+        #else
+        // iOS: compact layout
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 ProviderMark(provider: snapshot.provider, size: 14)
@@ -305,12 +365,13 @@ struct WidgetProviderRow: View {
             }
             GlowBar(percent: window.usedPercent, height: 5, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
         }
+        #endif
     }
 }
 
 /// A provider section in the large overview widget (header + multiple bars).
-/// Compact layout: no background padding, shows worst window with pace marker + 1-2 secondary windows without.
-/// `maxWindows` limits how many bars to show per provider (to fit more providers).
+/// macOS: richer layout with larger marks, full reset labels, always 3 windows with pace markers
+/// iOS: compact layout to fit in smaller widget bounds
 struct WidgetProviderSection: View {
     let snapshot: UsageSnapshot
     let payload: DevicePayload
@@ -322,6 +383,32 @@ struct WidgetProviderSection: View {
         let windows = snapshot.compactWindows.prefix(maxWindows)
         let worstID = snapshot.worstWindow?.id
 
+        #if os(macOS)
+        // macOS: richer layout with more info
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: snapshot.provider, size: 16)
+                Text(snapshot.provider.shortName)
+                    .font(.caption.weight(.semibold))
+                if let plan = snapshot.plan {
+                    Text(plan)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if freshness != .fresh {
+                    Text("· \(freshness.rawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+            ForEach(Array(windows.enumerated()), id: \.element.id) { index, w in
+                // macOS: standard style on worst window (full reset label), compact on others (still has pace marker)
+                WidgetBarLine(window: w, now: now, style: w.id == worstID ? .standard : .compact)
+            }
+        }
+        #else
+        // iOS: compact layout to prevent overflow
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 ProviderMark(provider: snapshot.provider, size: 12)
@@ -340,10 +427,11 @@ struct WidgetProviderSection: View {
                 Spacer()
             }
             ForEach(Array(windows.enumerated()), id: \.element.id) { index, w in
-                // Show pace marker only on the worst/first window to save vertical space
+                // iOS: compact on worst (pace marker), mini on others (no pace marker, saves height)
                 WidgetBarLine(window: w, now: now, style: w.id == worstID ? .compact : .mini)
             }
         }
+        #endif
     }
 }
 
