@@ -779,6 +779,10 @@ final class AppModel {
     /// Checked when Settings shows the Widgets section and after each repair; nothing polls it.
     private(set) var staleWidgetExtensionVersion: String?
 
+    /// Other registered copies of the app that were unregistered on the last repair. Empty after a clean launch.
+    /// Shown in Settings so the user knows why their widgets broke; the paths point to where the copies were.
+    private(set) var unregisteredWidgetCopies: [String] = []
+
     func checkWidgetExtension() {
         staleWidgetExtensionVersion = WidgetExtensionProcess.staleVersion(
             Self.runningProcesses(), uid: getuid(), executable: WidgetExtensionProcess.executable(inApp: Bundle.main.bundleURL),
@@ -796,19 +800,21 @@ final class AppModel {
         let bundle = Bundle.main.bundleURL
         guard widgetRepair == nil, WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
         widgetRepair = Task {
-            await Task.detached(priority: .background) {
+            let unregistered = await Task.detached(priority: .background) {
                 let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-                // grep keeps the ~15 MB dump out of this process; only path/identifier lines come back.
                 let dump = Self.run("/bin/sh", ["-c", #""$0" -dump Bundle | grep -E '^(path|identifier):'"#, lsregister])
                 let registered = WidgetRegistration.registeredPaths(bundleID: id, dump: String(decoding: dump, as: UTF8.self))
-                for path in WidgetRegistration.copiesToUnregister(running: bundle, bundleID: id, registered: registered) {
+                let toUnregister = WidgetRegistration.copiesToUnregister(running: bundle, bundleID: id, registered: registered)
+                for path in toUnregister {
                     Self.run(lsregister, ["-u", path])
                 }
                 Self.run(lsregister, ["-f", bundle.path])
                 Self.endStaleWidgetExtension(app: bundle, force: force)
                 Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
                 WidgetCenter.shared.reloadAllTimelines()
+                return toUnregister
             }.value
+            unregisteredWidgetCopies = unregistered
             widgetRepair = nil
             checkWidgetExtension()
         }

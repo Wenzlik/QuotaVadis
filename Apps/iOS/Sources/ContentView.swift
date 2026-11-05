@@ -41,6 +41,7 @@ struct OverviewView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
+    @AppStorage("observatoryModeEnabled") private var isObservatory = false
     /// Provider instance IDs. One column: the pushed detail. Two panes: the last one is the selection. Shared, so a
     /// fold or unfold keeps the provider: a provider picked on the inner display opens pushed on the outer one.
     @State private var path: [String] = []
@@ -139,7 +140,7 @@ struct OverviewView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(16)
-                            .accentCard(status.provider.accent, cornerRadius: 18)
+                            .observatoryCard(status.provider.accent, cornerRadius: 18, isObservatory: isObservatory)
                         }
                         if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
                             Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
@@ -154,10 +155,10 @@ struct OverviewView: View {
                     // A wide window with nothing to show beside the list keeps it readable.
                     .readableWidth(680)
                 }
-                .background(Color(.systemGroupedBackground))
+                .background(isObservatory ? ObservatoryTheme.panelBackground : Color(.systemGroupedBackground))
             } else {
                 ScrollView { EmptyStateView(store: store).readableWidth(480).frame(minHeight: 420) }
-                    .background(Color(.systemGroupedBackground))
+                    .background(isObservatory ? ObservatoryTheme.panelBackground : Color(.systemGroupedBackground))
             }
         }
         .navigationTitle("QuotaVadis")

@@ -12,6 +12,7 @@ struct QuotaWidgetBundle: WidgetBundle {
     var body: some Widget {
         SwitcherWidget()
         OverviewWidget()
+        PaceWidget()
         ClaudeWidget()
         CodexWidget()
         CursorWidget()
