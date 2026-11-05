@@ -161,9 +161,10 @@ struct SwitcherWidgetView: View {
     }
 
     private func compact(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let worstID = s.worstWindow?.id
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(s.compactWindows.prefix(2)) { w in
-                WidgetBarLine(window: w, now: entry.date, style: .compact)
+                WidgetBarLine(window: w, now: entry.date, style: w.id == worstID ? .compact : .mini)
             }
             Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale")
                 .font(.caption2)
@@ -180,9 +181,10 @@ struct SwitcherWidgetView: View {
     }
 
     private func medium(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let worstID = s.worstWindow?.id
+        VStack(alignment: .leading, spacing: 5) {
             ForEach(s.compactWindows.prefix(3)) { w in
-                WidgetBarLine(window: w, now: entry.date, style: .standard)
+                WidgetBarLine(window: w, now: entry.date, style: w.id == worstID ? .compact : .mini)
             }
             Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale")
                 .font(.caption2)
