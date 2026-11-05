@@ -162,7 +162,7 @@ struct SwitcherWidgetView: View {
 
     private func compact(_ s: UsageSnapshot) -> some View {
         let worstID = s.worstWindow?.id
-        VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 4) {
             ForEach(s.compactWindows.prefix(2)) { w in
                 WidgetBarLine(window: w, now: entry.date, style: w.id == worstID ? .compact : .mini)
             }
@@ -182,7 +182,7 @@ struct SwitcherWidgetView: View {
 
     private func medium(_ s: UsageSnapshot) -> some View {
         let worstID = s.worstWindow?.id
-        VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 5) {
             ForEach(s.compactWindows.prefix(3)) { w in
                 WidgetBarLine(window: w, now: entry.date, style: w.id == worstID ? .compact : .mini)
             }
