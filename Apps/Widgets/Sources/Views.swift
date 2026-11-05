@@ -201,7 +201,7 @@ struct OverviewWidgetView: View {
         let providerCount = payload.snapshots.count
         let maxWindows = providerCount >= 4 ? 2 : 3
         
-        VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 4) {
             ForEach(payload.snapshots.prefix(4)) { s in
                 WidgetProviderSection(snapshot: s, payload: payload, now: entry.date, maxWindows: maxWindows)
             }
