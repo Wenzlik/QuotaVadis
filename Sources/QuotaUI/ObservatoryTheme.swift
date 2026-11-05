@@ -136,13 +136,13 @@ public struct ObservatoryCard: ViewModifier {
         
         if isObservatory {
             content
-                .background(
+                .background {
                     ZStack {
                         ObservatoryTheme.cardSurface.opacity(reduceTransparency ? 1.0 : 0.85)
                         accent.opacity(0.08)
-                    },
-                    in: shape
-                )
+                    }
+                }
+                .clipShape(shape)
                 .overlay(
                     shape.strokeBorder(
                         LinearGradient(
