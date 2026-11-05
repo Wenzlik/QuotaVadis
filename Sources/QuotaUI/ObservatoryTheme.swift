@@ -71,11 +71,35 @@ public enum ObservatoryTheme {
         )
     }
     
-    /// Card surface — translucent panels with cosmic tint.
+    /// Card surface — translucent panels with cosmic tint. Made more visible with higher saturation.
     public static var cardSurface: Color {
         adaptiveColor(
-            light: (0.18, 0.18, 0.26),
-            dark: (0.12, 0.12, 0.18)
+            light: (0.22, 0.22, 0.32),
+            dark: (0.14, 0.15, 0.24)
+        )
+    }
+    
+    /// Panel/popover background — the deep space backdrop.
+    public static var panelBackground: Color {
+        adaptiveColor(
+            light: (0.12, 0.13, 0.20),
+            dark: (0.08, 0.09, 0.15)
+        )
+    }
+    
+    /// Header/footer background — slightly lighter than panel for visual hierarchy.
+    public static var chromeBackground: Color {
+        adaptiveColor(
+            light: (0.15, 0.16, 0.24),
+            dark: (0.10, 0.11, 0.18)
+        )
+    }
+    
+    /// Secondary text color for Observatory mode.
+    public static var secondaryText: Color {
+        adaptiveColor(
+            light: (0.70, 0.72, 0.78),
+            dark: (0.58, 0.60, 0.68)
         )
     }
     
@@ -138,21 +162,27 @@ public struct ObservatoryCard: ViewModifier {
             content
                 .background {
                     ZStack {
-                        ObservatoryTheme.cardSurface.opacity(reduceTransparency ? 1.0 : 0.85)
-                        accent.opacity(0.08)
+                        ObservatoryTheme.cardSurface
+                        accent.opacity(0.15)
+                        LinearGradient(
+                            colors: [accent.opacity(0.12), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     }
                 }
                 .clipShape(shape)
                 .overlay(
                     shape.strokeBorder(
                         LinearGradient(
-                            colors: [accent.opacity(0.35), ObservatoryTheme.shimmer.opacity(0.15)],
+                            colors: [accent.opacity(0.5), ObservatoryTheme.shimmer.opacity(0.25)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1
+                        lineWidth: 1.5
                     )
                 )
+                .shadow(color: accent.opacity(0.2), radius: 8, y: 2)
         } else {
             content.modifier(AccentCard(accent: accent, cornerRadius: cornerRadius))
         }
@@ -202,6 +232,62 @@ public struct ObservatoryGlass: ViewModifier {
 public extension View {
     func observatoryGlass(cornerRadius: CGFloat = 14, isObservatory: Bool) -> some View {
         modifier(ObservatoryGlass(cornerRadius: cornerRadius, isObservatory: isObservatory))
+    }
+}
+
+// MARK: - Observatory Panel Background
+
+/// Applies the Observatory deep-space background to a panel/popover when enabled.
+public struct ObservatoryPanelBackground: ViewModifier {
+    let isObservatory: Bool
+    
+    public func body(content: Content) -> some View {
+        if isObservatory {
+            content
+                .background {
+                    ZStack {
+                        ObservatoryTheme.panelBackground
+                        LinearGradient(
+                            colors: [
+                                ObservatoryTheme.shimmer.opacity(0.05),
+                                Color.clear,
+                                ObservatoryTheme.shimmer.opacity(0.03)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+                    .ignoresSafeArea()
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// Styles header/footer chrome for Observatory mode.
+public struct ObservatoryChromeBackground: ViewModifier {
+    let isObservatory: Bool
+    
+    public func body(content: Content) -> some View {
+        if isObservatory {
+            content
+                .background(ObservatoryTheme.chromeBackground)
+        } else {
+            content
+        }
+    }
+}
+
+public extension View {
+    /// Applies Observatory panel background when enabled.
+    func observatoryPanelBackground(isObservatory: Bool) -> some View {
+        modifier(ObservatoryPanelBackground(isObservatory: isObservatory))
+    }
+    
+    /// Applies Observatory chrome background to headers/footers when enabled.
+    func observatoryChromeBackground(isObservatory: Bool) -> some View {
+        modifier(ObservatoryChromeBackground(isObservatory: isObservatory))
     }
 }
 

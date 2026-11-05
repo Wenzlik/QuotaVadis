@@ -14,7 +14,7 @@ struct MenuPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
+            Divider().opacity(isObservatory ? 0.3 : 1)
             if !model.hasOnboarded {
                 setupPrompt
             } else {
@@ -29,7 +29,9 @@ struct MenuPanel: View {
                                                    description: Text("Log in to a provider on this Mac, then Refresh."))
                         } else {
                             if model.riskSummaryPlacement == .top { riskSummary }
-                            Text("This Mac").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text("This Mac")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(isObservatory ? ObservatoryTheme.secondaryText : .secondary)
                             providerRows
                             if model.riskSummaryPlacement == .bottom { riskSummary }
                         }
@@ -43,10 +45,11 @@ struct MenuPanel: View {
                 .frame(maxHeight: maxListHeight)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            Divider()
+            Divider().opacity(isObservatory ? 0.3 : 1)
             footer
         }
         .frame(width: 360)
+        .observatoryPanelBackground(isObservatory: isObservatory)
         .onAppear { model.panelOpened() }
     }
 
@@ -59,16 +62,20 @@ struct MenuPanel: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage).resizable().frame(width: 22, height: 22)
-            Text("QuotaVadis").font(.headline)
+            Text("QuotaVadis")
+                .font(.headline)
+                .foregroundStyle(isObservatory ? ObservatoryTheme.starlight : .primary)
             Spacer()
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
             } else if let date = model.lastRefresh {
                 Text("Updated \(date, format: .relative(presentation: .named))")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(isObservatory ? ObservatoryTheme.secondaryText : .secondary)
             }
             Button { model.refreshNow() } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
+                .foregroundStyle(isObservatory ? ObservatoryTheme.starlight : .primary)
                 .help("Refresh now (⌘R)")
                 .accessibilityLabel("Refresh now")
                 .keyboardShortcut("r")
@@ -76,6 +83,7 @@ struct MenuPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .observatoryChromeBackground(isObservatory: isObservatory)
     }
 
     private var setupPrompt: some View {
@@ -127,7 +135,13 @@ struct MenuPanel: View {
                 .buttonStyle(.borderless).accessibilityLabel("Dismiss")
         }
         .padding(10)
-        .background(ProviderID.claude.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(isObservatory ? ObservatoryTheme.cardSurface : ProviderID.claude.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            if isObservatory {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(ProviderID.claude.accent.opacity(0.3), lineWidth: 1)
+            }
+        }
     }
 
     @ViewBuilder private var providerRows: some View {
@@ -203,21 +217,23 @@ struct MenuPanel: View {
             Button { bringToFront { openSettings() } } label: { Label("Settings", systemImage: "gearshape") }
                 .help("Settings (⌘,)")
                 .keyboardShortcut(",")
+                .foregroundStyle(isObservatory ? ObservatoryTheme.starlight : .primary)
             Spacer()
             Button { bringToFront { openWindow(id: "about") } } label: { Image(systemName: "info.circle") }
                 .help("About QuotaVadis")
                 .accessibilityLabel("About QuotaVadis")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isObservatory ? ObservatoryTheme.secondaryText : .secondary)
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .help("Quit (⌘Q)")
                 .accessibilityLabel("Quit QuotaVadis")
                 .keyboardShortcut("q")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isObservatory ? ObservatoryTheme.secondaryText : .secondary)
         }
         .buttonStyle(.borderless)
         .font(.callout)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .observatoryChromeBackground(isObservatory: isObservatory)
     }
 }
 
