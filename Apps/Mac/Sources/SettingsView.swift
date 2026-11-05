@@ -255,6 +255,14 @@ struct SettingsView: View {
             Section("Preview") {
                 MenuBarPreview(model: model)
             }
+            Section {
+                Toggle("Observatory mode", isOn: $model.observatoryModeEnabled)
+            } header: {
+                Text("Visual theme")
+            } footer: {
+                Text("A space-inspired look for the popover and cards. Inspired by Aether's Observatory aesthetic. Composes with your existing layout and main-bar choices.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Menu bar") {
                 Picker("Style", selection: $model.menuBarDisplayStyle) {
                     Text("Icon").tag(MenuBarDisplayStyle.icon)

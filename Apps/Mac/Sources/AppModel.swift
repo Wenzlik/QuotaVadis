@@ -160,6 +160,10 @@ final class AppModel {
     var useAppIconInMenuBar: Bool {
         didSet { defaults.set(useAppIconInMenuBar, forKey: "useAppIconInMenuBar") }
     }
+    /// Observatory visual theme — space-inspired aesthetic, OFF by default. Composes with existing layout prefs.
+    var observatoryModeEnabled: Bool {
+        didSet { defaults.set(observatoryModeEnabled, forKey: "observatoryModeEnabled") }
+    }
     /// Price Codex Fast mode (priority processing) at OpenAI's 2x rate. Off = list price, same as CodexBar.
     var fastModeAt2x: Bool {
         didSet { defaults.set(fastModeAt2x, forKey: "fastModeAt2x"); Task { lastCostRefresh = nil; await refreshCosts() } }
@@ -313,6 +317,7 @@ final class AppModel {
         menuBarShowVendorIcons = defaults.bool(forKey: "menuBarShowVendorIcons")
         showPercentInMenuBar = defaults.object(forKey: "showPercentInMenuBar") as? Bool ?? true
         useAppIconInMenuBar = defaults.object(forKey: "useAppIconInMenuBar") as? Bool ?? false
+        observatoryModeEnabled = defaults.bool(forKey: "observatoryModeEnabled")
         menuBarExcluded = Set(defaults.stringArray(forKey: "menuBarExcluded") ?? [])
         fastModeAt2x = defaults.bool(forKey: "fastModeAt2x")
         syncEnabled = defaults.object(forKey: "syncEnabled") as? Bool ?? true
@@ -687,14 +692,15 @@ final class AppModel {
         // they land already deduped, in the same tick as this cleanup — never shown then yanked a moment later.
         for (id, state) in pendingWebStates { states[id] = state }
         pendingWebStates.removeAll()
-        updateWidgets()
         // Drop web rows the service discarded (same organization as a Claude Code login) and any web rows
-        // that disappeared from this refresh.
+        // that disappeared from this refresh. Deduplication must happen BEFORE updateWidgets() so the large
+        // widget never sees duplicate Claude entries for the same organization (the "double-load" bug).
         for key in states.keys where key.hasPrefix("claude-web:") && result[key] == nil { states[key] = nil }
         let covered = Set(states.filter { $0.key == "claude" || $0.key.hasPrefix("claude:") }.compactMap { $0.value.snapshot?.organization })
         for (key, state) in states where key.hasPrefix("claude-web:") {
             if let org = state.snapshot?.organization, covered.contains(org) { states[key] = nil }
         }
+        updateWidgets()
         lastRefresh = .now
         notifyIfNeeded()
         schedulePublish()

@@ -241,6 +241,7 @@ struct EmptyStateView: View {
 struct IOSSettingsView: View {
     @Bindable var store: DeviceStore
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
+    @AppStorage("observatoryModeEnabled") private var observatoryModeEnabled = false
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -283,6 +284,12 @@ struct IOSSettingsView: View {
                     }
                 } header: { Text("Overview") } footer: {
                     Text("“Most at risk” summarises the limit closest to running out and badges the Limits tab with the number at risk. The main bar is the limit drawn large on each card; also in the card’s long-press menu. Forecasts use the measurements this phone has received from the Mac.")
+                }
+                
+                Section {
+                    Toggle("Observatory mode", isOn: $observatoryModeEnabled)
+                } header: { Text("Visual theme") } footer: {
+                    Text("A space-inspired look for cards. Inspired by Aether's Observatory aesthetic. Composes with your existing layout choices.")
                 }
 
                 Section {

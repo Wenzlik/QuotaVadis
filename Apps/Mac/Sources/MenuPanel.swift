@@ -8,6 +8,8 @@ struct MenuPanel: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    
+    private var isObservatory: Bool { model.observatoryModeEnabled }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -108,7 +110,7 @@ struct MenuPanel: View {
                 .buttonStyle(.borderedProminent).controlSize(.small).tint(ProviderID.claude.accent)
         }
         .padding(14)
-        .accentCard(ProviderID.claude.accent)
+        .observatoryCard(ProviderID.claude.accent, isObservatory: isObservatory)
     }
 
     /// Existing installs reading Claude Code's item: one dismissible suggestion, never a forced migration.
@@ -148,7 +150,7 @@ struct MenuPanel: View {
                 }
             }
             .padding(14)
-            .accentCard(instance.provider.accent)
+            .observatoryCard(instance.provider.accent, isObservatory: isObservatory)
             .contextMenu {
                 Button("View details") { bringToFront { openWindow(id: "dashboard", value: instance.id) } }
                 if let windows = model.states[instance.id]?.snapshot?.windows, windows.count > 1 {
@@ -171,7 +173,7 @@ struct MenuPanel: View {
             Text("Reading limits…").font(.caption).foregroundStyle(.secondary)
         }
         .padding(14)
-        .accentCard(instance.provider.accent)
+        .observatoryCard(instance.provider.accent, isObservatory: isObservatory)
         .accessibilityElement(children: .combine)
     }
 

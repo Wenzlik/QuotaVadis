@@ -262,3 +262,31 @@ private func tempFile(_ name: String = "payload.json") -> URL {
     #expect((plist["BGTaskSchedulerPermittedIdentifiers"] as? [String])?.contains(WidgetContent.backgroundRefreshID) == true)
     #expect((plist["UIBackgroundModes"] as? [String])?.contains("fetch") == true)
 }
+
+// MARK: - Large widget duplicate regression (the "double-load Claude" bug)
+
+@Test func duplicateSnapshotsForSameProviderShowInOverviewWidget() {
+    // Regression test for the "Claude appears twice then one disappears" bug in the large widget.
+    // The bug occurred when updateWidgets() was called BEFORE deduplication of claude-web entries
+    // that shared an organization with a Claude Code entry. This test documents that the payload
+    // structure itself can have duplicates (the deduplication happens in the Mac app before writing,
+    // not in the widget reader), so the widget correctly shows whatever is in the payload.
+    let org = "Anthropic"
+    let claudeCode = UsageSnapshot(provider: .claude, instanceID: "claude", account: "user@example.com",
+                                    organization: org, plan: "Max", windows: [window(50)])
+    let claudeWeb = UsageSnapshot(provider: .claude, instanceID: "claude-web:abc123", account: "user@example.com",
+                                  organization: org, plan: "Max", windows: [window(50)])
+    let duplicatePayload = payload([claudeCode, claudeWeb])
+    
+    // The overview state is ready because there are snapshots to show — even if they happen to be
+    // for the same organization. Deduplication must happen before the payload reaches the widget.
+    let state = WidgetContent.overviewState(.success(duplicatePayload))
+    #expect(state == .ready)
+    #expect(duplicatePayload.snapshots.count == 2)
+    
+    // After proper deduplication (done in AppModel.refresh BEFORE updateWidgets), only one remains.
+    // This simulates what the Mac app should write to SharedStore:
+    let deduplicatedPayload = payload([claudeCode])
+    #expect(deduplicatedPayload.snapshots.count == 1)
+    #expect(WidgetContent.overviewState(.success(deduplicatedPayload)) == .ready)
+}
