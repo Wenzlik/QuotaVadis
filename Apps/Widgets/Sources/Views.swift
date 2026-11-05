@@ -117,19 +117,19 @@ struct ProviderWidgetView: View {
     }
 
     private func medium(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ProviderMark(provider: s.provider, size: 24)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: s.provider, size: 20)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(s.provider.displayName).font(.headline)
-                    if let plan = s.plan { Text(plan).font(.caption).foregroundStyle(.secondary) }
+                    Text(s.provider.displayName).font(.subheadline.weight(.semibold))
+                    if let plan = s.plan { Text(plan).font(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer()
                 Text(entry.payload?.deviceName ?? "").font(.caption2).foregroundStyle(.tertiary)
             }
             measurement(s)
             ForEach(s.compactWindows.prefix(3)) { w in
-                WidgetBarLine(window: w, now: entry.date, style: .standard)
+                WidgetBarLine(window: w, now: entry.date, style: .compact)
             }
         }
     }
@@ -184,10 +184,10 @@ struct OverviewWidgetView: View {
 
     /// Medium is ~155 pt tall: one line per tool, the highest window only, so three tools always fit.
     private func medium(_ payload: DevicePayload) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(payload.snapshots.prefix(4)) { s in
                 if let w = s.worstWindow {
-                    WidgetProviderRow(snapshot: s, window: w, payload: payload, now: entry.date, style: .compact)
+                    WidgetProviderRow(snapshot: s, window: w, payload: payload, now: entry.date)
                 }
             }
             Spacer(minLength: 0)
@@ -196,7 +196,7 @@ struct OverviewWidgetView: View {
     }
 
     private func large(_ payload: DevicePayload) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(payload.snapshots.prefix(4)) { s in
                 WidgetProviderSection(snapshot: s, payload: payload, now: entry.date)
             }
@@ -220,21 +220,35 @@ struct OverviewWidgetView: View {
 
 /// A progress bar line for widgets, using the polished GlowBar from QuotaUI.
 struct WidgetBarLine: View {
-    enum Style { case standard, compact }
+    /// - `standard`: 7pt bar with pace marker, full caption text
+    /// - `compact`: 5pt bar with pace marker, caption2 text
+    /// - `mini`: 4pt bar WITHOUT pace marker, caption2 text (densest, for overflow situations)
+    enum Style { case standard, compact, mini }
 
     let window: UsageWindow
     let now: Date
     var style: Style = .standard
 
-    private var barHeight: CGFloat { style == .compact ? 5 : 7 }
-    private var titleFont: Font { style == .compact ? .caption2 : .caption }
-    private var percentFont: Font { style == .compact ? .caption2.weight(.semibold).monospacedDigit() : .caption.weight(.semibold).monospacedDigit() }
+    private var barHeight: CGFloat {
+        switch style {
+        case .standard: 7
+        case .compact: 5
+        case .mini: 4
+        }
+    }
+    private var titleFont: Font { style == .standard ? .caption : .caption2 }
+    private var percentFont: Font {
+        style == .standard
+            ? .caption.weight(.semibold).monospacedDigit()
+            : .caption2.weight(.semibold).monospacedDigit()
+    }
+    private var showPaceMarker: Bool { style != .mini }
 
     var body: some View {
-        let pace = window.pace(now: now)
+        let pace = showPaceMarker ? window.pace(now: now) : nil
         let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: nil)
 
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(titleFont)
                 Spacer()
@@ -254,22 +268,19 @@ struct WidgetBarLine: View {
 
 /// A single provider row in the medium overview widget (compact, one bar).
 struct WidgetProviderRow: View {
-    enum Style { case compact, expanded }
-
     let snapshot: UsageSnapshot
     let window: UsageWindow
     let payload: DevicePayload
     let now: Date
-    var style: Style = .compact
 
     var body: some View {
         let pace = window.pace(now: now)
         let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: nil)
         let freshness = payload.status(for: snapshot).freshness(now: now)
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                ProviderMark(provider: snapshot.provider, size: 16)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                ProviderMark(provider: snapshot.provider, size: 14)
                 Text(snapshot.provider.shortName)
                     .font(.caption.weight(.semibold))
                 if freshness != .fresh {
@@ -287,12 +298,13 @@ struct WidgetProviderRow: View {
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .riskTextStyle(risk)
             }
-            GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
+            GlowBar(percent: window.usedPercent, height: 5, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
         }
     }
 }
 
 /// A provider section in the large overview widget (header + multiple bars).
+/// Compact layout: no background padding, shows worst window with pace marker + 1-2 secondary windows without.
 struct WidgetProviderSection: View {
     let snapshot: UsageSnapshot
     let payload: DevicePayload
@@ -300,12 +312,14 @@ struct WidgetProviderSection: View {
 
     var body: some View {
         let freshness = payload.status(for: snapshot).freshness(now: now)
+        let windows = snapshot.compactWindows.prefix(3)
+        let worstID = snapshot.worstWindow?.id
 
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                ProviderMark(provider: snapshot.provider, size: 18)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                ProviderMark(provider: snapshot.provider, size: 14)
                 Text(snapshot.provider.shortName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                 if let plan = snapshot.plan {
                     Text(plan)
                         .font(.caption2)
@@ -314,16 +328,15 @@ struct WidgetProviderSection: View {
                 if freshness != .fresh {
                     Text("· \(freshness.rawValue)")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
                 Spacer()
             }
-            ForEach(snapshot.compactWindows.prefix(3)) { w in
-                WidgetBarLine(window: w, now: now, style: .compact)
+            ForEach(Array(windows.enumerated()), id: \.element.id) { index, w in
+                // Show pace marker only on the worst/first window to save vertical space
+                WidgetBarLine(window: w, now: now, style: w.id == worstID ? .compact : .mini)
             }
         }
-        .padding(10)
-        .background(snapshot.provider.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
