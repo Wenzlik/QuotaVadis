@@ -81,14 +81,16 @@ struct OverviewTimelineProvider: TimelineProvider {
 
 extension DevicePayload {
     /// Gallery preview and placeholder content.
+    /// IMPORTANT: Pass explicit `deviceName` to avoid `DeviceInfo.name` which calls `Host.current().localizedName`
+    /// — that blocks or fails in widget extension sandbox, causing black previews in the widget gallery.
     static let preview: DevicePayload = {
         func w(_ id: String, _ kind: UsageWindow.Kind, _ title: String, _ pct: Double, hours: Double) -> UsageWindow {
             UsageWindow(id: id, kind: kind, title: title, usedPercent: pct, resetsAt: .now.addingTimeInterval(hours * 3600))
         }
         return DevicePayload(deviceID: "preview", deviceName: "MacBook Pro", snapshots: [
-            UsageSnapshot(provider: .claude, account: nil, plan: "Max", windows: [w("session", .session, "Session", 42, hours: 2), w("weekly", .weekly, "Weekly", 61, hours: 70)]),
-            UsageSnapshot(provider: .codex, account: nil, plan: "Plus", windows: [w("session", .session, "Session", 18, hours: 4), w("weekly", .weekly, "Weekly", 55, hours: 120)]),
-            UsageSnapshot(provider: .cursor, account: nil, plan: "Pro", windows: [w("plan", .monthly, "Included total", 27, hours: 400)]),
+            UsageSnapshot(provider: .claude, account: nil, plan: "Max", windows: [w("session", .session, "Session", 42, hours: 2), w("weekly", .weekly, "Weekly", 61, hours: 70)], deviceName: "MacBook Pro"),
+            UsageSnapshot(provider: .codex, account: nil, plan: "Plus", windows: [w("session", .session, "Session", 18, hours: 4), w("weekly", .weekly, "Weekly", 55, hours: 120)], deviceName: "MacBook Pro"),
+            UsageSnapshot(provider: .cursor, account: nil, plan: "Pro", windows: [w("plan", .monthly, "Included total", 27, hours: 400)], deviceName: "MacBook Pro"),
         ], costs: [])
     }()
 }

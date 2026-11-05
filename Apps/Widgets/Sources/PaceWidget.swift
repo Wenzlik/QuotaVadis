@@ -76,7 +76,9 @@ struct PaceTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> PaceEntry { .placeholder }
 
     func getSnapshot(in context: Context, completion: @escaping (PaceEntry) -> Void) {
-        completion(PaceEntry(date: .now, result: SharedStore.readResult()))
+        let result = SharedStore.readResult()
+        let payload = (try? result.get()) ?? .preview
+        completion(PaceEntry(date: .now, result: .success(payload)))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PaceEntry>) -> Void) {
