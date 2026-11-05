@@ -2,6 +2,7 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 import QuotaCore
+import QuotaUI
 
 // MARK: - Fixed single-tool widgets (no configuration step)
 
@@ -122,12 +123,7 @@ struct SwitcherWidgetView: View {
                 if family == .systemSmall {
                     compact(snapshot)
                 } else {
-                    ForEach(snapshot.compactWindows.prefix(3)) { w in
-                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
-                    }
-                    Text(entry.payload?.status(for: snapshot).label(now: entry.date) ?? "Stale")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                    Spacer(minLength: 0)
+                    medium(snapshot)
                 }
             } else {
                 Spacer(minLength: 0)
@@ -141,12 +137,19 @@ struct SwitcherWidgetView: View {
         HStack(spacing: 4) {
             ForEach(available.isEmpty ? ProviderID.allCases : available) { p in
                 Button(intent: SelectProviderIntent(provider: p)) {
-                    Text(short(p))
-                        .font(.caption2.weight(p == selected ? .bold : .regular))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 3)
-                        .background(p == selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1),
-                                    in: RoundedRectangle(cornerRadius: 5))
+                    HStack(spacing: 3) {
+                        if family != .systemSmall && available.count <= 3 {
+                            ProviderMark(provider: p, size: 12)
+                        }
+                        Text(short(p))
+                            .font(.caption2.weight(p == selected ? .bold : .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(
+                        p == selected ? p.accent.opacity(0.18) : Color.primary.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -158,15 +161,34 @@ struct SwitcherWidgetView: View {
     }
 
     private func compact(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             ForEach(s.compactWindows.prefix(2)) { w in
-                BarLine(title: w.title, percent: w.usedPercent, resetsAt: nil, now: entry.date)
+                WidgetBarLine(window: w, now: entry.date, style: .compact)
             }
-            Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
             Spacer(minLength: 0)
             if let w = s.worstWindow, let reset = w.resetsAt {
-                Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
+        }
+    }
+
+    private func medium(_ s: UsageSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(s.compactWindows.prefix(3)) { w in
+                WidgetBarLine(window: w, now: entry.date, style: .standard)
+            }
+            Text(entry.payload?.status(for: s).label(now: entry.date) ?? "Stale")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
         }
     }
 }

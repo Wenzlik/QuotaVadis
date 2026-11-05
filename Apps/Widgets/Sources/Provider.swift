@@ -2,6 +2,7 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 import QuotaCore
+import QuotaUI
 
 /// Widget configuration: which tool a single-provider widget shows.
 enum ProviderChoice: String, AppEnum {

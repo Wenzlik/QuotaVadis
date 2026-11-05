@@ -1,14 +1,7 @@
 import SwiftUI
 import WidgetKit
 import QuotaCore
-
-func levelColor(_ percent: Double) -> Color {
-    switch UsageLevel(percent) {
-    case .ok: Color(red: 0.16, green: 0.62, blue: 0.36)
-    case .warning: Color(red: 0.85, green: 0.55, blue: 0.05)
-    case .critical: Color(red: 0.88, green: 0.22, blue: 0.22)
-    }
-}
+import QuotaUI
 
 /// The one place a widget says "nothing to show, and here is why". Never a blank tile: a desktop widget that
 /// renders only whitespace is indistinguishable from a broken one, which is exactly how this bug was reported.
@@ -17,13 +10,16 @@ struct WidgetEmptyState: View {
     var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 2 : 4) {
-            HStack(spacing: 4) {
-                Image(systemName: state.symbol).font(compact ? .caption : .body)
-                Text(state.headline).font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+            HStack(spacing: 6) {
+                Image(systemName: state.symbol)
+                    .font(compact ? .caption.weight(.semibold) : .callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(state.headline)
+                    .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
             }
             Text(state.detail)
-                .font(.caption2)
+                .font(compact ? .caption2 : .caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(compact ? 3 : 4)
                 .minimumScaleFactor(0.8)
@@ -91,19 +87,30 @@ struct ProviderWidgetView: View {
 
     private func small(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(s.provider.displayName).font(.caption.weight(.semibold)).lineLimit(1)
+            HStack(spacing: 6) {
+                ProviderMark(provider: s.provider, size: 20)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(s.provider.displayName).font(.caption.weight(.semibold)).lineLimit(1)
+                    if let plan = s.plan {
+                        Text(plan).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+            }
             measurement(s)
             Spacer(minLength: 0)
             if let w = s.worstWindow {
                 Gauge(value: min(1, w.usedPercent / 100)) { EmptyView() } currentValueLabel: {
-                    Text("\(Int(w.usedPercent.rounded()))%").font(.title3.weight(.semibold).monospacedDigit())
+                    Text("\(Int(w.usedPercent.rounded()))%")
+                        .font(.title3.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(usageTint(w.usedPercent))
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
-                .tint(levelColor(w.usedPercent))
+                .tint(usageTint(w.usedPercent))
                 .frame(maxWidth: .infinity)
-                Text("\(w.title) · used").font(.caption2).foregroundStyle(.secondary)
+                Text(w.title).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 if let reset = w.resetsAt {
-                    Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))")
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
         }
@@ -111,15 +118,18 @@ struct ProviderWidgetView: View {
 
     private func medium(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(s.provider.displayName).font(.headline)
-                if let plan = s.plan { Text(plan).font(.caption).foregroundStyle(.secondary) }
+            HStack(spacing: 8) {
+                ProviderMark(provider: s.provider, size: 24)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(s.provider.displayName).font(.headline)
+                    if let plan = s.plan { Text(plan).font(.caption).foregroundStyle(.secondary) }
+                }
                 Spacer()
                 Text(entry.payload?.deviceName ?? "").font(.caption2).foregroundStyle(.tertiary)
             }
             measurement(s)
             ForEach(s.compactWindows.prefix(3)) { w in
-                BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
+                WidgetBarLine(window: w, now: entry.date, style: .standard)
             }
         }
     }
@@ -174,55 +184,150 @@ struct OverviewWidgetView: View {
 
     /// Medium is ~155 pt tall: one line per tool, the highest window only, so three tools always fit.
     private func medium(_ payload: DevicePayload) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(payload.snapshots.prefix(4)) { s in
                 if let w = s.worstWindow {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text("\(s.provider.shortName) · \(payload.status(for: s).freshness(now: entry.date).rawValue)").font(.caption.weight(.semibold))
-                            Text(w.title).font(.caption2).foregroundStyle(.secondary)
-                            Spacer()
-                            if let r = w.resetsAt { Text("\(r, style: .relative) · \(r.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary) }
-                            Text("\(Int(w.usedPercent.rounded()))% used").font(.caption.monospacedDigit()).foregroundStyle(levelColor(w.usedPercent))
-                        }
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(.quaternary)
-                                Capsule().fill(levelColor(w.usedPercent)).frame(width: geo.size.width * min(1, max(0, w.usedPercent / 100)))
-                            }
-                        }
-                        .frame(height: 4)
-                    }
+                    WidgetProviderRow(snapshot: s, window: w, payload: payload, now: entry.date, style: .compact)
                 }
             }
             Spacer(minLength: 0)
-            Text("\(payload.deviceName) · oldest measurement \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+            footerLine(payload)
         }
     }
 
     private func large(_ payload: DevicePayload) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(payload.snapshots.prefix(4)) { s in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("\(s.provider.shortName) · \(payload.status(for: s).freshness(now: entry.date).rawValue)").font(.caption.weight(.semibold))
-                        if let plan = s.plan { Text(plan).font(.caption2).foregroundStyle(.secondary) }
-                        Spacer()
-                        if let w = s.worstWindow, let r = w.resetsAt {
-                            Text("resets \(r, style: .relative) · \(r.resetClockLabel(now: entry.date))").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                    }
-                    ForEach(s.compactWindows.prefix(3)) { w in
-                        BarLine(title: w.title, percent: w.usedPercent, resetsAt: w.resetsAt, now: entry.date)
-                    }
-                }
+                WidgetProviderSection(snapshot: s, payload: payload, now: entry.date)
             }
             Spacer(minLength: 0)
-            Text("\(payload.deviceName) · oldest measurement \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago").font(.caption2).foregroundStyle(.tertiary)
+            footerLine(payload)
+        }
+    }
+
+    private func footerLine(_ payload: DevicePayload) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "desktopcomputer")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text("\(payload.deviceName) · \(payload.snapshots.map(\.fetchedAt).min() ?? .distantPast, style: .relative) ago")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
     }
 }
 
+/// A progress bar line for widgets, using the polished GlowBar from QuotaUI.
+struct WidgetBarLine: View {
+    enum Style { case standard, compact }
+
+    let window: UsageWindow
+    let now: Date
+    var style: Style = .standard
+
+    private var barHeight: CGFloat { style == .compact ? 5 : 7 }
+    private var titleFont: Font { style == .compact ? .caption2 : .caption }
+    private var percentFont: Font { style == .compact ? .caption2.weight(.semibold).monospacedDigit() : .caption.weight(.semibold).monospacedDigit() }
+
+    var body: some View {
+        let pace = window.pace(now: now)
+        let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: nil)
+
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(window.title).font(titleFont)
+                Spacer()
+                if let reset = window.resetsAt {
+                    Text(reset.compactRemainingLabel(now: now))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Text("\(Int(window.usedPercent.rounded()))%")
+                    .font(percentFont)
+                    .riskTextStyle(risk)
+            }
+            GlowBar(percent: window.usedPercent, height: barHeight, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
+        }
+    }
+}
+
+/// A single provider row in the medium overview widget (compact, one bar).
+struct WidgetProviderRow: View {
+    enum Style { case compact, expanded }
+
+    let snapshot: UsageSnapshot
+    let window: UsageWindow
+    let payload: DevicePayload
+    let now: Date
+    var style: Style = .compact
+
+    var body: some View {
+        let pace = window.pace(now: now)
+        let risk = UsageForecast.Risk(usedPercent: window.usedPercent, forecast: nil)
+        let freshness = payload.status(for: snapshot).freshness(now: now)
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: snapshot.provider, size: 16)
+                Text(snapshot.provider.shortName)
+                    .font(.caption.weight(.semibold))
+                if freshness != .fresh {
+                    Text(freshness.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let reset = window.resetsAt {
+                    Text(reset.compactRemainingLabel(now: now))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Text("\(Int(window.usedPercent.rounded()))%")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .riskTextStyle(risk)
+            }
+            GlowBar(percent: window.usedPercent, height: 6, marker: pace?.expectedPercent, tintPercent: riskTintPercent(risk))
+        }
+    }
+}
+
+/// A provider section in the large overview widget (header + multiple bars).
+struct WidgetProviderSection: View {
+    let snapshot: UsageSnapshot
+    let payload: DevicePayload
+    let now: Date
+
+    var body: some View {
+        let freshness = payload.status(for: snapshot).freshness(now: now)
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: snapshot.provider, size: 18)
+                Text(snapshot.provider.shortName)
+                    .font(.subheadline.weight(.semibold))
+                if let plan = snapshot.plan {
+                    Text(plan)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if freshness != .fresh {
+                    Text("· \(freshness.rawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(snapshot.compactWindows.prefix(3)) { w in
+                WidgetBarLine(window: w, now: now, style: .compact)
+            }
+        }
+        .padding(10)
+        .background(snapshot.provider.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// Legacy BarLine for backward compatibility (used in Switcher).
 struct BarLine: View {
     let title: String
     let percent: Double
@@ -230,20 +335,21 @@ struct BarLine: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let risk = UsageForecast.Risk(usedPercent: percent, forecast: nil)
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(title).font(.caption2)
                 Spacer()
-                if let resetsAt { Text("\(resetsAt, style: .relative) · \(resetsAt.resetClockLabel(now: now))").font(.caption2).foregroundStyle(.tertiary).lineLimit(1) }
-                Text("\(Int(percent.rounded()))% used").font(.caption2.monospacedDigit()).foregroundStyle(levelColor(percent))
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(levelColor(percent)).frame(width: geo.size.width * min(1, max(0, percent / 100)))
+                if let resetsAt {
+                    Text(resetsAt.compactRemainingLabel(now: now))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
+                Text("\(Int(percent.rounded()))%")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .riskTextStyle(risk)
             }
-            .frame(height: 4)
+            GlowBar(percent: percent, height: 5, tintPercent: riskTintPercent(risk))
         }
     }
 }
