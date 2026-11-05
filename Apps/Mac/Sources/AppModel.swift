@@ -758,9 +758,14 @@ final class AppModel {
 
     /// Widgets on this Mac read the App Group file; no iCloud round trip.
     private func updateWidgets() {
-        SharedStore.write(currentPayload)
+        let payload = currentPayload
+        widgetLog.info("Writing widget payload: device=\(payload.deviceName) snapshots=\(payload.snapshots.count) updated=\(payload.updatedAt)")
+        SharedStore.write(payload)
         widgetHandoffError = SharedStore.lastError
         widgetHandoffWrittenAt = SharedStore.lastWriteAt
+        if let error = widgetHandoffError {
+            widgetLog.error("Widget handoff failed: \(error)")
+        }
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -799,6 +804,18 @@ final class AppModel {
     private func repairWidgetRegistration(restartExtension force: Bool = false) {
         let bundle = Bundle.main.bundleURL
         guard widgetRepair == nil, WidgetRegistration.isInstalled(bundle), let id = Bundle.main.bundleIdentifier else { return }
+        // Check if the widget extension reports a different version - if so, force restart
+        let extensionVersionMismatch: Bool
+        if let report = SharedStore.widgetExtensionReport {
+            extensionVersionMismatch = report.version != Self.appBuild
+            if extensionVersionMismatch {
+                widgetLog.warning("Widget extension version mismatch: extension=\(report.version) app=\(Self.appBuild)")
+            }
+        } else {
+            extensionVersionMismatch = false
+        }
+        let shouldForce = force || extensionVersionMismatch
+        
         widgetRepair = Task {
             let unregistered = await Task.detached(priority: .background) {
                 let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -809,7 +826,7 @@ final class AppModel {
                     Self.run(lsregister, ["-u", path])
                 }
                 Self.run(lsregister, ["-f", bundle.path])
-                Self.endStaleWidgetExtension(app: bundle, force: force)
+                Self.endStaleWidgetExtension(app: bundle, force: shouldForce)
                 Self.run("/usr/bin/pluginkit", ["-a", bundle.appendingPathComponent("Contents/PlugIns/QuotaWidgets-Mac.appex").path])
                 WidgetCenter.shared.reloadAllTimelines()
                 return toUnregister
@@ -831,15 +848,25 @@ final class AppModel {
     /// The build is remembered only once every targeted process is gone, so a failure is retried on the next launch.
     private nonisolated static func endStaleWidgetExtension(app: URL, force: Bool) {
         let build = appBuild
+        let lastSeen = UserDefaults.standard.string(forKey: lastSeenBuildKey)
         var info = stat()
         let binary = WidgetExtensionProcess.executable(inApp: app)
         let changedAt = stat(binary, &info) == 0
             ? Date(timeIntervalSince1970: TimeInterval(info.st_ctimespec.tv_sec) + TimeInterval(info.st_ctimespec.tv_nsec) / 1e9) : nil
+        let report = SharedStore.widgetExtensionReport
+        let running = runningProcesses()
         let stale = WidgetExtensionProcess.toRestart(
-            runningProcesses(), uid: getuid(), executable: binary, appVersion: build, lastSeenAppVersion: UserDefaults.standard.string(forKey: lastSeenBuildKey),
-            binaryChangedAt: changedAt, report: SharedStore.widgetExtensionReport, force: force)
+            running, uid: getuid(), executable: binary, appVersion: build, lastSeenAppVersion: lastSeen,
+            binaryChangedAt: changedAt, report: report, force: force)
+        widgetLog.info("Widget extension restart check: build=\(build) lastSeen=\(lastSeen ?? "nil") force=\(force) runningCount=\(running.count) staleCount=\(stale.count)")
+        if let report {
+            widgetLog.info("Widget extension report: pid=\(report.pid) version=\(report.version) started=\(report.startedAt)")
+        }
         var ended = true
-        for process in stale where !end(process) { ended = false }
+        for process in stale {
+            widgetLog.notice("Restarting stale widget extension: pid=\(process.pid) path=\(process.path ?? "unknown")")
+            if !end(process) { ended = false }
+        }
         if ended { UserDefaults.standard.set(build, forKey: lastSeenBuildKey) }
     }
 

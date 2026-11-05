@@ -162,7 +162,7 @@ struct SwitcherWidgetView: View {
 
     private func compact(_ s: UsageSnapshot) -> some View {
         let worstID = s.worstWindow?.id
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 3) {
             ForEach(s.compactWindows.prefix(2)) { w in
                 WidgetBarLine(window: w, now: entry.date, style: w.id == worstID ? .compact : .mini)
             }
@@ -172,7 +172,7 @@ struct SwitcherWidgetView: View {
                 .lineLimit(2)
             Spacer(minLength: 0)
             if let w = s.worstWindow, let reset = w.resetsAt {
-                Text("resets \(reset, style: .relative) · \(reset.resetClockLabel(now: entry.date))")
+                Text("resets \(reset.compactRemainingLabel(now: entry.date)) · \(reset.resetClockLabel(now: entry.date))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
