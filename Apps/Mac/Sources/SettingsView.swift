@@ -256,11 +256,19 @@ struct SettingsView: View {
                 MenuBarPreview(model: model)
             }
             Section {
-                Toggle("Observatory mode", isOn: $model.observatoryModeEnabled)
+                Picker("Theme", selection: $model.appTheme) {
+                    ForEach(AppTheme.allCases, id: \.self) { Text(verbatim: $0.displayName).tag($0) }
+                }
+                if model.appTheme == .auto {
+                    Text(model.autoThemeExplanation).font(.caption).foregroundStyle(.secondary)
+                }
+                if model.resolvedTheme == .goodLimits {
+                    GoodLimitsWordmark(size: 15)
+                }
             } header: {
                 Text("Visual theme")
             } footer: {
-                Text("A space-inspired look for the popover and cards. Inspired by Aether's Observatory aesthetic. Composes with your existing layout and main-bar choices.")
+                Text("Auto uses GoodLimits.ai when a tracked account belongs to GoodData, otherwise the default look; GoodLimits.ai also styles the widgets. Observatory is a space-inspired look for the popover and cards. Themes compose with your layout and main-bar choices.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Menu bar") {

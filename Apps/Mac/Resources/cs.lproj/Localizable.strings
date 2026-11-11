@@ -6,3 +6,13 @@
 /* Settings ▸ iCloud & Updates ▸ Widgets, shown only while an extension process from before an update still runs. */
 "The widget is still running build %@ from before the update." = "Widget pořád běží v buildu %@ z doby před aktualizací.";
 "Restart widget" = "Restartovat widget";
+
+/* Settings ▸ Menu Bar ▸ Visual theme. Theme names (Auto, Default, Observatory, GoodLimits.ai) stay untranslated. */
+"Visual theme" = "Vzhled aplikace";
+"Theme" = "Motiv";
+"Auto: GoodLimits.ai (GoodData account detected)" = "Auto: GoodLimits.ai (zjištěn účet GoodData)";
+"Auto: Default (no GoodData account detected)" = "Auto: Default (účet GoodData nezjištěn)";
+"Auto uses GoodLimits.ai when a tracked account belongs to GoodData, otherwise the default look; GoodLimits.ai also styles the widgets. Observatory is a space-inspired look for the popover and cards. Themes compose with your layout and main-bar choices." = "Auto použije GoodLimits.ai, když některý sledovaný účet patří GoodData, jinak výchozí vzhled; GoodLimits.ai se projeví i ve widgetech. Observatory je vesmírný vzhled panelu a karet. Motivy nemění rozložení ani volbu hlavního pruhu.";
+
+/* About window under the GoodLimits.ai theme. */
+"A QuotaVadis theme · %@" = "Motiv aplikace QuotaVadis · %@";

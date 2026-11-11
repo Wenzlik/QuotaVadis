@@ -36,7 +36,7 @@ struct QuotaVadisApp: App {
         .windowResizability(.contentMinSize)
 
         Window("About QuotaVadis", id: "about") {
-            AboutView(updater: updater)
+            AboutView(updater: updater, model: model)
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
