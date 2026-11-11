@@ -69,6 +69,17 @@ struct ProviderWidgetView: View {
         theme == .goodLimits ? GoodLimitsTheme.usageFill(percent) : usageTint(percent)
     }
 
+    /// The gauge's percentage. GoodLimits.ai uses the text-contrast risk shades (e.g. #B34700, not the #FC7B12
+    /// fill, on its white tile); Default and Observatory keep the fill colour as before.
+    @ViewBuilder private func gaugeLabel(_ percent: Double) -> some View {
+        let text = Text("\(Int(percent.rounded()))%").font(.title3.weight(.semibold).monospacedDigit())
+        if theme == .goodLimits {
+            text.riskTextStyle(UsageForecast.Risk(usedPercent: percent, forecast: nil))
+        } else {
+            text.foregroundStyle(usageTint(percent))
+        }
+    }
+
     var body: some View {
         // `state` also covers "there is a payload, but this tool has no window to draw" — the case that used
         // to slip past every `if let` below and leave the tile blank.
@@ -116,9 +127,7 @@ struct ProviderWidgetView: View {
             Spacer(minLength: 0)
             if let w = s.worstWindow {
                 Gauge(value: min(1, w.usedPercent / 100)) { EmptyView() } currentValueLabel: {
-                    Text("\(Int(w.usedPercent.rounded()))%")
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(gaugeTint(w.usedPercent))
+                    gaugeLabel(w.usedPercent)
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
                 .tint(gaugeTint(w.usedPercent))
