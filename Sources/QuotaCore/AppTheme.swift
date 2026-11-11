@@ -26,6 +26,13 @@ public enum AppTheme: String, CaseIterable, Codable, Sendable {
         return GoodDataAccountDetector.isGoodData(snapshots) ? .goodLimits : .standard
     }
 
+    /// Whether the GoodLimits.ai app icon should show. nil = no evidence yet (Auto with nothing read, e.g. at launch
+    /// or while a refresh empties the list): keep whatever icon is showing, so it does not flip back and forth.
+    public func wantsGoodLimitsIcon(for snapshots: [UsageSnapshot]) -> Bool? {
+        if self == .auto && snapshots.isEmpty { return nil }
+        return resolved(for: snapshots) == .goodLimits
+    }
+
     /// The stored choice. No choice yet: whoever had turned the old Observatory toggle on keeps Observatory,
     /// everyone else gets Auto.
     public static func stored(in defaults: UserDefaults) -> AppTheme {

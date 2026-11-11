@@ -105,6 +105,8 @@ targets:
         PRODUCT_NAME: QuotaVadis
         PRODUCT_BUNDLE_IDENTIFIER: cz.zmrhal.QuotaVadis
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # GoodLimits.ai theme: switched at runtime with setAlternateIconName; AppIcon stays the primary icon.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: GoodLimitsIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_IDENTITY: "Apple Development"
   quotavadis-cli:

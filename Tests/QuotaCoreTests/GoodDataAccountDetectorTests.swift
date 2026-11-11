@@ -74,6 +74,15 @@ struct AppThemeTests {
         }
     }
 
+    @Test func iconDecisionWaitsForEvidenceUnderAuto() {
+        #expect(AppTheme.auto.wantsGoodLimitsIcon(for: []) == nil)
+        #expect(AppTheme.auto.wantsGoodLimitsIcon(for: gooddata) == true)
+        #expect(AppTheme.auto.wantsGoodLimitsIcon(for: other) == false)
+        #expect(AppTheme.goodLimits.wantsGoodLimitsIcon(for: []) == true)
+        #expect(AppTheme.observatory.wantsGoodLimitsIcon(for: gooddata) == false)
+        #expect(AppTheme.standard.wantsGoodLimitsIcon(for: []) == false)
+    }
+
     private func freshDefaults() -> UserDefaults {
         let name = "AppThemeTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
