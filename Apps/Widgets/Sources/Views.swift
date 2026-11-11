@@ -188,7 +188,6 @@ struct OverviewWidget: Widget {
 
 struct OverviewWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    @Environment(\.appTheme) private var theme
     let entry: QuotaEntry
 
     var body: some View {
@@ -239,12 +238,6 @@ struct OverviewWidgetView: View {
 
     private func footerLine(_ payload: DevicePayload) -> some View {
         HStack(spacing: 4) {
-            if theme == .goodLimits {
-                GoodDataSymbol()
-                    .fill(GoodLimitsTheme.accent)
-                    .frame(width: 11 * GoodDataSymbol.aspectRatio, height: 11)
-                    .accessibilityHidden(true)
-            }
             #if os(macOS)
             Image(systemName: "desktopcomputer")
                 .font(.caption)
