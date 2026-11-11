@@ -27,15 +27,10 @@ public enum GoodLimitsTheme {
     public static var background: Color { color(light: white, dark: black) }
     /// Background Gray 1: cards.
     public static var card: Color { color(light: gray50, dark: gray800) }
-    /// Background Gray 2: raised or selected surfaces.
-    public static var surface: Color { color(light: gray100, dark: gray700) }
     public static var border: Color { color(light: gray150, dark: gray400) }
     public static var textPrimary: Color { color(light: black, dark: white) }
-    public static var textSecondary: Color { color(light: gray700, dark: gray150) }
-    public static var link: Color { color(light: 0x285D92, dark: 0xCDE2F7) }
     /// The spiral and other accents: black on light, Lime on dark.
     public static var accent: Color { color(light: black, dark: lime) }
-    public static var limeFill: Color { color(light: lime, dark: lime) }
 
     // Bars: black (light) / Lime (dark) while fine, status 200 colours once the limit is at risk.
     /// Fill for a usage percentage, for gauges and other non-bar marks.
