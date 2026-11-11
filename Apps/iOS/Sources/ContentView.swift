@@ -35,6 +35,10 @@ struct ContentView: View {
         .avoidsReservedRegions(includingFold: false)
         // Auto follows the Mac being shown, the same payload the widgets resolve it from.
         .environment(\.appTheme, appTheme.resolved(for: store.selectedDevice?.snapshots ?? []))
+        // Fires only when the answer changes, not on every refresh; nil (nothing read yet) keeps the icon.
+        .onChange(of: appTheme.wantsGoodLimitsIcon(for: store.selectedDevice?.snapshots ?? []), initial: true) { _, wanted in
+            AppIconSwitcher.apply(goodLimits: wanted)
+        }
     }
 }
 
