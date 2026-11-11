@@ -166,7 +166,17 @@ final class AppModel {
             defaults.set(appTheme.rawValue, forKey: AppTheme.storageKey)
             SharedStore.appTheme = appTheme
             WidgetCenter.shared.reloadAllTimelines()
+            syncAppIcon()
         }
+    }
+
+    /// GoodLimits.ai icon in the Dock and ⌘-Tab while that theme is resolved. Only touches NSApp when the answer
+    /// changes, and keeps the current icon while Auto has nothing to go on yet.
+    private func syncAppIcon() {
+        guard let wanted = appTheme.wantsGoodLimitsIcon(for: visibleInstances.compactMap { states[$0.id]?.snapshot }) else { return }
+        let controller = WindowActivationController.shared
+        guard wanted != (controller.iconOverride != nil) else { return }
+        controller.iconOverride = wanted ? NSImage(named: "GoodLimitsIcon") : nil
     }
     /// What is drawn: a manual choice as is, Auto against the snapshots this Mac shows (the same set the widget
     /// payload carries, so the panel and the widgets agree).
@@ -356,6 +366,7 @@ final class AppModel {
         if hasOnboarded { Task { await refresh() } }
         claudeSignIn.onConnected = { [weak self] in self?.claudeDidConnect() }
         repairWidgetRegistration()
+        syncAppIcon()   // a manual GoodLimits.ai choice applies before the first refresh
     }
 
     /// False until the welcome flow is finished. Until then nothing reads a provider, scans logs or publishes
@@ -774,6 +785,7 @@ final class AppModel {
 
     /// Widgets on this Mac read the App Group file; no iCloud round trip.
     private func updateWidgets() {
+        syncAppIcon()   // every states change ends here, so Auto's result is followed without a separate observer
         let payload = currentPayload
         widgetLog.info("Writing widget payload: device=\(payload.deviceName) snapshots=\(payload.snapshots.count) updated=\(payload.updatedAt)")
         SharedStore.write(payload)
