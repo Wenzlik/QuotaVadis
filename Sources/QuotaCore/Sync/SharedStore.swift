@@ -35,6 +35,13 @@ public enum SharedStore {
     /// failed on. Falls back to the process's own defaults when the suite is unavailable (no entitlement).
     static var sharedDefaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 
+    /// The Settings theme choice (Auto included, not resolved), mirrored by the app for its widgets. Each widget
+    /// resolves Auto from the payload it already reads, so the app and its widgets agree without another write.
+    public static var appTheme: AppTheme {
+        get { AppTheme.stored(in: sharedDefaults) }
+        set { sharedDefaults.set(newValue.rawValue, forKey: AppTheme.storageKey) }
+    }
+
     static let errorKey = "sharedStoreError"
     static let writtenAtKey = "sharedStoreWrittenAt"
 
