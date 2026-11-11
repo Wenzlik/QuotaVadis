@@ -26,7 +26,7 @@ struct FixedProviderWidget {
 
     @MainActor var configuration: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: FixedProviderTimelineProvider(provider: provider)) { entry in
-            ProviderWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            ProviderWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         // Plain strings only: an interpolated literal becomes a formatted LocalizedStringKey, which WidgetKit
         // rejects with a fatal error ("Formatted text for `description` is not supported").
@@ -91,7 +91,7 @@ struct SwitcherTimelineProvider: TimelineProvider {
 struct SwitcherWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "cz.zmrhal.QuotaVadis.switcher", provider: SwitcherTimelineProvider()) { entry in
-            SwitcherWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            SwitcherWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         .configurationDisplayName("Switcher")
         .description("All tools in one compact widget. Tap a tab to switch.")

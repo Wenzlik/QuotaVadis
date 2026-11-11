@@ -3,6 +3,17 @@ import WidgetKit
 import QuotaCore
 import QuotaUI
 
+extension View {
+    /// Theme from the Settings choice the app mirrors into the App Group, Auto resolved against the payload this
+    /// widget already read. Only GoodLimits.ai restyles widgets; Observatory never did and still does not.
+    func widgetTheme(_ payload: DevicePayload?) -> some View {
+        let theme = SharedStore.appTheme.resolved(for: payload?.snapshots ?? [])
+        return environment(\.appTheme, theme)
+            .containerBackground(theme == .goodLimits ? AnyShapeStyle(GoodLimitsTheme.background) : AnyShapeStyle(.background),
+                                 for: .widget)
+    }
+}
+
 /// The one place a widget says "nothing to show, and here is why". Never a blank tile: a desktop widget that
 /// renders only whitespace is indistinguishable from a broken one, which is exactly how this bug was reported.
 struct WidgetEmptyState: View {
@@ -33,7 +44,7 @@ struct WidgetEmptyState: View {
 struct ProviderWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "cz.zmrhal.QuotaVadis.provider", intent: ProviderIntent.self, provider: ProviderTimelineProvider()) { entry in
-            ProviderWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            ProviderWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         .configurationDisplayName("Tool usage")
         .description("How much of one tool's quota is used.")
@@ -51,7 +62,12 @@ struct ProviderWidget: Widget {
 
 struct ProviderWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.appTheme) private var theme
     let entry: QuotaEntry
+
+    private func gaugeTint(_ percent: Double) -> Color {
+        theme == .goodLimits ? GoodLimitsTheme.usageFill(percent) : usageTint(percent)
+    }
 
     var body: some View {
         // `state` also covers "there is a payload, but this tool has no window to draw" — the case that used
@@ -102,10 +118,10 @@ struct ProviderWidgetView: View {
                 Gauge(value: min(1, w.usedPercent / 100)) { EmptyView() } currentValueLabel: {
                     Text("\(Int(w.usedPercent.rounded()))%")
                         .font(.title3.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(usageTint(w.usedPercent))
+                        .foregroundStyle(gaugeTint(w.usedPercent))
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
-                .tint(usageTint(w.usedPercent))
+                .tint(gaugeTint(w.usedPercent))
                 .frame(maxWidth: .infinity)
                 Text(w.title).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 if let reset = w.resetsAt {
@@ -162,7 +178,7 @@ struct ProviderWidgetView: View {
 struct OverviewWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "cz.zmrhal.QuotaVadis.overview", provider: OverviewTimelineProvider()) { entry in
-            OverviewWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            OverviewWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         .configurationDisplayName("All tools")
         .description("Claude Code, Codex and Cursor side by side. Limits only, no cost estimates.")
@@ -172,6 +188,7 @@ struct OverviewWidget: Widget {
 
 struct OverviewWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.appTheme) private var theme
     let entry: QuotaEntry
 
     var body: some View {
@@ -222,6 +239,12 @@ struct OverviewWidgetView: View {
 
     private func footerLine(_ payload: DevicePayload) -> some View {
         HStack(spacing: 4) {
+            if theme == .goodLimits {
+                GoodDataSymbol()
+                    .fill(GoodLimitsTheme.accent)
+                    .frame(width: 11 * GoodDataSymbol.aspectRatio, height: 11)
+                    .accessibilityHidden(true)
+            }
             #if os(macOS)
             Image(systemName: "desktopcomputer")
                 .font(.caption)

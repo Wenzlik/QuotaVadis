@@ -92,7 +92,7 @@ struct PaceTimelineProvider: TimelineProvider {
 struct PaceWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "cz.zmrhal.QuotaVadis.pace", provider: PaceTimelineProvider()) { entry in
-            PaceWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            PaceWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         .configurationDisplayName("Quota pace")
         .description("See whether a provider's quota lasts until it resets.")

@@ -38,6 +38,8 @@ public enum GoodLimitsTheme {
     public static var limeFill: Color { color(light: lime, dark: lime) }
 
     // Bars: black (light) / Lime (dark) while fine, status 200 colours once the limit is at risk.
+    /// Fill for a usage percentage, for gauges and other non-bar marks.
+    public static func usageFill(_ percent: Double) -> Color { barFill(UsageLevel(percent)) }
     static var barTrack: Color { color(light: gray100, dark: gray700) }
     static func barFill(_ level: UsageLevel) -> Color {
         switch level {
