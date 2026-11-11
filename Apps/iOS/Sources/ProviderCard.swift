@@ -12,7 +12,6 @@ struct ProviderCard: View {
     var primaryWindowID: String?
     /// Off where tapping selects in place instead of pushing (two panes).
     var showsChevron = true
-    @AppStorage("observatoryModeEnabled") private var isObservatory = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -59,6 +58,6 @@ struct ProviderCard: View {
             }
         }
         .padding(16)
-        .observatoryCard(snapshot.provider.accent, cornerRadius: 22, isObservatory: isObservatory)
+        .themedCard(snapshot.provider.accent, cornerRadius: 22)
     }
 }
