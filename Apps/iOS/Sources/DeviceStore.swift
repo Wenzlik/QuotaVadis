@@ -108,6 +108,8 @@ final class DeviceStore {
                                   warned: Set(d.stringArray(forKey: "warnedKeys") ?? []),
                                   creditBaseline: d.dictionary(forKey: "creditBaseline") as? [String: Double] ?? [:])
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
+        // The old Observatory toggle becomes the theme picker's choice; the widgets get a copy in the App Group.
+        SharedStore.appTheme = AppTheme.migrate(d)
         primaryWindowIDs = d.dictionary(forKey: "primaryWindowIDs") as? [String: String] ?? [:]
         // Last known payloads so the app opens with content offline.
         if let data = try? Data(contentsOf: Self.cacheURL),

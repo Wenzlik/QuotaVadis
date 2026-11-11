@@ -9,7 +9,8 @@ struct MenuPanel: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
-    private var isObservatory: Bool { model.observatoryModeEnabled }
+    private var theme: AppTheme { model.resolvedTheme }
+    private var isObservatory: Bool { theme == .observatory }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -49,7 +50,8 @@ struct MenuPanel: View {
             footer
         }
         .frame(width: 360)
-        .observatoryPanelBackground(isObservatory: isObservatory)
+        .themedPanelBackground()
+        .environment(\.appTheme, theme)
         .onAppear { model.panelOpened() }
     }
 
@@ -61,10 +63,14 @@ struct MenuPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage).resizable().frame(width: 22, height: 22)
-            Text("QuotaVadis")
-                .font(.headline)
-                .foregroundStyle(isObservatory ? ObservatoryTheme.starlight : .primary)
+            if theme == .goodLimits {
+                GoodLimitsWordmark(size: 14)
+            } else {
+                Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage).resizable().frame(width: 22, height: 22)
+                Text("QuotaVadis")
+                    .font(.headline)
+                    .foregroundStyle(isObservatory ? ObservatoryTheme.starlight : .primary)
+            }
             Spacer()
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
@@ -83,7 +89,7 @@ struct MenuPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .observatoryChromeBackground(isObservatory: isObservatory)
+        .themedChromeBackground()
     }
 
     private var setupPrompt: some View {
@@ -118,7 +124,7 @@ struct MenuPanel: View {
                 .buttonStyle(.borderedProminent).controlSize(.small).tint(ProviderID.claude.accent)
         }
         .padding(14)
-        .observatoryCard(ProviderID.claude.accent, isObservatory: isObservatory)
+        .themedCard(ProviderID.claude.accent)
     }
 
     /// Existing installs reading Claude Code's item: one dismissible suggestion, never a forced migration.
@@ -135,12 +141,20 @@ struct MenuPanel: View {
                 .buttonStyle(.borderless).accessibilityLabel("Dismiss")
         }
         .padding(10)
-        .background(isObservatory ? ObservatoryTheme.cardSurface : ProviderID.claude.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(tipBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             if isObservatory {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(ProviderID.claude.accent.opacity(0.3), lineWidth: 1)
             }
+        }
+    }
+
+    private var tipBackground: Color {
+        switch theme {
+        case .observatory: ObservatoryTheme.cardSurface
+        case .goodLimits: GoodLimitsTheme.card
+        case .auto, .standard: ProviderID.claude.accent.opacity(0.08)
         }
     }
 
@@ -164,7 +178,7 @@ struct MenuPanel: View {
                 }
             }
             .padding(14)
-            .observatoryCard(instance.provider.accent, isObservatory: isObservatory)
+            .themedCard(instance.provider.accent)
             .contextMenu {
                 Button("View details") { bringToFront { openWindow(id: "dashboard", value: instance.id) } }
                 if let windows = model.states[instance.id]?.snapshot?.windows, windows.count > 1 {
@@ -187,7 +201,7 @@ struct MenuPanel: View {
             Text("Reading limits…").font(.caption).foregroundStyle(.secondary)
         }
         .padding(14)
-        .observatoryCard(instance.provider.accent, isObservatory: isObservatory)
+        .themedCard(instance.provider.accent)
         .accessibilityElement(children: .combine)
     }
 
@@ -233,7 +247,7 @@ struct MenuPanel: View {
         .font(.callout)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .observatoryChromeBackground(isObservatory: isObservatory)
+        .themedChromeBackground()
     }
 }
 

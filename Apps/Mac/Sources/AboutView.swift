@@ -1,9 +1,12 @@
 import SwiftUI
 import QuotaCore
+import QuotaUI
 
 /// About window: name, version, author, links. Opened from the panel footer.
 struct AboutView: View {
     var updater: Updater
+    let model: AppModel
+    private var isGoodLimits: Bool { model.resolvedTheme == .goodLimits }
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -13,12 +16,22 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            // Read straight from the asset catalog; NSApp.applicationIconImage can serve a stale cached icon.
-            Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
-            Text("QuotaVadis").font(.title2.weight(.semibold))
-            Text(version).font(.caption).foregroundStyle(.secondary)
+            if isGoodLimits {
+                GoodDataSymbol()
+                    .fill(GoodLimitsTheme.accent)
+                    .frame(width: 72 * GoodDataSymbol.aspectRatio, height: 72)
+                    .padding(12)
+                    .accessibilityHidden(true)
+                Text(verbatim: GoodLimitsTheme.name).font(.title2.weight(.semibold)).tracking(-0.3)
+                Text("A QuotaVadis theme · \(version)").font(.caption).foregroundStyle(.secondary)
+            } else {
+                // Read straight from the asset catalog; NSApp.applicationIconImage can serve a stale cached icon.
+                Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                Text("QuotaVadis").font(.title2.weight(.semibold))
+                Text(version).font(.caption).foregroundStyle(.secondary)
+            }
             Button("Check for Updates…") { updater.check() }.controlSize(.small).disabled(!updater.canCheck)
             Text("Your AI coding limits, at a glance.")
                 .font(.callout)
@@ -37,5 +50,7 @@ struct AboutView: View {
         }
         .padding(24)
         .frame(width: 320)
+        // GoodLimits.ai only: Observatory never styled this window.
+        .background { if isGoodLimits { GoodLimitsTheme.background.ignoresSafeArea() } }
     }
 }

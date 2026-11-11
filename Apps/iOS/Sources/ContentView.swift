@@ -1,10 +1,12 @@
 import SwiftUI
 import QuotaCore
 import QuotaUI
+import WidgetKit
 
 struct ContentView: View {
     @Bindable var store: DeviceStore
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
+    @AppStorage(AppTheme.storageKey) private var appTheme: AppTheme = .auto
     @Environment(\.scenePhase) private var scenePhase
     /// One clock for the badge and the summary card, so the two never disagree as measurements age. Plain state ticked
     /// by a task, not a TimelineView: one wrapped around the TabView (navigation stacks, badge) re-rendered without
@@ -31,6 +33,12 @@ struct ContentView: View {
         // The tab bar too stays off the Duo's side status column. The fold is left to each tab's own content, so the
         // two panes are not squeezed onto one half.
         .avoidsReservedRegions(includingFold: false)
+        // Auto follows the Mac being shown, the same payload the widgets resolve it from.
+        .environment(\.appTheme, appTheme.resolved(for: store.selectedDevice?.snapshots ?? []))
+        // Fires only when the answer changes, not on every refresh; nil (nothing read yet) keeps the icon.
+        .onChange(of: appTheme.wantsGoodLimitsIcon(for: store.selectedDevice?.snapshots ?? []), initial: true) { _, wanted in
+            AppIconSwitcher.apply(goodLimits: wanted)
+        }
     }
 }
 
@@ -41,7 +49,7 @@ struct OverviewView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
-    @AppStorage("observatoryModeEnabled") private var isObservatory = false
+    @Environment(\.appTheme) private var theme
     /// Provider instance IDs. One column: the pushed detail. Two panes: the last one is the selection. Shared, so a
     /// fold or unfold keeps the provider: a provider picked on the inner display opens pushed on the outer one.
     @State private var path: [String] = []
@@ -140,7 +148,7 @@ struct OverviewView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(16)
-                            .observatoryCard(status.provider.accent, cornerRadius: 18, isObservatory: isObservatory)
+                            .themedCard(status.provider.accent, cornerRadius: 18)
                         }
                         if device.snapshots.isEmpty && (device.providerStatuses ?? []).isEmpty {
                             Text("No tools shared by this Mac. Enable tools in QuotaVadis Settings on your Mac.")
@@ -155,14 +163,22 @@ struct OverviewView: View {
                     // A wide window with nothing to show beside the list keeps it readable.
                     .readableWidth(680)
                 }
-                .background(isObservatory ? ObservatoryTheme.panelBackground : Color(.systemGroupedBackground))
+                .background(theme.backdrop ?? Color(.systemGroupedBackground))
             } else {
                 ScrollView { EmptyStateView(store: store).readableWidth(480).frame(minHeight: 420) }
-                    .background(isObservatory ? ObservatoryTheme.panelBackground : Color(.systemGroupedBackground))
+                    .background(theme.backdrop ?? Color(.systemGroupedBackground))
             }
         }
-        .navigationTitle("QuotaVadis")
+        .navigationTitle(theme == .goodLimits ? GoodLimitsTheme.name : "QuotaVadis")
         .toolbar {
+            if theme == .goodLimits {
+                ToolbarItem(placement: .topBarLeading) {
+                    GoodDataSymbol()
+                        .fill(GoodLimitsTheme.accent)
+                        .frame(width: 22 * GoodDataSymbol.aspectRatio, height: 22)
+                        .accessibilityHidden(true)
+                }
+            }
             if !store.devices.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) { devicePicker }
             }
@@ -174,7 +190,8 @@ struct OverviewView: View {
     @ViewBuilder private var riskSummary: some View {
         if let summary = store.riskSummary(now: now) {
             RiskSummaryCard(summary: summary, now: now)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(theme == .goodLimits ? GoodLimitsTheme.card : Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
@@ -242,7 +259,8 @@ struct EmptyStateView: View {
 struct IOSSettingsView: View {
     @Bindable var store: DeviceStore
     @AppStorage("riskSummaryPlacement") private var riskPlacement: RiskSummaryPlacement = .bottom
-    @AppStorage("observatoryModeEnabled") private var observatoryModeEnabled = false
+    @AppStorage(AppTheme.storageKey) private var appTheme: AppTheme = .auto
+    @Environment(\.appTheme) private var resolvedTheme
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -288,9 +306,23 @@ struct IOSSettingsView: View {
                 }
                 
                 Section {
-                    Toggle("Observatory mode", isOn: $observatoryModeEnabled)
+                    Picker("Theme", selection: $appTheme) {
+                        ForEach(AppTheme.allCases, id: \.self) { Text(verbatim: $0.displayName).tag($0) }
+                    }
+                    if appTheme == .auto {
+                        Text(resolvedTheme == .goodLimits ? "Auto: GoodLimits.ai (GoodData account detected)"
+                                                          : "Auto: Default (no GoodData account detected)")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if resolvedTheme == .goodLimits {
+                        GoodLimitsWordmark(size: 17)
+                    }
                 } header: { Text("Visual theme") } footer: {
-                    Text("A space-inspired look for cards. Inspired by Aether's Observatory aesthetic. Composes with your existing layout choices.")
+                    Text("Auto uses GoodLimits.ai when an account shared by the selected Mac belongs to GoodData, otherwise the default look; GoodLimits.ai also styles the widgets. Observatory is a space-inspired look for cards. Themes compose with your layout choices.")
+                }
+                .onChange(of: appTheme) { _, theme in
+                    SharedStore.appTheme = theme
+                    WidgetCenter.shared.reloadAllTimelines()
                 }
 
                 Section {

@@ -74,8 +74,17 @@ public func riskTintPercent(_ risk: UsageForecast.Risk) -> Double {
 /// the bars: ≥ 4.5:1 on the grey popover glass (#e5e5ea light, #3a3a3c–#48484a dark), the bar colours are not.
 struct RiskTextStyle: ViewModifier {
     let risk: UsageForecast.Risk
+    @Environment(\.appTheme) private var theme
 
     func body(content: Content) -> some View {
+        if theme == .goodLimits {
+            content.foregroundStyle(GoodLimitsTheme.riskText(risk))
+        } else {
+            standard(content)
+        }
+    }
+
+    @ViewBuilder private func standard(_ content: Content) -> some View {
         switch risk {
         case .safe: content.foregroundStyle(adaptiveColor(light: (0.08, 0.45, 0.24), dark: (0.36, 0.82, 0.52)))
         case .watch: content.foregroundStyle(adaptiveColor(light: (0.55, 0.31, 0.00), dark: (1.00, 0.76, 0.40)))
@@ -94,11 +103,20 @@ public struct GlowBar: View {
     let height: CGFloat
     let marker: Double?
     let tintPercent: Double?
+    @Environment(\.appTheme) private var theme
     public init(percent: Double, height: CGFloat = 7, marker: Double? = nil, tintPercent: Double? = nil) {
         self.percent = percent; self.height = height; self.marker = marker; self.tintPercent = tintPercent
     }
 
     public var body: some View {
+        if theme == .goodLimits {
+            GoodLimitsBar(percent: percent, height: height, marker: marker, tintPercent: tintPercent)
+        } else {
+            standardBody
+        }
+    }
+
+    @ViewBuilder private var standardBody: some View {
         let tint = usageTint(tintPercent ?? percent)
         GeometryReader { geo in
             ZStack(alignment: .leading) {

@@ -19,6 +19,13 @@ final class WindowActivationController {
         }
     }
 
+    /// Dock / ⌘-Tab icon for the running app (GoodLimits.ai theme); nil = the bundle's AppIcon. Runtime only: the
+    /// Finder icon of the signed bundle never changes. Re-applied after going regular, so the Dock tile that appears
+    /// when a window opens shows it too.
+    var iconOverride: NSImage? {
+        didSet { NSApp.applicationIconImage = iconOverride }
+    }
+
     /// Re-derive the activation policy from the windows currently open.
     func update() {
         // Hiding (⌘H) orders every window out; the app must stay in ⌘-Tab to be unhidden.
@@ -36,6 +43,7 @@ final class WindowActivationController {
         let policy: NSApplication.ActivationPolicy = regular ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
+        if regular, let iconOverride { NSApp.applicationIconImage = iconOverride }
     }
 
     /// A real app window: titled, not a panel/popover/alert/sheet, not the status item or MenuBarExtra panel.

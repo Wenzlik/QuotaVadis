@@ -26,7 +26,11 @@ struct CursorCredentials: Sendable {
         guard let token = try readValue(key: "cursorAuth/accessToken"), !token.isEmpty else {
             throw ProviderError.notLoggedIn
         }
-        return try parse(token: token)
+        let creds = try parse(token: token)
+        guard creds.email == nil else { return creds }
+        // Cursor's token does not always carry an email claim; the same local database caches it next to the token.
+        let cached = (try? readValue(key: "cursorAuth/cachedEmail")).flatMap { $0 }
+        return CursorCredentials(accessToken: creds.accessToken, userID: creds.userID, email: cached, expiresAt: creds.expiresAt)
         #else
         throw ProviderError.notInstalled
         #endif

@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import QuotaCore
+import QuotaUI
 
 // MARK: - Pace Chart
 
@@ -10,6 +11,11 @@ struct PaceChart: View {
     let usedFraction: Double
     var lineColor: Color = .white
     var idealColor: Color = .white.opacity(0.4)
+    @Environment(\.appTheme) private var theme
+
+    /// GoodLimits.ai's tile is solid white in light mode, where the white ideal line would vanish.
+    /// Default and Observatory keep their original colour.
+    private var ideal: Color { theme == .goodLimits ? .primary.opacity(0.4) : idealColor }
 
     var body: some View {
         GeometryReader { geo in
@@ -28,7 +34,7 @@ struct PaceChart: View {
             path.move(to: CGPoint(x: 0, y: h))
             path.addLine(to: CGPoint(x: w, y: 0))
         }
-        .stroke(idealColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+        .stroke(ideal, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
     }
 
     private func usageLine(w: CGFloat, h: CGFloat) -> some View {
@@ -92,7 +98,7 @@ struct PaceTimelineProvider: TimelineProvider {
 struct PaceWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "cz.zmrhal.QuotaVadis.pace", provider: PaceTimelineProvider()) { entry in
-            PaceWidgetView(entry: entry).containerBackground(.background, for: .widget)
+            PaceWidgetView(entry: entry).widgetTheme(entry.payload)
         }
         .configurationDisplayName("Quota pace")
         .description("See whether a provider's quota lasts until it resets.")
@@ -112,6 +118,7 @@ struct PaceWidget: Widget {
 
 struct PaceWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.appTheme) private var theme
     let entry: PaceEntry
 
     var body: some View {
@@ -294,7 +301,8 @@ struct PaceWidgetView: View {
     private func paceColor(_ pace: UsagePace) -> Color {
         switch pace.status {
         case .under: Color(red: 0.16, green: 0.62, blue: 0.36)
-        case .onPace: .white
+        // White as before in Default/Observatory; .primary under GoodLimits.ai so it reads on the white tile.
+        case .onPace: theme == .goodLimits ? .primary : .white
         case .over: Color(red: 0.88, green: 0.22, blue: 0.22)
         }
     }

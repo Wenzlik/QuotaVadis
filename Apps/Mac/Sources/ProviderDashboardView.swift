@@ -22,6 +22,7 @@ struct ProviderDashboardView: View {
             }
         }
         .frame(minWidth: 520, idealWidth: 640, minHeight: 480, idealHeight: 720)
+        .environment(\.appTheme, model.resolvedTheme)
     }
 
     private func content(_ instance: AppModel.Instance) -> some View {
