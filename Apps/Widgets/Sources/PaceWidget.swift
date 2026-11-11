@@ -8,8 +8,9 @@ import QuotaCore
 struct PaceChart: View {
     let elapsedFraction: Double
     let usedFraction: Double
-    var lineColor: Color = .white
-    var idealColor: Color = .white.opacity(0.4)
+    // .primary, not .white: widget backgrounds are light in light mode (system and GoodLimits.ai alike).
+    var lineColor: Color = .primary
+    var idealColor: Color = .primary.opacity(0.4)
 
     var body: some View {
         GeometryReader { geo in
@@ -294,7 +295,7 @@ struct PaceWidgetView: View {
     private func paceColor(_ pace: UsagePace) -> Color {
         switch pace.status {
         case .under: Color(red: 0.16, green: 0.62, blue: 0.36)
-        case .onPace: .white
+        case .onPace: .primary
         case .over: Color(red: 0.88, green: 0.22, blue: 0.22)
         }
     }
