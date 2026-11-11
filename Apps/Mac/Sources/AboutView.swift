@@ -50,7 +50,7 @@ struct AboutView: View {
         }
         .padding(24)
         .frame(width: 320)
-        .themedPanelBackground()
-        .environment(\.appTheme, model.resolvedTheme)
+        // GoodLimits.ai only: Observatory never styled this window.
+        .background { if isGoodLimits { GoodLimitsTheme.background.ignoresSafeArea() } }
     }
 }
